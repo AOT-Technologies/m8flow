@@ -14,6 +14,8 @@ after you upgrade.
 
 ### Added
 
+* BPMN collaboration start options in the backend and Designer. With a collaboration-capable `m8flow-core` wheel, users can select an executable pool and supply a correlation key. The host migration adds the correlation column and index.
+
 * Open-source project policies: a [security policy](SECURITY.md) with private vulnerability reporting, a [contributing guide](CONTRIBUTING.md), a [code of conduct](CODE_OF_CONDUCT.md), [governance](GOVERNANCE.md), and [support](SUPPORT.md) pages, and issue templates.
 * The repository is [REUSE](https://reuse.software/) compliant, and [DEPENDENCIES.md](DEPENDENCIES.md) lists the license of every runtime dependency. CI checks file licensing, dependency licenses and vulnerabilities, high-severity Bandit findings, secrets across the git history, and CodeQL, and runs the tests across the supported Python and Node.js versions.
 * Images are built once, from a merge to `main` (`sha-<commit>`), and release candidates (`X.Y.Z-rc`) and final releases (`X.Y.Z`) only add tags to them. Final releases are approved on the `release` environment, and their GitHub Release carries CycloneDX SBOMs, SHA-256 checksums, a Sigstore signature, and build-provenance attestations. See [Release and roll back m8flow](docs/how-to/release-and-roll-back.md) and the [versioning policy](docs/reference/versioning.md).

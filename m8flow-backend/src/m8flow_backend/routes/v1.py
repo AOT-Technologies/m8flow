@@ -152,8 +152,13 @@ def register_v1_routes(app: Flask) -> None:
             tenant_id=tenant_id,
             user_id=user.id,
             process_model_identifier=body["process_model_identifier"],
+            bpmn_process_id=body.get("bpmn_process_id"),
+            collaboration_correlation_key=body.get("collaboration_correlation_key"),
         )
-        return jsonify({"id": instance.id, "status": instance.status}), 201
+        response = {"id": instance.id, "status": instance.status}
+        if (key := getattr(instance, "collaboration_correlation_key", None)) is not None:
+            response["collaboration_correlation_key"] = key
+        return jsonify(response), 201
 
     @app.get("/v1.0/process-instances")
     @require_permission(on_deny="empty", empty_response=[])

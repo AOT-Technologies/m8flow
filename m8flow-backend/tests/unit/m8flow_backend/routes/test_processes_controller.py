@@ -5,6 +5,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.routes.processes_controller import process_model_identifier_from_path_param
@@ -899,21 +901,36 @@ def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: st
     db_session.commit()
 
 
-def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatch):
+@pytest.fixture(params=["designer", "thin"])
+def start_invoice(request, client):
+    def post(headers, **options):
+        if request.param == "thin":
+            return client.post(
+                "/v1.0/process-instances",
+                headers=headers,
+                json={"process_model_identifier": "finance/invoice-approval", **options},
+            )
+        return client.post(
+            "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+            headers=headers,
+            json=options or None,
+        )
+
+    return post
+
+
+def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
     _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
 
-    response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert response.status_code == 201
+    response = start_invoice({"Authorization": f"Bearer {token}"})
+    assert response.status_code == 201, response.get_json()
     body = response.get_json()
-    assert body["process_model_identifier"] == "finance/invoice-approval"
     assert isinstance(body["id"], int)
+    assert "collaboration_correlation_key" not in body
 
     # The instance is really persisted and tenant-scoped.
     from m8flow_core.models.process_instance import ProcessInstanceModel
@@ -922,6 +939,122 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+@pytest.mark.parametrize("start_option", ["bpmn_process_id", "collaboration_correlation_key"])
+def test_single_process_start_rejects_collaboration_options(
+    start_invoice, client, db_session, tmp_path, monkeypatch, start_option
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+
+    response = start_invoice({"Authorization": f"Bearer {token}"}, **{start_option: "Order"})
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == "validation_error"
+
+
+@pytest.mark.parametrize(
+    ("status", "collaboration"),
+    [("draft", True), ("paused", True), ("published", False), ("published", True)],
+)
+def test_only_model_detail_loads_collaboration_participants(
+    client, db_session, tmp_path, monkeypatch, status, collaboration
+):
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    model_dir = tmp_path / "bpmn/t1/finance/invoice-approval"
+    metadata_path = model_dir / "process_model.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["status"] = status
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    if collaboration:
+        xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+        (model_dir / "invoice-approval.bpmn").write_text(xml, encoding="utf-8")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    models_url = "/v1.0/m8flow/process-models"
+
+    def fail_primary_bpmn_read(**_kwargs):
+        pytest.fail("Listing models must not read the primary BPMN for collaboration participants")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(catalog, "read_primary_bpmn", fail_primary_bpmn_read)
+        listing = client.get(models_url, headers=headers)
+    assert listing.status_code == 200, listing.get_json()
+    row = next(model for model in listing.get_json() if model["id"] == "finance/invoice-approval")
+    detail = client.get(f"{models_url}/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+
+    expected = None
+    if status == "published" and collaboration:
+        expected = [
+            {"id": "Order", "name": "Order", "startable": True},
+            {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+        ]
+    assert row["status"] == detail.get_json()["status"] == status
+    assert "collaboration_participants" not in row
+    assert detail.get_json()["collaboration_participants"] == expected
+
+
+def test_collaboration_participant_selection_and_start(start_invoice, client, db_session, tmp_path, monkeypatch):
+    from m8flow_core import api
+
+    from m8flow_backend.catalog import _reject_unsupported_constructs
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace('processRef="orders:Order"', 'xmlns:local="urn:m8flow:orders" processRef="local:Order"')
+    _reject_unsupported_constructs(xml)
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    primary.write_text(xml, encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+    model_url = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    detail = client.get(model_url, headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["collaboration_participants"] == [
+        {"id": "Order", "name": "Order", "startable": True},
+        {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+    ]
+
+    if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
+        response = start_invoice(headers, bpmn_process_id="Order")
+        assert response.status_code == 409, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_core_upgrade_required"
+        return
+
+    missing = start_invoice(headers)
+    assert missing.status_code == 400, missing.get_json()
+    assert missing.get_json()["error_code"] == "collaboration_participant_required"
+    bad = start_invoice(headers, bpmn_process_id="ExternalPool")
+    assert bad.status_code == 404, bad.get_json()
+    assert bad.get_json()["error_code"] == "collaboration_participant_not_found"
+
+    key = " Order 123 "
+    response = start_invoice(headers, bpmn_process_id="Order", collaboration_correlation_key=key)
+    assert response.status_code == 201, response.get_json()
+    assert response.get_json()["collaboration_correlation_key"] == key
+
+    primary.write_text(
+        xml.replace(
+            '<bpmn:startEvent id="FulfilmentStart"/>',
+            '<bpmn:startEvent id="FulfilmentStart"><bpmn:timerEventDefinition>'
+            '<bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:startEvent>',
+        ),
+        encoding="utf-8",
+    )
+    event_only = start_invoice(headers, bpmn_process_id="Fulfilment")
+    assert event_only.status_code == 409, event_only.get_json()
+    assert event_only.get_json()["error_code"] == "collaboration_participant_not_startable"
 
 
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):

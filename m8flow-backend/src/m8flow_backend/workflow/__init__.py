@@ -614,23 +614,38 @@ def start(
     process_model_identifier: str,
     summary: str | None = None,
     submission_metadata: dict[str, Any] | None = None,
+    bpmn_process_id: str | None = None,
+    collaboration_correlation_key: str | None = None,
 ) -> ProcessInstanceModel:
     """Start an instance of the model's BPMN as it is on disk.
 
-    Transaction contract: Start is not atomic with the caller's transaction.
-    Core creates the instance in its own session and commits it there. When the
-    on-disk BPMN is not yet imported for this model, Start first imports it and
+    Core prepares single-process instances in its own session. Collaboration
+    instances and their messages are stored in the caller's transaction. When
+    the on-disk BPMN is not yet imported for this model, Start first imports it and
     COMMITS `session` (see `_definition_id_for_start`), so anything the caller
     staged before calling is committed too. Commit or discard your own writes
     before calling Start if they must roll back with a failed Start. The route
     callers stage nothing: auth commits its own user/group sync.
     """
     _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    start_options = {
+        field: value
+        for field, value in {
+            "bpmn_process_id": bpmn_process_id,
+            "collaboration_correlation_key": collaboration_correlation_key,
+        }.items()
+        if value is not None
+    }
+    for field, value in start_options.items():
+        if not isinstance(value, str) or not value.strip() or len(value) > 255 or "\x00" in value:
+            raise ApiError("validation_error", f"{field} must be a non-blank string of at most 255 characters", 400)
+
     definition_id = _definition_id_for_start(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
         process_model_identifier=process_model_identifier,
+        **start_options,
     )
     try:
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
@@ -648,6 +663,7 @@ def start(
                     or None,
                     started_at=datetime.now(timezone.utc),
                     call_activity_resolver=_call_activity_resolver(session),
+                    **start_options,
                 ),
             )
     except BpmnCoreError as exc:
@@ -2005,6 +2021,8 @@ def diagram_only_bpmn_xml(xml: str) -> str | None:
     except etree.LxmlError:
         LOGGER.warning("Could not parse source_bpmn_xml for a diagram-only read.", exc_info=True)
         return None
+    reference_prefixes: set[str] = set()
+    target_namespace = root.get("targetNamespace")
     # Elements only: with entities unresolved, entity references are nodes too.
     for element in list(root.iter(etree.Element)):
         qname = etree.QName(element)
@@ -2017,9 +2035,13 @@ def diagram_only_bpmn_xml(xml: str) -> str | None:
             namespace = etree.QName(attribute).namespace
             if namespace is not None and namespace not in _DIAGRAM_NAMESPACES:
                 del element.attrib[attribute]
+            elif attribute in {"processRef", "sourceRef", "targetRef", "messageRef"}:
+                prefix, separator, _ = element.attrib[attribute].partition(":")
+                if separator and target_namespace is not None and element.nsmap.get(prefix) == target_namespace:
+                    reference_prefixes.add(prefix)
         if qname.localname in _BPMN_LOGIC_TEXT_TAGS:
             element.text = None
-    etree.cleanup_namespaces(root)
+    etree.cleanup_namespaces(root, keep_ns_prefixes=list(reference_prefixes))
     return etree.tostring(root, encoding="unicode")
 
 
@@ -2043,8 +2065,7 @@ def get_instance_detail_for_designer(
     Task state: `TaskModel.state` (READY/WAITING/COMPLETED/ERROR/
     CANCELLED/TERMINATED, populated by m8flow_core's own
     services/workflow_runtime.py) joined to
-    `TaskDefinitionModel.bpmn_identifier` (the literal BPMN XML element
-    id) — this join doesn't exist anywhere in m8flow_core's own
+    `TaskDefinitionModel.bpmn_identifier` — this join doesn't exist in m8flow_core's own
     query catalog (confirmed: `GetProcessInstanceQuery` returns only the
     bare `ProcessInstanceModel` row, no task list attached), so this is
     new, direct ORM code, not a core query wrapper.
@@ -2094,6 +2115,15 @@ def get_instance_detail_for_designer(
         if definition is not None and definition.m8f_tenant_id == scope_tenant_id:
             bpmn_xml = definition.source_bpmn_xml
 
+    # Core qualifies registry ids by the root participant. The diagram still
+    # uses XML element ids and the existing child-process qualification.
+    collaboration_prefix = ""
+    if getattr(instance, "collaboration_correlation_key", None) is not None:
+        state = json.loads(instance.workflow_state_json or "{}")
+        root_process_id = (state.get("spec") or {}).get("name")
+        if isinstance(root_process_id, str):
+            collaboration_prefix = f"{root_process_id}::"
+
     task_rows = session.execute(
         select(
             TaskModel.guid,
@@ -2128,7 +2158,7 @@ def get_instance_detail_for_designer(
     tasks = [
         {
             "guid": guid,
-            "bpmn_identifier": bpmn_identifier,
+            "bpmn_identifier": bpmn_identifier.removeprefix(collaboration_prefix),
             "bpmn_name": bpmn_name,
             "typename": typename,
             "state": "ERROR" if guid in failed_task_guids else state,
@@ -2909,7 +2939,9 @@ def run_due(
     worker_id: str = "inline",
     tenant_id: str | None = None,
 ) -> int:
-    """Poll due scheduler jobs. The timer-start, intermediate-timer, and
+    """Poll due scheduler jobs, including collaboration message delivery.
+
+    The single-process timer-start, intermediate-timer, and
     process-retry job paths handled here call into m8flow_core
     (services/workflow_runtime.py) with autonomous_failure_state_persistence
     enabled: on a ServiceTaskExecutionError, core opens its own
@@ -2918,8 +2950,8 @@ def run_due(
     error/recovery state on that independent session, regardless of what
     happens to `session` afterward. CompleteTaskCommand does not use this
     mechanism. Callers of run_due don't need extra commit/session handling
-    for that recovery state -- core already commits it internally for the
-    job types processed here.
+    for that recovery state. Collaboration message delivery rolls back failed
+    attempts inside the caller's transaction and keeps the message retryable.
     """
     try:
         return api.run_due_scheduler_jobs(
@@ -2950,7 +2982,13 @@ class _StartImportPolicy:
 
 
 def _definition_id_for_start(
-    session: Session, *, tenant_id: str, user_id: int, process_model_identifier: str
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: int,
+    process_model_identifier: str,
+    bpmn_process_id: str | None = None,
+    collaboration_correlation_key: str | None = None,
 ) -> int:
     """The definition Start runs: the model's primary BPMN, and the DMN it calls,
     as they are on disk.
@@ -2980,6 +3018,29 @@ def _definition_id_for_start(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
     file_name, xml = found
+    participants = catalog.collaboration_participants(xml)
+    if participants is not None:
+        if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
+            raise ApiError(
+                "collaboration_core_upgrade_required",
+                "This collaboration requires a version of m8flow-core with collaboration support.",
+                409,
+            )
+        if bpmn_process_id is None:
+            raise ApiError("collaboration_participant_required", "Choose a BPMN participant to start.", 400)
+        selected = next((participant for participant in participants if participant["id"] == bpmn_process_id), None)
+        if selected is None:
+            raise ApiError("collaboration_participant_not_found", "BPMN participant not found.", 404)
+        if not selected["startable"]:
+            raise ApiError(
+                "collaboration_participant_not_startable",
+                "This BPMN participant starts through a modeled event.",
+                409,
+            )
+    elif collaboration_correlation_key is not None:
+        raise ApiError("validation_error", "A correlation key requires a BPMN collaboration.", 400)
+    elif bpmn_process_id is not None:
+        raise ApiError("validation_error", "A participant ID requires a BPMN collaboration.", 400)
     dmn_xml = catalog.model_dmn_xml(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
     )

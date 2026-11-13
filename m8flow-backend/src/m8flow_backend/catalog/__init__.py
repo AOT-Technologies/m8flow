@@ -16,6 +16,13 @@ from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
+from m8flow_backend.catalog.collaboration import (
+    BPMN,
+    MESSAGE_EVENT_PARENTS,
+    CollaborationParticipant,
+    collaboration_participants,
+    is_bpmn_event_definition,
+)
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend import workflow
 
@@ -463,6 +470,16 @@ def _bpmn_processes_for_model(*, tenant_id: str, process_model_identifier: str) 
                 seen.add(reference)
                 processes.append({"id": reference[0], "file_name": reference[1]})
     return processes
+
+
+def model_collaboration_participants(
+    *, tenant_id: str, process_model_identifier: str
+) -> list[CollaborationParticipant] | None:
+    try:
+        primary = read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+    except ApiError:
+        return None
+    return collaboration_participants(primary[1]) if primary else None
 
 
 def list_group_ids(*, tenant_id: str) -> list[str]:
@@ -1207,10 +1224,27 @@ def _reject_unsupported_constructs(xml: str) -> None:
         )
 
     unsupported = set(UNSUPPORTED_CONSTRUCTS)
+    supported_messages = set()
+    if next(root.iter(BPMN + "messageEventDefinition"), None) is not None:
+        participants = collaboration_participants(xml)
+        if participants:
+            process_ids = {participant["id"] for participant in participants}
+            # Core supports a single message definition on a top-level event
+            # of an executable participant. Track each exact node so the scan
+            # still rejects the same tag in other contexts.
+            for process in root.findall(BPMN + "process"):
+                if process.get("id") not in process_ids:
+                    continue
+                for event in process:
+                    if event.tag not in MESSAGE_EVENT_PARENTS:
+                        continue
+                    definitions = [child for child in event if is_bpmn_event_definition(child.tag)]
+                    if len(definitions) == 1 and definitions[0].tag == BPMN + "messageEventDefinition":
+                        supported_messages.add(definitions[0])
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]
-            if construct in unsupported:
+            if construct in unsupported and element not in supported_messages:
                 raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
 
 
