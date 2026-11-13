@@ -27,14 +27,24 @@ from m8flow_backend.secrets.provider import (
     registered_secret_backend_kinds,
     resolved_secret_backend_kind,
 )
-from m8flow_backend.secrets.vault import VaultSecretProvider
-
 SECRET_SENTINEL = re.compile(r"M8FLOW_SECRET:(?P<variable_name>\w+)")
 SECRET_KEY_PATTERN = re.compile(r"^\w+$")
 EMPTY_SECRET_LIST = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 
+
+def _vault_secret_provider():
+    """Load Vault integration only when the Vault provider is requested.
+
+    Keeping registration lazy prevents package initialization from importing
+    ``vault`` while ``provisioning`` is being imported.
+    """
+    from m8flow_backend.secrets.vault import VaultSecretProvider
+
+    return VaultSecretProvider()
+
+
 register_secret_provider(DEFAULT_SECRET_BACKEND_KIND, DatabaseSecretProvider)
-register_secret_provider("vault", VaultSecretProvider)
+register_secret_provider("vault", _vault_secret_provider)
 
 
 def require_secret_key(key: str) -> str:

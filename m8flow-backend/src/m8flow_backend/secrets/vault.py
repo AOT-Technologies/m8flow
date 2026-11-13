@@ -5,10 +5,8 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections import OrderedDict
 from collections.abc import Callable
 from datetime import datetime, timezone
-from threading import Condition, RLock
 from typing import Any
 
 from m8flow_backend.errors import ApiError
@@ -24,32 +22,22 @@ from m8flow_backend.secrets.provisioning import (
     TenantVaultProvisioningError,
     request_tenant_identity,
 )
+from m8flow_backend.secrets.tenant_store_cache import (
+    TENANT_STORES_INITIALIZING as _TENANT_STORES_INITIALIZING,
+    TENANT_STORE_CACHE as _TENANT_STORE_CACHE,
+    TENANT_STORE_CACHE_CONDITION as _TENANT_STORE_CACHE_CONDITION,
+    invalidate_tenant_store_cache,  # noqa: F401 - re-exported for compatibility
+)
 
 LOGGER = logging.getLogger(__name__)
 
 VaultStore = Any
 
 _TENANT_STORE_CACHE_MAX_SIZE = 256
-_TENANT_STORE_CACHE: OrderedDict[
-    tuple[tuple[str, str | None, str, str, bool | str], str], tuple[VaultStore, float]
-] = OrderedDict()
-_TENANT_STORE_CACHE_LOCK = RLock()
-_TENANT_STORE_CACHE_CONDITION = Condition(_TENANT_STORE_CACHE_LOCK)
-_TENANT_STORES_INITIALIZING: set[tuple[tuple[str, str | None, str, str, bool | str], str]] = set()
 
 
 def _monotonic() -> float:
     return time.monotonic()
-
-
-def invalidate_tenant_store_cache(tenant_id: str) -> None:
-    """Forget cached tenant tokens after tenant cleanup or identity retirement."""
-    with _TENANT_STORE_CACHE_CONDITION:
-        while any(key[1] == tenant_id for key in _TENANT_STORES_INITIALIZING):
-            _TENANT_STORE_CACHE_CONDITION.wait()
-        for cache_key in tuple(_TENANT_STORE_CACHE):
-            if cache_key[1] == tenant_id:
-                _TENANT_STORE_CACHE.pop(cache_key, None)
 
 
 def _evict_rejected_tenant_store(tenant_id: str, rejected_store: VaultStore) -> None:

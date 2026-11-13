@@ -1342,8 +1342,14 @@ def test_request_tenant_identity_rejects_another_tenants_role(monkeypatch):
 
 def test_tenant_vault_data_cleanup_uses_only_that_tenants_role(monkeypatch):
     from m8flow_backend.secrets import provisioning
+    from m8flow_backend.secrets.tenant_store_cache import TENANT_STORE_CACHE
 
     calls = []
+    tenant_id = "tenant-a"
+    tenant_cache_key = (("http://vault", None, "approle", "kv", True), tenant_id)
+    other_cache_key = (("http://vault", None, "approle", "kv", True), "tenant-b")
+    TENANT_STORE_CACHE[tenant_cache_key] = (object(), float("inf"))
+    TENANT_STORE_CACHE[other_cache_key] = (object(), float("inf"))
 
     class _TenantStore:
         def delete_tree(self, path):
@@ -1361,6 +1367,9 @@ def test_tenant_vault_data_cleanup_uses_only_that_tenants_role(monkeypatch):
         ("store_for_tenant", "tenant-a", "m8flow-tenant-role-tenant-a"),
         ("delete_tree", "m8flow/tenants/tenant-a/secrets"),
     ]
+    assert tenant_cache_key not in TENANT_STORE_CACHE
+    assert other_cache_key in TENANT_STORE_CACHE
+    TENANT_STORE_CACHE.pop(other_cache_key)
 
 
 def test_tenant_cleanup_retains_approle_and_policy_for_operator_cleanup(monkeypatch):

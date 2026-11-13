@@ -28,6 +28,7 @@ from m8flow_backend.config import (
 from m8flow_backend.secrets.http import HttpVault, VaultTransportError
 from m8flow_backend.secrets.paths import secret_root
 from m8flow_backend.secrets.provider import resolved_secret_backend_kind
+from m8flow_backend.secrets.tenant_store_cache import invalidate_tenant_store_cache
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 _VAULT_DURATION_PART = re.compile(r"(?P<amount>\d+(?:\.\d+)?)(?P<unit>ns|us|µs|ms|s|m|h)")
@@ -325,8 +326,6 @@ def delete_tenant_vault_data(tenant_id: str, *, control: Any | None = None) -> N
     normalized = _require(tenant_id, "tenant_id")
     # A tenant-scoped token must not remain available in this process after
     # its tenant's Vault subtree has been deleted.
-    from m8flow_backend.secrets.vault import invalidate_tenant_store_cache
-
     invalidate_tenant_store_cache(normalized)
     role_name = tenant_role_name(normalized)
     broker = control if control is not None else HttpVault.from_env()
