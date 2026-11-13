@@ -1,10 +1,10 @@
 import i18n, { type BackendModule, type InitOptions, type LanguageDetectorModule } from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import { resources, type Translation } from '@/locales';
+import { resources, type LocaleTranslation } from '@/locales';
 
 // Only en-US (the fallback) is bundled; every other language is a chunk fetched when first selected.
-const LAZY_LOCALES: Record<string, () => Promise<{ default: Translation }>> = {
+const LAZY_LOCALES: Record<string, () => Promise<{ default: LocaleTranslation }>> = {
   es: () => import('@/locales/es-bundle'),
   de: () => import('@/locales/de-bundle'),
   'pt-BR': () => import('@/locales/pt-BR-bundle'),

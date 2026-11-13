@@ -26,7 +26,8 @@ def test_path_param_unquotes_colon_and_double_encoding():
 
 
 def _login_user(
-    client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user"
+    client, db_session, *, username: str, groups: list[str], tenant_id: str, v1_role: str = "user",
+    seed_permissions: bool = False,
 ):
     from m8flow_core.services.authorization import ensure_v1_role
 
@@ -39,11 +40,139 @@ def _login_user(
     )
     ensure_membership(db_session, user, ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id))
     sync_groups(db_session, user=user, group_identifiers=groups, tenant_id=tenant_id)
+    if seed_permissions:
+        from m8flow_backend.identity import import_yaml
+
+        import_yaml(db_session, tenant_id=tenant_id)
     ensure_v1_role(db_session, tenant_id=tenant_id, role_name=v1_role, user_ids=(user.id,))
     db_session.commit()
     token = encode_auth_token(user=user)
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
     return user, token
+
+
+def _get_model_file(client, headers, model_id, name, *, tenant_id=None):
+    suffix = f"?tenantId={tenant_id}" if tenant_id else ""
+    return client.get(
+        f"/v1.0/m8flow/process-models/{model_id}/files/{name}{suffix}", headers=headers,
+    )
+
+
+def _stored_model(session, tenant_id, model_id):
+    from m8flow_backend.models.process_model_version import ProcessModelState
+
+    return session.get(ProcessModelState, (tenant_id, model_id), populate_existing=True)
+
+
+def test_versioned_model_publishes_and_restores_saved_drafts(client, db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="version-editor", groups=["t1:editor"], tenant_id="t1", seed_permissions=True,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    base = "/v1.0/m8flow/process-models"
+    path = f"{base}/finance:version-test"
+    file_path = f"{path}/files/version-test.bpmn"
+    created = client.post(base, headers=headers, json={"group_id": "finance", "id": "version-test"})
+    assert created.status_code == 201
+    assert created.json["draft_version"] == 1
+    assert client.post(f"{path}/start", headers=headers).status_code == 409
+
+    def revision(response):
+        return {**headers, "If-Match": '"' + response.json["working_revision"] + '"'}
+
+    def start_and_check(expected_name, expected_version):
+        response = client.post(f"{path}/start", headers=headers)
+        assert response.status_code == 201, response.json
+        instance = db_session.get(ProcessInstanceModel, response.json["id"])
+        assert f'name="{expected_name}"' in instance.bpmn_process_definition.source_bpmn_xml
+        assert instance.bpmn_version_control_identifier.endswith(f":{expected_version}")
+        return instance
+
+    published = client.post(f"{path}/publish", headers=revision(created))
+    assert published.status_code == 200, published.json
+    assert published.json["published_version"] == 1
+    assert published.json["draft_version"] is None
+    first = start_and_check("Task", 1)
+    xml = client.get(file_path, headers=headers).data
+    saved = client.put(file_path, headers=revision(published), content_type="application/octet-stream",
+                       data=xml.replace(b'name="Task"', b'name="Second"'))
+    assert saved.status_code == 200, saved.json
+    assert saved.json["draft_version"] == 2
+    assert saved.json["has_unpublished_changes"] is True
+    unchanged = client.put(file_path, headers=revision(saved), content_type="application/octet-stream",
+                           data=xml.replace(b'name="Task"', b'name="Second"'))
+    assert unchanged.json["working_revision"] == saved.json["working_revision"]
+    assert client.put(file_path, headers=revision(published), content_type="application/octet-stream",
+                      data=xml).status_code == 409
+    start_and_check("Task", 1)
+
+    paused = client.put(path, headers=revision(saved), json={"status": "paused"})
+    assert paused.json["draft_version"] == 2
+    assert client.post(f"{path}/start", headers=headers).status_code == 409
+    resumed = client.put(path, headers=revision(paused), json={"status": "published"})
+    assert resumed.json["draft_version"] == 2
+    start_and_check("Task", 1)
+
+    second = client.post(f"{path}/publish", headers=revision(resumed))
+    assert second.status_code == 200, second.json
+    assert second.json["published_version"] == 2
+    assert client.post(f"{path}/publish", headers=revision(resumed)).status_code == 409
+    instance = start_and_check("Second", 2)
+    assert instance.bpmn_process_definition_id != first.bpmn_process_definition_id
+
+    restored = client.put(f"{path}/working-version", headers=revision(second),
+                          json={"operation": "restore", "version": 1})
+    assert restored.status_code == 200, restored.json
+    assert restored.json["draft_version"] == 3
+    assert client.get(file_path, headers=headers).data == xml
+    start_and_check("Second", 2)
+    third = client.post(f"{path}/publish", headers=revision(restored))
+    assert third.json["published_version"] == 3
+    start_and_check("Task", 3)
+    history = client.get(f"{path}/versions", headers=headers)
+    assert history.status_code == 200, history.json
+    assert [row["version"] for row in history.json["versions"]] == [3, 2, 1]
+    invalid = client.put(
+        file_path, headers=revision(third), content_type="application/octet-stream",
+        data=b'<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"><process id="invalid"/></definitions>',
+    )
+    assert invalid.json["draft_version"] == 4
+    failed = client.post(f"{path}/publish", headers=revision(invalid))
+    assert failed.status_code == 422
+    start_and_check("Task", 3)
+    discarded = client.put(f"{path}/working-version", headers=revision(invalid), json={"operation": "discard"})
+    assert discarded.json["draft_version"] is None
+    assert client.get(file_path, headers=headers).data == xml
+
+
+def test_version_history_permissions_and_tenant_scope(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    path = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    endpoints = {f"{path}/versions": ["GET"], f"{path}/publish": ["POST"], f"{path}/working-version": ["PUT"]}
+    for role, expected in (("editor", (True, True, True)), ("viewer", (True, False, False)),
+                           ("submitter", (False, False, False))):
+        _, token = _login_user(
+            client, db_session, username=f"version-{role}", groups=[f"t1:{role}"], tenant_id="t1",
+            seed_permissions=True,
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        result = client.post("/v1.0/permissions-check", headers=headers, json={"requests_to_check": endpoints})
+        assert result.status_code == 200, result.json
+        actual = tuple(result.json["results"][url][methods[0]] for url, methods in endpoints.items())
+        assert actual == expected
+        assert client.get(f"{path}/versions", headers=headers).status_code == (200 if expected[0] else 404)
+        if not expected[1]:
+            assert client.post(f"{path}/publish", headers=headers).status_code == 403
+            assert client.put(f"{path}/working-version", headers=headers, json={"operation": "discard"}).status_code == 403
+
+    _, token = _login_user(client, db_session, username="version-other", groups=["t2:editor"], tenant_id="t2")
+    headers = {"Authorization": f"Bearer {token}", "If-Match": "unrelated"}
+    assert client.get(f"{path}/versions?tenantId=t1", headers=headers).status_code == 404
+    assert client.put(f"{path}/working-version?tenantId=t1", headers=headers,
+                      json={"operation": "discard"}).status_code == 404
 
 
 def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
@@ -624,7 +753,10 @@ def test_editor_saves_bpmn_file_with_a_non_leaf_name_writes_only_the_real_file(
     )
     assert response.status_code == 200
 
-    assert model_dir.joinpath("wfh-approval.bpmn").read_bytes() == xml
+    saved = _get_model_file(client, {"Authorization": f"Bearer {token}"},
+                            "test-process-group:wfh-group-4355dd7e70", "wfh-approval.bpmn")
+    assert saved.data == xml
+    assert response.get_json()["draft_version"] == 2
     phantom = model_dir / "wfh-group-4355dd7e70.bpmn"
     assert not phantom.exists(), "save() must not write a leaf-name-guessed phantom file"
     assert sorted(p.name for p in model_dir.glob("*.bpmn")) == ["wfh-approval.bpmn"]
@@ -751,8 +883,10 @@ def test_editor_saves_non_bpmn_file_without_git_commit(client, db_session, tmp_p
     assert body["name"] == "invoice-form-schema.json"
     assert body["size_bytes"] == len(b'{"updated": true}')
 
-    saved = (model_dir / "invoice-form-schema.json").read_text(encoding="utf-8")
-    assert saved == '{"updated": true}'
+    saved = _get_model_file(client, {"Authorization": f"Bearer {token}"},
+                            "finance:invoice-approval", "invoice-form-schema.json")
+    assert saved.json == {"updated": True}
+    assert (model_dir / "invoice-form-schema.json").read_text(encoding="utf-8") == "{}"
 
     log = subprocess_run(
         ["git", "log", "--oneline"], cwd=model_dir, capture_output=True, text=True
@@ -761,58 +895,27 @@ def test_editor_saves_non_bpmn_file_without_git_commit(client, db_session, tmp_p
     assert "invoice-form-schema.json" not in log.stdout
 
 
-def test_editor_saves_bpmn_file_reimports_definition(client, db_session, tmp_path, monkeypatch):
-    """Re-importing a .bpmn file goes through workflow.import_definition, which
-    enforces m8flow-core's own V1 "admin"-role command RBAC
-    (process_definition.import) — a separate layer from the editor/tenant-admin
-    URI-based groups this endpoint's own allow_uri() gate checks (see
-    test_workflow_operations.py's _seed_actor, which grants role_name="admin"
-    for the same reason). v1_role="user" (this file's default) 403s here even
-    though the very same editor group succeeds for a non-bpmn file above —
-    logged as a real, pre-existing gap in this ticket's answer, not fixed here.
-    """
+def test_editor_saves_bpmn_as_a_draft_without_a_runtime_import(client, db_session, tmp_path, monkeypatch):
+    from sqlalchemy import func, select
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client,
-        db_session,
-        username="editor-save-bpmn",
-        groups=["t1:editor"],
-        tenant_id="t1",
-        v1_role="admin",
+        client, db_session, username="editor-save-bpmn", groups=["t1:editor"], tenant_id="t1"
     )
     xml = VALID_BPMN.read_bytes()
-
+    headers = {"Authorization": f"Bearer {token}"}
     response = client.put(
         "/v1.0/m8flow/process-models/finance:invoice-approval/files/invoice-approval.bpmn",
         data=xml,
-        headers={"Authorization": f"Bearer {token}"},
+        headers=headers,
         content_type="application/octet-stream",
     )
     assert response.status_code == 200
-
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval"
-    assert model_dir.joinpath("invoice-approval.bpmn").read_bytes() == xml
-
-
-def test_editor_without_v1_admin_role_cannot_save_bpmn(client, db_session, tmp_path, monkeypatch):
-    """Pins the gap documented on test_editor_saves_bpmn_file_reimports_definition:
-    the editor group alone is not sufficient for .bpmn saves specifically —
-    core's V1 "admin" role is also required. Non-bpmn saves are unaffected
-    (see test_editor_saves_non_bpmn_file_without_git_commit, same group, no
-    v1_role override, 200)."""
-    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
-    _user, token = _login_user(
-        client, db_session, username="editor-no-v1-admin", groups=["t1:editor"], tenant_id="t1"
-    )
-
-    response = client.put(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/files/invoice-approval.bpmn",
-        data=VALID_BPMN.read_bytes(),
-        headers={"Authorization": f"Bearer {token}"},
-        content_type="application/octet-stream",
-    )
-    assert response.status_code == 403
-    assert response.get_json()["error_code"] == "permission_denied"
+    assert response.json["published_version"] == 1
+    assert response.json["draft_version"] == 2
+    assert _get_model_file(client, headers, "finance:invoice-approval", "invoice-approval.bpmn").data == xml
+    assert db_session.scalar(select(func.count()).select_from(BpmnProcessDefinitionModel)) == 0
 
 
 def test_save_file_missing_model_is_404(client, db_session, tmp_path, monkeypatch):
@@ -1077,7 +1180,10 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     )
     assert response.status_code == 200
     assert response.get_json() == {"deleted": True, "id": "finance/invoice-approval"}
-    assert not model_dir.exists()
+    assert _stored_model(db_session, "t1", "finance/invoice-approval").deleted
+    assert client.get(
+        "/v1.0/m8flow/process-models/finance:invoice-approval", headers={"Authorization": f"Bearer {token}"}
+    ).status_code == 404
 
 
 def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monkeypatch):
@@ -1395,10 +1501,8 @@ def test_editor_creates_and_updates_process_model(client, db_session, tmp_path, 
     assert body["id"] == "finance/expense-report"
     assert body["display_name"] == "Expense Report"
     assert body["group_id"] == "finance"
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "expense-report"
-    bpmn = model_dir / "expense-report.bpmn"
-    assert bpmn.is_file()
-    xml = bpmn.read_text(encoding="utf-8")
+    assert body["draft_version"] == 1
+    xml = _get_model_file(client, headers, "finance:expense-report", "expense-report.bpmn").text
     assert "StartEvent_1" in xml
     assert 'id="expense-report"' in xml
 
@@ -1428,7 +1532,7 @@ def test_create_process_model_slugifies_id_from_display_name(
     body = response.get_json()
     assert body["id"] == "finance/expense-report"
     assert body["display_name"] == "Expense Report"
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "expense-report" / "expense-report.bpmn").is_file()
+    assert body["draft_version"] == 1
 
 
 def test_create_process_model_requires_id_or_display_name(client, db_session, tmp_path, monkeypatch):
@@ -1472,46 +1576,30 @@ def test_create_process_model_rejects_duplicate(client, db_session, tmp_path, mo
     assert response.get_json()["error_code"] == "process_model_exists"
 
 
-def test_create_process_model_cleans_up_fs_when_bpmn_write_fails(
-    client, db_session, tmp_path, monkeypatch
-):
-    """If write_spec_file raises after metadata mkdir, the orphaned dir must be removed
-    so a retry is not blocked by target.exists() / process_model_exists."""
-    import m8flow_backend.catalog as catalog_mod
+def test_create_process_model_can_retry_after_a_failed_write(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend.catalog import versions
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
-        client,
-        db_session,
-        username="model-write-fail",
-        groups=["t1:editor"],
-        tenant_id="t1",
-        v1_role="admin",
+        client, db_session, username="model-write-fail", groups=["t1:editor"], tenant_id="t1",
     )
     headers = {"Authorization": f"Bearer {token}"}
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "orphan-probe"
-    real_write = catalog_mod.write_spec_file
+    payload = {"group_id": "finance", "id": "orphan-probe"}
+    initialize = versions.initialize
 
-    def _fail_write(*, tenant_id: str, path: str, file_name: str, content: bytes):
-        raise OSError("injected write_spec_file failure")
+    def fail_after_insert(*args, **kwargs):
+        initialize(*args, **kwargs)
+        raise RuntimeError("injected write failure")
 
-    monkeypatch.setattr(catalog_mod, "write_spec_file", _fail_write)
-    failed = client.post(
-        "/v1.0/m8flow/process-models",
-        headers=headers,
-        json={"group_id": "finance", "id": "orphan-probe"},
-    )
-    assert failed.status_code == 500
-    assert not model_dir.exists()
+    with monkeypatch.context() as patch:
+        patch.setattr(versions, "initialize", fail_after_insert)
+        failed = client.post("/v1.0/m8flow/process-models", headers=headers, json=payload)
+        assert failed.status_code == 500
+    assert _stored_model(db_session, "t1", "finance/orphan-probe") is None
 
-    monkeypatch.setattr(catalog_mod, "write_spec_file", real_write)
-    retry = client.post(
-        "/v1.0/m8flow/process-models",
-        headers=headers,
-        json={"group_id": "finance", "id": "orphan-probe"},
-    )
+    retry = client.post("/v1.0/m8flow/process-models", headers=headers, json=payload)
     assert retry.status_code == 201, retry.get_json()
-    assert (model_dir / "orphan-probe.bpmn").is_file()
+    assert retry.json["draft_version"] == 1
 
 
 def test_update_process_model_primary_file(client, db_session, tmp_path, monkeypatch):
@@ -1526,8 +1614,10 @@ def test_update_process_model_primary_file(client, db_session, tmp_path, monkeyp
         json={"group_id": "archived", "id": "notes"},
     )
     assert created.status_code == 201, created.get_json()
-    model_dir = tmp_path / "bpmn" / "t1" / "archived" / "notes"
-    (model_dir / "other.bpmn").write_text(model_dir.joinpath("notes.bpmn").read_text(encoding="utf-8"), encoding="utf-8")
+    added = client.post(
+        "/v1.0/m8flow/process-models/archived:notes/files", headers=headers, json={"file_name": "other.bpmn"},
+    )
+    assert added.status_code == 201
 
     ok = client.put(
         "/v1.0/m8flow/process-models/archived:notes",
@@ -1575,7 +1665,7 @@ def test_super_admin_can_create_process_model_with_concrete_tenant(
         json={"group_id": "finance", "id": "sa-model", "m8f_tenant_id": "t1"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "sa-model" / "sa-model.bpmn").is_file()
+    assert _stored_model(db_session, "t1", "finance/sa-model").status == "draft"
 
 
 def test_super_admin_create_process_model_without_tenant_is_400(
@@ -1608,7 +1698,8 @@ def test_process_model_create_stays_in_the_active_tenant(client, db_session, tmp
         json={"group_id": "finance", "id": "only-t1"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "only-t1" / "only-t1.bpmn").is_file()
+    assert _stored_model(db_session, "t1", "finance/only-t1").status == "draft"
+    assert _stored_model(db_session, "t2", "finance/only-t1") is None
     assert not (tmp_path / "bpmn" / "t2" / "finance" / "only-t1").exists()
 
 
@@ -1657,13 +1748,13 @@ def test_editor_copies_process_model_files_not_instances(client, db_session, tmp
     assert body["display_name"] == "Notes copy"
     assert body["description"] == "Keep me"
     assert body["group_id"] == "archived"
-    dest = tmp_path / "bpmn" / "t1" / "archived" / "notes-copy"
-    assert (dest / "notes.bpmn").is_file()
-    assert (dest / "notes.md").is_file()
-    assert (tmp_path / "bpmn" / "t1" / "archived" / "notes" / "notes.bpmn").is_file()
-    meta = json.loads((dest / "process_model.json").read_text(encoding="utf-8"))
-    assert meta["display_name"] == "Notes copy"
-    assert meta["primary_file_name"] == "notes.bpmn"
+    source = _stored_model(db_session, "t1", "archived/notes")
+    dest = _stored_model(db_session, "t1", "archived/notes-copy")
+    assert set(dest.working["files"]) == {"notes.bpmn", "notes.md"}
+    assert dest.working == source.working
+    assert dest.display_name == "Notes copy"
+    assert dest.working["primary_file_name"] == "notes.bpmn"
+    assert dest.latest_version is None
     source_count = db_session.query(ProcessInstanceModel).filter_by(
         m8f_tenant_id="t1", process_model_identifier="archived/notes"
     ).count()
@@ -1745,7 +1836,7 @@ def test_super_admin_can_copy_process_model_with_concrete_tenant(
         json={"id": "sa-copy", "display_name": "SA copy", "m8f_tenant_id": "t1"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t1" / "archived" / "sa-copy" / "notes.bpmn").is_file()
+    assert "notes.bpmn" in _stored_model(db_session, "t1", "archived/sa-copy").working["files"]
 
 
 def test_process_model_copy_stays_in_the_active_tenant(client, db_session, tmp_path, monkeypatch):
@@ -1767,7 +1858,8 @@ def test_process_model_copy_stays_in_the_active_tenant(client, db_session, tmp_p
         json={"id": "only-t1"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t1" / "archived" / "only-t1" / "notes.bpmn").is_file()
+    assert "notes.bpmn" in _stored_model(db_session, "t1", "archived/only-t1").working["files"]
+    assert _stored_model(db_session, "t2", "archived/only-t1") is None
     assert not (tmp_path / "bpmn" / "t2" / "archived" / "only-t1").exists()
 
 
@@ -1929,8 +2021,11 @@ def test_editor_creates_and_runs_script_unit_test(client, db_session, tmp_path, 
         json={"group_id": "archived", "id": "scripted"},
     )
     assert created.status_code == 201, created.get_json()
-    model_dir = tmp_path / "bpmn" / "t1" / "archived" / "scripted"
-    (model_dir / "scripted.bpmn").write_text(_SCRIPT_BPMN, encoding="utf-8")
+    saved = client.put(
+        "/v1.0/m8flow/process-models/archived:scripted/files/scripted.bpmn",
+        data=_SCRIPT_BPMN.encode(), headers=headers, content_type="application/octet-stream",
+    )
+    assert saved.status_code == 200
 
     created_test = client.post(
         "/v1.0/m8flow/process-models/archived:scripted/script-unit-tests",
@@ -2004,15 +2099,14 @@ def test_editor_adds_default_json_and_deletes_non_primary(client, db_session, tm
     )
     assert created.status_code == 201, created.get_json()
     assert created.get_json()["name"] == "notes.md"
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval"
-    assert (model_dir / "notes.md").is_file()
+    assert _get_model_file(client, headers, "finance:invoice-approval", "notes.md").status_code == 200
 
     deleted = client.delete(
         "/v1.0/m8flow/process-models/finance:invoice-approval/files/notes.md",
         headers=headers,
     )
     assert deleted.status_code == 200
-    assert not (model_dir / "notes.md").exists()
+    assert _get_model_file(client, headers, "finance:invoice-approval", "notes.md").status_code == 404
 
 
 def test_editor_adds_default_bpmn_file(client, db_session, tmp_path, monkeypatch):
@@ -2031,9 +2125,8 @@ def test_editor_adds_default_bpmn_file(client, db_session, tmp_path, monkeypatch
         json={"file_name": "extra.bpmn"},
     )
     assert created.status_code == 201, created.get_json()
-    xml = (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "extra.bpmn").read_text(
-        encoding="utf-8"
-    )
+    xml = _get_model_file(client, {"Authorization": f"Bearer {token}"},
+                          "finance:invoice-approval", "extra.bpmn").text
     assert "StartEvent_1" in xml
     assert 'id="extra"' in xml
     assert '<bpmn:manualTask id="Activity_1"' in xml
@@ -2106,15 +2199,15 @@ def test_super_admin_can_add_and_delete_file_with_concrete_tenant(
         json={"file_name": "notes.md", "m8f_tenant_id": "t1"},
     )
     assert created.status_code == 201, created.get_json()
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval"
-    assert (model_dir / "notes.md").is_file()
+    assert _get_model_file(client, headers, "finance:invoice-approval", "notes.md", tenant_id="t1").status_code == 200
     deleted = client.delete(
         "/v1.0/m8flow/process-models/finance:invoice-approval/files/notes.md?tenantId=t1",
         headers=headers,
     )
     assert deleted.status_code == 200
-    assert not (model_dir / "notes.md").exists()
-    assert (model_dir / "invoice-form-schema.json").is_file()
+    assert _get_model_file(client, headers, "finance:invoice-approval", "notes.md", tenant_id="t1").status_code == 404
+    assert _get_model_file(client, headers, "finance:invoice-approval", "invoice-form-schema.json",
+                           tenant_id="t1").status_code == 200
 
 
 def test_create_file_stays_in_the_active_tenant(client, db_session, tmp_path, monkeypatch):
@@ -2129,7 +2222,8 @@ def test_create_file_stays_in_the_active_tenant(client, db_session, tmp_path, mo
         json={"file_name": "only-t1.md"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "only-t1.md").is_file()
+    assert "only-t1.md" in _stored_model(db_session, "t1", "finance/invoice-approval").working["files"]
+    assert _stored_model(db_session, "t2", "finance/invoice-approval") is None
     assert not (tmp_path / "bpmn" / "t2" / "finance" / "invoice-approval" / "only-t1.md").exists()
 
 
@@ -2144,8 +2238,8 @@ def test_create_file_upload_content(client, db_session, tmp_path, monkeypatch):
         json={"file_name": "readme.txt", "content": "hello"},
     )
     assert response.status_code == 201, response.get_json()
-    saved = tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval" / "readme.txt"
-    assert saved.read_text(encoding="utf-8") == "hello"
+    saved = _get_model_file(client, {"Authorization": f"Bearer {token}"}, "finance:invoice-approval", "readme.txt")
+    assert saved.text == "hello"
 
 
 def test_delete_file_path_traversal_is_rejected(client, db_session, tmp_path, monkeypatch):
@@ -2191,7 +2285,7 @@ def test_super_admin_creates_model_in_a_tenant_they_never_logged_into(
         json={"group_id": "finance", "id": "sa-cross-model", "m8f_tenant_id": "t2"},
     )
     assert response.status_code == 201, response.get_json()
-    assert (tmp_path / "bpmn" / "t2" / "finance" / "sa-cross-model" / "sa-cross-model.bpmn").is_file()
+    assert _stored_model(db_session, "t2", "finance/sa-cross-model").status == "draft"
 
     # The scoped grant must not outlive the request: no persisted membership.
     db_session.expire_all()
@@ -2262,9 +2356,8 @@ def test_non_super_admin_still_cannot_write_into_another_tenant(
     # the editor's OWN cookie tenant, so the response is a 201 against t1.
     assert response.status_code == 201, response.get_json()
     assert response.get_json()["tenant_id"] == "t1"
-    assert (
-        tmp_path / "bpmn" / "t1" / "finance" / "editor-cross-model" / "editor-cross-model.bpmn"
-    ).is_file()
+    assert _stored_model(db_session, "t1", "finance/editor-cross-model").status == "draft"
+    assert _stored_model(db_session, "t2", "finance/editor-cross-model") is None
 
 
 def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
@@ -2289,6 +2382,12 @@ def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
         content_type="application/octet-stream",
     )
     assert saved.status_code == 200, saved.get_json()
+
+    published = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/publish?tenantId=t2",
+        headers={**headers, "If-Match": saved.json["working_revision"]},
+    )
+    assert published.status_code == 200, published.json
 
     started = client.post(
         "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",

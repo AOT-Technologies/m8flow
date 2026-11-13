@@ -1,4 +1,4 @@
-import type { Translation } from '.';
+import type { LocaleTranslation } from '.';
 import acceptInvitation from './zh-CN/acceptInvitation.json';
 import apiKeys from './zh-CN/apiKeys.json';
 import celery from './zh-CN/celery.json';
@@ -22,7 +22,7 @@ import tenantSelect from './zh-CN/tenantSelect.json';
 import tenants from './zh-CN/tenants.json';
 
 // Typed as the English tree, so a key missing from Chinese fails `tsc`.
-const zh: Translation = {
+const zh: LocaleTranslation = {
   acceptInvitation,
   apiKeys,
   celery,

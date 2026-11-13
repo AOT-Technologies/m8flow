@@ -1,4 +1,4 @@
-import type { Translation } from '.';
+import type { LocaleTranslation } from '.';
 import acceptInvitation from './de/acceptInvitation.json';
 import apiKeys from './de/apiKeys.json';
 import celery from './de/celery.json';
@@ -22,7 +22,7 @@ import tenantSelect from './de/tenantSelect.json';
 import tenants from './de/tenants.json';
 
 // Typed as the English tree, so a key missing from German fails `tsc`.
-const de: Translation = {
+const de: LocaleTranslation = {
   acceptInvitation,
   apiKeys,
   celery,

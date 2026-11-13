@@ -2940,6 +2940,78 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /process-models/{modified_process_model_identifier}/publish:
+    parameters:
+      - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
+      - $ref: "#/components/parameters/WorkingRevision"
+    post:
+      summary: Publish the saved process model draft
+      operationId: m8flow_backend.routes.processes_controller.publish_process_model
+      tags: [Processes]
+      responses:
+        "200":
+          description: Published model
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "409":
+          description: Stale revision or paused process
+        "428":
+          description: Working revision required
+
+  /process-models/{modified_process_model_identifier}/versions:
+    parameters:
+      - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
+    get:
+      summary: Read the draft and published process model history
+      operationId: m8flow_backend.routes.processes_controller.get_process_model_versions
+      tags: [Processes]
+      responses:
+        "200":
+          description: Version history, newest published version first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelVersionsResponse"
+        "404":
+          description: Model missing or definition access denied
+
+  /process-models/{modified_process_model_identifier}/working-version:
+    parameters:
+      - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
+      - $ref: "#/components/parameters/WorkingRevision"
+    put:
+      summary: Restore a published version to the working copy or discard the draft
+      operationId: m8flow_backend.routes.processes_controller.change_working_version
+      tags: [Processes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operation]
+              properties:
+                operation:
+                  type: string
+                  enum: [restore, discard]
+                version:
+                  type: integer
+                  minimum: 1
+                  description: Published version to restore. Required for restore.
+      responses:
+        "200":
+          description: Updated working copy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessModelIdentityResponse"
+        "409":
+          description: Stale revision
+        "428":
+          description: Working revision required
+
   /process-models/{modified_process_model_identifier}/start:
     post:
       summary: Processes page — start a process instance
@@ -3366,11 +3438,9 @@ paths:
     put:
       summary: Process Modeler — save one file's content
       description: >-
-        Writes one named file's bytes into an existing process model
-        directory. .bpmn content is re-imported (same behavior as
-        POST /process-models); every file type is git-committed
-        (best-effort). Concrete tenant required. Denied -> 403; missing
-        model -> 404.
+        Saves one named file in the working copy. A changed save to a published
+        model creates or updates its pending draft. Use If-Match with the
+        revision from the file or catalog response to reject stale edits.
       operationId: m8flow_backend.routes.processes_controller.put_process_model_file
       tags:
         - Processes
@@ -5950,6 +6020,20 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  parameters:
+    VersionedProcessModelIdentifier:
+      name: modified_process_model_identifier
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Process model path with slashes replaced by colons
+    WorkingRevision:
+      name: If-Match
+      in: header
+      schema:
+        type: string
+      description: Current working revision returned by the catalog
   schemas:
     HealthResponse:
       type: object
@@ -6132,6 +6216,45 @@ components:
       items:
         $ref: "#/components/schemas/HomeMyTask"
 
+    ProcessModelVersionFields:
+      type: object
+      properties: &process_model_version_fields
+        published_version:
+          type: integer
+          nullable: true
+          description: Most recent published version, including while paused or unpublished
+        draft_version:
+          type: integer
+          nullable: true
+        has_unpublished_changes:
+          type: boolean
+        working_revision:
+          type: string
+          nullable: true
+          description: Opaque revision for If-Match on model writes
+
+    ProcessModelVersionsResponse:
+      type: object
+      properties:
+        <<: *process_model_version_fields
+        status:
+          type: string
+          enum: [draft, published, paused]
+        versions:
+          type: array
+          items:
+            type: object
+            properties:
+              version:
+                type: integer
+              published_at:
+                type: string
+                nullable: true
+                format: date-time
+              published_by:
+                type: string
+                nullable: true
+
     ProcessModelListItem:
       type: object
       required:
@@ -6142,6 +6265,7 @@ components:
         - runs_30d
         - status
       properties:
+        <<: *process_model_version_fields
         id:
           type: string
           description: Process model path relative to the tenant catalog root
@@ -6378,7 +6502,10 @@ components:
           type: string
         primary_file_name:
           type: string
-          description: Existing file in the model directory to mark primary
+          description: BPMN file in the working copy to mark primary
+        primary_process_id:
+          type: string
+          description: BPMN process selected within the primary file
         status:
           type: string
           enum: [draft, published, paused]
@@ -6398,6 +6525,7 @@ components:
         - group_display_name
         - status
       properties:
+        <<: *process_model_version_fields
         id:
           type: string
         display_name:
@@ -6473,6 +6601,7 @@ components:
         - files
         - status
       properties:
+        <<: *process_model_version_fields
         id:
           type: string
         display_name:
@@ -6518,6 +6647,7 @@ components:
         - size_bytes
         - updated_at
       properties:
+        <<: *process_model_version_fields
         name:
           type: string
         size_bytes:

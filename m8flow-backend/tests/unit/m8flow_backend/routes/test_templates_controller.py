@@ -357,7 +357,12 @@ def test_super_admin_can_create_process_model_from_published_template(
     info = created_pm.get_json()["template_info"]
     assert info["source_template_id"] == source_id
     assert info["process_model_identifier"] == "finance/from-template-sa"
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "from-template-sa").is_dir()
+    assert created_pm.json["process_model"]["draft_version"] == 1
+    model = client.get(
+        "/v1.0/m8flow/process-models/finance:from-template-sa?tenantId=t1", headers=_headers(sa_token),
+    )
+    assert model.status_code == 200
+    assert [entry["name"] for entry in model.json["files"]] == ["diagram.bpmn"]
 
     client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
     missing_tenant = client.post(

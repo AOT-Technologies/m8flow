@@ -244,7 +244,8 @@ def create_app() -> FlaskApp:
         allow_origins=_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "x-m8flow-tenant-id"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "If-Match", "x-m8flow-tenant-id"],
+        expose_headers=["ETag"],
     )
 
     return connexion_app

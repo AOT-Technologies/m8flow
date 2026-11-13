@@ -1,4 +1,5 @@
 import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,7 @@ import { SavedStatusPill, type SaveStatus } from './SavedStatusPill';
 export type ModelerSavePhase = 'saved' | 'dirty' | 'saving' | 'error';
 
 export type ModelerFileToolbarProps = {
+  versionHistory?: ReactNode;
   savePhase: ModelerSavePhase;
   fileLoaded: boolean;
   canCreateFile: boolean;
@@ -25,6 +27,8 @@ export type ModelerFileToolbarProps = {
   onViewXml?: () => void;
   /** Model lifecycle status; unknown until the detail fetch resolves. */
   status?: ProcessModelStatus | null;
+  pendingDraft?: boolean;
+  versioned?: boolean;
   /** Publishes (or resumes) the model. Absent without the lifecycle permission. */
   onPublish?: () => void;
   /** Starts an instance. Absent without the start permission. */
@@ -49,6 +53,7 @@ function pillStatus(phase: ModelerSavePhase): SaveStatus {
  * saved file, so they are disabled while there are unsaved changes.
  * Save-as-template stays off this bar. */
 export function ModelerFileToolbar({
+  versionHistory,
   savePhase,
   fileLoaded,
   canCreateFile,
@@ -64,17 +69,20 @@ export function ModelerFileToolbar({
   onSetPrimary,
   onViewXml,
   status,
+  pendingDraft,
+  versioned,
   onPublish,
   onStart,
   lifecycleBusy = null,
 }: ModelerFileToolbarProps) {
   const { t } = useTranslation();
-  const dirty = savePhase === 'dirty' || savePhase === 'saving';
+  const dirty = savePhase !== 'saved';
   const canDelete = canDeleteFile && !isPrimary && Boolean(onDelete);
   const canPrimary = canChangePrimary && isBpmn && !isPrimary && Boolean(onSetPrimary);
 
   return (
-    <div className="flex flex-none flex-wrap items-center justify-end gap-2">
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {versionHistory}
       {savePhase === 'dirty' ? (
         <SaveButton onClick={onSave} />
       ) : (
@@ -128,8 +136,8 @@ export function ModelerFileToolbar({
           {t('common.delete')}
         </Button>
       ) : null}
-      {status && status !== 'published' && onPublish ? (
-        <span title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
+      {status && (status !== 'published' || pendingDraft) && onPublish ? (
+        <span className="inline-flex" title={dirty ? t('modeler.toolbar.saveBeforePublishing') : undefined}>
           <Button
             type="button"
             variant="outline"
@@ -145,18 +153,20 @@ export function ModelerFileToolbar({
                 : t('modeler.toolbar.publishing')
               : status === 'paused'
                 ? t('modeler.toolbar.resume')
-                : t('modeler.toolbar.publish')}
+                : status === 'published'
+                  ? t('common.modelVersions.publishChanges')
+                  : t('modeler.toolbar.publish')}
           </Button>
         </span>
       ) : null}
       {status === 'published' && onStart ? (
-        <span title={dirty ? t('modeler.toolbar.saveBeforeStarting') : undefined}>
+        <span className="inline-flex" title={dirty && !versioned ? t('modeler.toolbar.saveBeforeStarting') : undefined}>
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={onStart}
-            disabled={dirty || lifecycleBusy !== null}
+            disabled={(!versioned && dirty) || lifecycleBusy !== null}
             className={primaryAction}
           >
             <Play className="size-3.5" strokeWidth={2.2} />

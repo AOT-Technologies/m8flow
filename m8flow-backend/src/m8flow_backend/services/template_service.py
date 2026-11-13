@@ -14,9 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from m8flow_backend.errors import ApiError
 from m8flow_backend.db import db
 from m8flow_core.models.user import UserModel
-from m8flow_backend.catalog import _best_effort_git_commit as _commit_and_push_to_git
+from m8flow_backend.catalog import versioned
 from m8flow_backend import catalog as ProcessModelService
-from m8flow_backend import catalog as SpecFileService
 
 from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.template import TemplateModel, TemplateVisibility
@@ -1004,14 +1003,14 @@ class TemplateService:
 
         full_process_model_id = f"{process_group_id}/{process_model_id}"
 
-        if not ProcessModelService.is_process_group_identifier(process_group_id):
+        if not ProcessModelService.is_process_group_identifier(process_group_id, tenant_id=tenant):
             raise ApiError(
                 "process_group_not_found",
                 f"Process group '{process_group_id}' does not exist",
                 status_code=404,
             )
 
-        if ProcessModelService.is_process_model_identifier(full_process_model_id):
+        if ProcessModelService.is_process_model_identifier(full_process_model_id, tenant_id=tenant):
             raise ApiError(
                 "process_model_exists",
                 f"Process model '{full_process_model_id}' already exists",
@@ -1019,7 +1018,7 @@ class TemplateService:
             )
 
         # Check if a process group with this ID exists
-        if ProcessModelService.is_process_group_identifier(full_process_model_id):
+        if ProcessModelService.is_process_group_identifier(full_process_model_id, tenant_id=tenant):
             raise ApiError(
                 "process_group_exists",
                 f"A process group with ID '{full_process_model_id}' already exists",
@@ -1055,23 +1054,12 @@ class TemplateService:
                     status_code=500,
                 )
 
-        process_model_info = {
-            "id": full_process_model_id,
-            "display_name": display_name,
-            "description": description or "",
-            # Explicit draft: an absent status reads as published (for models
-            # predating the field), and a model just created from a template
-            # is new work, not something already signed off (M8F-508).
-            "status": ProcessModelService.PROCESS_MODEL_STATUS_DRAFT,
-        }
-        ProcessModelService.add_process_model(process_model_info)
-
         # Copy template files to the process model.
         # Two-pass approach: DMN files first (to collect decision ID mappings),
         # then BPMN/other files (so calledDecisionId references can be updated).
         primary_file_name = None
         primary_process_id = None
-        files_copied = 0
+        transformed_files = {}
         decision_id_map: dict[str, str] = {}
 
         logger.info(
@@ -1113,35 +1101,20 @@ class TemplateService:
                     primary_file_name = file_name
                     primary_process_id = new_process_id
 
-            # Write the file to the process model
-            try:
-                SpecFileService.update_file(process_model_info, file_name, content)
-                files_copied += 1
-                logger.debug(f"Successfully wrote file {file_name} to process model")
-            except Exception as e:
-                logger.error(f"Failed to write file {file_name} to process model: {str(e)}")
-                raise ApiError(
-                    "file_write_failed",
-                    f"Failed to write file '{file_name}' to process model: {str(e)}",
-                    status_code=500,
-                )
+            transformed_files[file_name] = content
 
-        if files_copied == 0:
+        if not transformed_files:
             raise ApiError(
                 "no_files_copied",
                 "No files could be copied from the template",
                 status_code=500,
             )
 
-        logger.info(
-            "Successfully copied %s files to process model %s", files_copied, sanitize_log_value(full_process_model_id)
+        model = versioned.create(
+            db.session, tenant, full_process_model_id, files=transformed_files,
+            name=display_name, description=description or "",
+            primary=primary_file_name, process_id=primary_process_id,
         )
-
-        if primary_file_name:
-            process_model_info["primary_file_name"] = primary_file_name
-        if primary_process_id:
-            process_model_info["primary_process_id"] = primary_process_id
-        ProcessModelService.save_process_model(process_model_info)
 
         username = user.username if hasattr(user, "username") else "unknown"
         provenance = ProcessModelTemplateModel(
@@ -1154,17 +1127,16 @@ class TemplateService:
             created_by=username,
         )
         db.session.add(provenance)
-        db.session.flush()
-
-        _commit_and_push_to_git(
-            ProcessModelService._model_file_path(tenant, full_process_model_id),
-            message=f"User: {username} created process model {full_process_model_id} from template {template.template_key} v{template.version}",
-        )
-
-        return {
-            "process_model": process_model_info,
+        result = {
+            "process_model": {
+                **versioned.identity(db.session, model),
+                "primary_file_name": primary_file_name,
+                "primary_process_id": primary_process_id,
+            },
             "template_info": provenance.serialized(),
         }
+        db.session.commit()
+        return result
 
     @classmethod
     def _transform_bpmn_content(

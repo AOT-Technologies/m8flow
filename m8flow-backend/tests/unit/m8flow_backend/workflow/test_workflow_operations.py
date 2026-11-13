@@ -938,6 +938,174 @@ def _seed_two_dmn_model(tmp_path, tenant_id: str, model_id: str) -> str:
     return called_dmn
 
 
+def test_versioned_dmn_only_publish_keeps_previous_definition(db_session, tmp_path, monkeypatch):
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    model_id = "invoices/decide"
+    first_dmn = _decision_dmn("approval_route")
+    second_dmn = first_dmn.replace('"approval_route"</text>', '"second"</text>')
+    model = versioned.create(
+        db_session, tenant.id, model_id, name="Decide",
+        files={"decide.bpmn": _DECISION_BPMN.encode(), "route.dmn": first_dmn.encode()},
+    )
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    db_session.commit()
+
+    def start():
+        return workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model_id)
+
+    first = start()
+    db_session.commit()
+    versioned.write_file(model, "route.dmn", second_dmn.encode())
+    db_session.commit()
+    assert start().bpmn_process_definition_id == first.bpmn_process_definition_id
+    db_session.commit()
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    db_session.commit()
+    second = start()
+    assert second.bpmn_process_definition.source_dmn_xml == second_dmn
+    assert first.bpmn_process_definition.source_dmn_xml == first_dmn
+
+
+def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monkeypatch):
+    from datetime import UTC, timedelta
+
+    from m8flow_backend.catalog import versioned
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    xml = catalog.default_bpmn_xml(process_id="timer").replace(
+        "<bpmn:outgoing>Flow_1</bpmn:outgoing>",
+        '<bpmn:outgoing>Flow_1</bpmn:outgoing><bpmn:timerEventDefinition>'
+        '<bpmn:timeDuration>"PT1H"</bpmn:timeDuration></bpmn:timerEventDefinition>',
+        1,
+    )
+    model = versioned.create(
+        db_session, tenant.id, "invoices/timer", name="Timer", files={"timer.bpmn": xml.encode()},
+    )
+
+    def jobs():
+        return db_session.query(SchedulerJobModel).filter_by(m8f_tenant_id=tenant.id, job_type="timer_start").all()
+
+    assert jobs() == []
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    first_job, = jobs()
+    previous = first_job.bpmn_process_definition_id
+    second_xml = xml.replace("PT1H", "PT2H").replace('name="Task"', 'name="Second task"')
+    versioned.write_file(model, "timer.bpmn", second_xml.encode())
+    assert [job.bpmn_process_definition_id for job in jobs()] == [previous]
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    second_job, = jobs()
+    assert second_job.bpmn_process_definition_id != previous
+    versioned.set_status(db_session, model, "paused", user_id=user.id, username=user.username)
+    assert jobs() == []
+    versioned.set_status(db_session, model, "published", user_id=user.id, username=user.username)
+    assert [job.bpmn_process_definition_id for job in jobs()] == [second_job.bpmn_process_definition_id]
+    scheduled, = jobs()
+    db_session.commit()
+    due = scheduled.run_at.replace(tzinfo=UTC) + timedelta(seconds=1)
+    assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
+    instance = db_session.query(ProcessInstanceModel).filter_by(
+        m8f_tenant_id=tenant.id, process_model_identifier=model.model_id,
+    ).one()
+    assert instance.bpmn_version_control_identifier.endswith(":2")
+    assert 'name="Second task"' in instance.bpmn_process_definition.source_bpmn_xml
+
+
+def test_versioned_concurrent_publishes_create_one_release(db_session, tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    from sqlalchemy.orm import Session
+    from m8flow_backend.catalog import versioned, versions
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    model = versioned.create(
+        db_session, tenant.id, "invoices/concurrent", name="Concurrent",
+        files={"concurrent.bpmn": catalog.default_bpmn_xml(process_id="concurrent").encode()},
+    )
+    tenant_id, user_id, username = tenant.id, user.id, user.username
+    model_id, expected = model.model_id, model.working_revision
+    engine = db_session.get_bind()
+    db_session.commit()
+    ready = Barrier(2, timeout=5)
+
+    def publish():
+        with Session(engine, autoflush=False) as session:
+            ready.wait()
+            try:
+                locked = versioned.for_write(session, tenant_id, model_id, expected=expected)
+                versioned.publish(session, locked, user_id=user_id, username=username)
+                session.commit()
+                return "published"
+            except ApiError as error:
+                return error.error_code
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        assert sorted(workers.map(lambda _: publish(), range(2))) == ["published", "stale_working_revision"]
+    db_session.refresh(model)
+    assert [entry.version for entry in versions.model_releases(db_session, model)] == [1]
+
+
+def test_versioned_instances_keep_their_form_and_called_process(db_session, tmp_path, monkeypatch):
+    from m8flow_backend import human_task
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    child_xml = CALL_ACTIVITY_CHILD_BPMN.replace(
+        'xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"',
+        'xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"',
+    )
+    child_xml = child_xml.replace(
+        '<bpmn:scriptTask id="calculate" scriptFormat="python"><bpmn:script>child_result = number * 2</bpmn:script></bpmn:scriptTask>',
+        '<bpmn:userTask id="calculate" name="Child Review"><bpmn:extensionElements>'
+        '<spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="child-schema.json"/>'
+        '</spiffworkflow:properties></bpmn:extensionElements></bpmn:userTask>',
+    )
+    assert "formJsonSchemaFilename" in child_xml
+    child = versioned.create(
+        db_session, tenant.id, "examples/call-child", name="Child",
+        files={"child.bpmn": child_xml.encode(), "child-schema.json": b'{"title":"First","type":"object"}'},
+    )
+    parent = versioned.create(
+        db_session, tenant.id, "examples/call-parent", name="Parent",
+        files={"parent.bpmn": CALL_ACTIVITY_PARENT_BPMN.encode()},
+    )
+    for model in (child, parent):
+        versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    db_session.commit()
+
+    def start():
+        instance = workflow.start(
+            db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=parent.model_id,
+        )
+        db_session.commit()
+        return instance
+
+    def form(instance):
+        return human_task.form_schema_for_task(db_session, tenant_id=tenant.id, work_item=instance.work_items[0])["schema"]
+
+    original = start()
+    assert form(original)["title"] == "First"
+    versioned.write_file(child, "child.bpmn", child_xml.replace("child-schema.json", "second-schema.json").encode())
+    versioned.remove_file(child, "child-schema.json")
+    versioned.write_file(child, "second-schema.json", b'{"title":"Second","type":"object"}')
+    db_session.commit()
+    assert form(start())["title"] == "First"
+    versioned.publish(db_session, child, user_id=user.id, username=user.username)
+    db_session.commit()
+    assert form(start())["title"] == "Second"
+    assert form(original)["title"] == "First"
+
+
 def test_start_runs_the_dmn_the_business_rule_task_calls(db_session, tmp_path, monkeypatch):
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 

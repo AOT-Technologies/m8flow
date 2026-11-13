@@ -1,4 +1,4 @@
-import type { Translation } from '.';
+import type { LocaleTranslation } from '.';
 import acceptInvitation from './pt-PT/acceptInvitation.json';
 import apiKeys from './pt-PT/apiKeys.json';
 import celery from './pt-PT/celery.json';
@@ -22,7 +22,7 @@ import tenantSelect from './pt-PT/tenantSelect.json';
 import tenants from './pt-PT/tenants.json';
 
 // Typed as the English tree, so a key missing from European Portuguese fails `tsc`.
-const ptPT: Translation = {
+const ptPT: LocaleTranslation = {
   acceptInvitation,
   apiKeys,
   celery,

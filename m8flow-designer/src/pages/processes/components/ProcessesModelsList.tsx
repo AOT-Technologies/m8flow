@@ -28,10 +28,9 @@ import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { EmptyState } from '@/components/library/empty-state/EmptyState';
-import { Pill } from '@/components/library/pill/Pill';
+import { ProcessModelVersionStatus } from '@/pages/process-model-detail/components/ProcessModelVersionStatus';
 import {
   normalizeProcessModelStatus,
-  processModelStatusToPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { SearchBar } from '@/components/library/search-bar/SearchBar';
 import { SortDropdown } from '@/components/library/sort-dropdown/SortDropdown';
@@ -79,6 +78,9 @@ export type ProcessesModelsListProps = {
   onFilterByGroup?: (groupId: string) => void;
   /** Starts an instance from the model; parent handles navigation. */
   onStartModel?: (model: ProcessModelListItem) => void;
+  mayStart?: (model: ProcessModelListItem) => boolean;
+  mayPublish?: (model: ProcessModelListItem) => boolean;
+  mayChangeStatus?: boolean;
   /** Deletes the model. Should reject (throw) on failure so the confirmation
    * dialog can surface the reason (e.g. a 409 when instances still exist). */
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
@@ -119,6 +121,9 @@ export function ProcessesModelsList({
   onOpenModel,
   onFilterByGroup,
   onStartModel,
+  mayStart,
+  mayPublish,
+  mayChangeStatus = true,
   onDeleteModel,
   onCreateModel,
   onCreateGroup,
@@ -235,6 +240,7 @@ export function ProcessesModelsList({
     }
   }
 
+  const showRunMetrics = models.some((model) => model.runs_30d != null);
   const columns: DataTableColumn<ProcessModelListItem>[] = [
     ...(showTenant
       ? [
@@ -274,24 +280,24 @@ export function ProcessesModelsList({
     {
       key: 'status',
       header: t('common.status'),
-      width: 'minmax(0,140px)',
-      render: (model) => <Pill {...processModelStatusToPillProps(model.status)} />,
+      width: '248px',
+      render: (model) => <ProcessModelVersionStatus {...model} stacked />,
     },
     // Run metrics are tenant-wide; the backend sends null to callers who may see
     // only their own instances (M8F-534), so the columns follow the data.
-    ...(models.some((model) => model.runs_30d != null)
+    ...(showRunMetrics
       ? [
           {
             key: 'runs30d',
             header: t('processes.list.columns.runs30d'),
-            width: 'minmax(0,90px)',
+            width: '90px',
             className: 'font-mono text-[13px] text-muted-foreground',
             render: (model: ProcessModelListItem) => model.runs_30d,
           },
           {
             key: 'lastRun',
             header: t('processes.list.columns.lastRun'),
-            width: 'minmax(0,130px)',
+            width: '130px',
             className: 'whitespace-nowrap text-[13px] text-muted-foreground',
             render: (model: ProcessModelListItem) => formatRelativeTime(model.last_run_at),
           },
@@ -300,7 +306,7 @@ export function ProcessesModelsList({
     {
       key: 'actions',
       header: t('common.actions'),
-      width: 'minmax(0,190px)',
+      width: '190px',
       className: 'text-right',
       render: (model) => (
         <div
@@ -313,7 +319,7 @@ export function ProcessesModelsList({
               than get a button that 403s. Draft and paused models are not
               startable at all (workflow.start refuses with a 409), so the
               button is hidden there too rather than offering a dead action. */}
-          {onStartModel && normalizeProcessModelStatus(model.status) === 'published' ? (
+          {onStartModel && (mayStart?.(model) ?? true) && normalizeProcessModelStatus(model.status) === 'published' ? (
             <Button
               type="button"
               variant="pill"
@@ -344,19 +350,23 @@ export function ProcessesModelsList({
               // Lifecycle actions offer only the transitions the backend
               // accepts from the current status — draft has no Pause, since
               // pausing something never published is refused with a 400.
-              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) !== 'published'
+              ...(onChangeModelStatus && (normalizeProcessModelStatus(model.status) === 'paused'
+                ? mayChangeStatus
+                : (mayPublish?.(model) ?? true) && (model.status === 'draft' || model.has_unpublished_changes))
                 ? [
                     {
                       label:
                         normalizeProcessModelStatus(model.status) === 'paused'
                           ? t('processes.list.actions.resume')
-                          : t('processes.list.actions.publish'),
+                          : model.status === 'published'
+                            ? t('common.modelVersions.publishChanges')
+                            : t('processes.list.actions.publish'),
                       icon: <Send className="size-3.5" />,
                       onSelect: () => void changeStatus(model, 'published'),
                     },
                   ]
                 : []),
-              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) === 'published'
+              ...(onChangeModelStatus && mayChangeStatus && normalizeProcessModelStatus(model.status) === 'published'
                 ? [
                     {
                       label: t('processes.list.actions.pause'),
@@ -365,7 +375,7 @@ export function ProcessesModelsList({
                     },
                   ]
                 : []),
-              ...(onChangeModelStatus && normalizeProcessModelStatus(model.status) !== 'draft'
+              ...(onChangeModelStatus && mayChangeStatus && normalizeProcessModelStatus(model.status) !== 'draft'
                 ? [
                     {
                       label: t('processes.list.actions.unpublish'),
@@ -527,7 +537,7 @@ export function ProcessesModelsList({
           </p>
         ) : null}
 
-        <Card variant="bordered" className="overflow-x-auto">
+        <Card variant="bordered" className="min-w-0">
           {loading ? (
             <div className="px-[22px] py-8 text-sm text-muted-foreground">{t('processes.list.loadingModels')}</div>
           ) : isEmpty ? (
@@ -567,7 +577,7 @@ export function ProcessesModelsList({
               rows={filtered}
               getRowKey={(model) => model.id}
               onRowClick={(model) => onOpenModel?.(model)}
-              minWidth="760px"
+              minWidth={`${(showRunMetrics ? 1000 : 760) + (showTenant ? 156 : 0)}px`}
             />
           )}
 
