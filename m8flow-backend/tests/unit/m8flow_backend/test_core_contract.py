@@ -315,9 +315,9 @@ def test_private_connector_proxy_request_hook_keeps_the_shape_proxy_auth_wraps()
 
 
 def test_private_service_task_script_engine_evaluate_keeps_the_shape_the_host_patches():
-    from m8flow_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
+    from m8flow_backend.workflow.service_task_params import runtime_script_engine_class
 
-    original = _closure_original(_RuntimeServiceTaskScriptEngine.evaluate)
+    original = _closure_original(runtime_script_engine_class().evaluate)
     params = list(inspect.signature(original).parameters.values())
     assert [p.name for p in params] == ["self", "task", "expression", "external_context"]
     # The host wrapper forwards external_context positionally and defaults it to None.
