@@ -336,8 +336,10 @@ def test_store_for_tenant_preserves_login_error_if_secret_id_cleanup_fails(monke
         "login",
         "destroy",
     ]
-    assert "Could not clean up the temporary Vault credential" in caplog.text
+    assert "Cleanup after Vault authentication failure did not complete." in caplog.text
     assert "role-a" not in caplog.text
+    assert "credential" not in caplog.text.lower()
+    assert "secretid" not in caplog.text.lower()
     assert "one-use-secret" not in caplog.text
     assert "one-use-accessor" not in caplog.text
 

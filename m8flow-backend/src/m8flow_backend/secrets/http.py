@@ -323,7 +323,7 @@ class HttpVault:
             except Exception:
                 # Do not include role identifiers or credential material in logs.
                 LOGGER.warning(
-                    "Could not clean up the temporary Vault credential after authentication failed."
+                    "Cleanup after Vault authentication failure did not complete."
                 )
             raise
         return tenant_store
