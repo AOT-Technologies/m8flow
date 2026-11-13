@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_amount_routing" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_amount_routing"><bpmn:participant id="Participant_Process_flow_amount_routing" name="E2E Spend Approval By Amount" processRef="Process_flow_amount_routing" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_amount_routing" name="E2E Spend Approval By Amount" isExecutable="true">
     <bpmn:documentation>A reviewer enters the amount; amounts over 1000 need an administrator as well.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_amount_routing"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_step1</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_other</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>Activity_step2</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

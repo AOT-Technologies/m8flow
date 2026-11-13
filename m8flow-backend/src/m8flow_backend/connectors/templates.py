@@ -32,11 +32,18 @@ def known_connector_type(connector_type: str) -> bool:
 
 
 def secret_field_names(connector_type: str) -> frozenset[str]:
+    """Fields whose values require secret-provider storage.
+
+    ``isHighlySensitive`` is the canonical field-level signal. Older
+    descriptors without it remain protected when they mark a field ``secret``
+    or use a password input. Password inputs always stay sensitive.
+    """
     template = _TEMPLATES.get(connector_type)
     if template is None:
         return frozenset()
     return frozenset(
         str(field["id"])
         for field in template.get("profileFields", [])
-        if field.get("secret")
+        if field.get("type") == "password"
+        or field.get("isHighlySensitive", field.get("secret", False)) is True
     )

@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_approve_then_call" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_approve_then_call"><bpmn:participant id="Participant_Process_flow_approve_then_call" name="E2E Approved Profile Sync" processRef="Process_flow_approve_then_call" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_approve_then_call" name="E2E Approved Profile Sync" isExecutable="true">
     <bpmn:documentation>The requester approves the sync, then the profile is fetched from an HTTP API the E2E stack may not call, so the step after the approval fails.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_approve_then_call"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_fetch_profile</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

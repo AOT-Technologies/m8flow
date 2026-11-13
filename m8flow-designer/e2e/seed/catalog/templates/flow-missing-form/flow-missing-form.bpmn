@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_missing_form" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_missing_form"><bpmn:participant id="Participant_Process_flow_missing_form" name="E2E Approval With A Missing Form" processRef="Process_flow_missing_form" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_missing_form" name="E2E Approval With A Missing Form" isExecutable="true">
     <bpmn:documentation>The approval task points at a form file that does not exist; the task must still open and be submitted.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_missing_form"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

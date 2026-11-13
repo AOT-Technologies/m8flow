@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_e2e_approval" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_e2e_approval"><bpmn:participant id="Participant_Process_e2e_approval" name="E2E Approval With BPMN Tests" processRef="Process_e2e_approval" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_e2e_approval" name="E2E Approval With BPMN Tests" isExecutable="true">
     <bpmn:documentation>A one-step approval, then a score is calculated by a script (x = 2). Its BPMN test file (test_e2e-approval.json) has one passing and one failing case; the script task is used by the script unit tests.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_e2e_approval"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_e2e_approve</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_script</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

@@ -108,8 +108,7 @@ export type SidebarProps = {
    * (prototypes). Ignored when a React Router context is present.
    */
   activeNavId?: LiveNavId | null;
-  /** Setup → Configuration live link when the user has YAML secrets read. */
-  showConfiguration?: boolean;
+  showNamedValues?: boolean;
   /** Setup → Connectors live link when the user has YAML connectors-grouped read. */
   showConnectors?: boolean;
   /** Show Setup when at least one Setup module is permitted. */
@@ -182,9 +181,9 @@ const SETUP_CHILDREN: SidebarChild[] = [
   { labelKey: 'shell.nav.connectors' },
   { labelKey: 'shell.nav.templates', to: '/templates' },
 ];
-const CONFIGURATION_CHILD: SidebarChild = {
-  labelKey: 'shell.nav.configuration',
-  to: '/configuration/secrets',
+const NAMED_VALUES_CHILD: SidebarChild = {
+  labelKey: 'shell.nav.configurationVariables',
+  to: '/configuration/named-values',
 };
 const CONNECTORS_CHILD: SidebarChild = {
   labelKey: 'shell.nav.connectors',
@@ -293,7 +292,7 @@ function SidebarView({
   userLabel = null,
   activeNavId = 'home',
   linkLiveNav = false,
-  showConfiguration = false,
+  showNamedValues = false,
   showConnectors = false,
   showSetup = true,
   showTemplates = true,
@@ -324,7 +323,7 @@ function SidebarView({
 
   const monitoringChildren = systemChildren(showCeleryMonitoring, showNatsMonitoring);
   const setupChildren = [
-    ...(showConfiguration ? [CONFIGURATION_CHILD] : []),
+    ...(showNamedValues ? [NAMED_VALUES_CHILD] : []),
     showConnectors ? CONNECTORS_CHILD : SETUP_CHILDREN[1],
     ...(showTemplates ? [SETUP_CHILDREN[2]] : []),
     ...(showApiKeys ? [API_KEYS_CHILD] : []),

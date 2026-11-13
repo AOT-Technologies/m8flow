@@ -24,6 +24,7 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
 
+import m8flow_backend.db as backend_db
 from m8flow_backend.db import alembic_target_metadata
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
@@ -82,6 +83,132 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
             sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
         ).scalar()
     assert seeded == "m8flow"
+
+
+def test_upgrade_from_legacy_connector_data_backfills_schema_and_guards_downgrade(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "legacy-connector-data.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+
+    # Stop immediately before the additive named-value/connector-variable
+    # revision, matching an existing database with legacy profile columns.
+    command.upgrade(cfg, "c1e4f5a6b7d8")
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        profile_table = sa.Table(
+            "m8flow_connector_configuration",
+            sa.MetaData(),
+            autoload_with=connection,
+        )
+        result = connection.execute(
+            profile_table.insert().values(
+                m8f_tenant_id="m8flow",
+                connector_type="http",
+                profile_name="legacy-http",
+                display_name="Legacy HTTP",
+                config_json={"basic_auth_username": "legacy-user"},
+                secret_refs={},
+                is_active=True,
+                created_by_user_id=0,
+            )
+        )
+        profile_id = result.inserted_primary_key[0]
+        password_key = f"cnx_{profile_id}_basic_auth_password"
+        connection.execute(
+            profile_table.update()
+            .where(profile_table.c.id == profile_id)
+            .values(secret_refs={"basic_auth_password": password_key})
+        )
+
+        secret_table = sa.Table("secret", sa.MetaData(), autoload_with=connection)
+        connection.execute(
+            secret_table.insert().values(
+                key=password_key,
+                value="legacy-encrypted-payload",
+                m8f_tenant_id="m8flow",
+                created_by_user_id=0,
+            )
+        )
+        connection.execute(
+            secret_table.insert().values(
+                key="API_TOKEN",
+                value="legacy-named-secret-payload",
+                m8f_tenant_id="m8flow",
+                created_by_user_id=0,
+            )
+        )
+
+    # Reaching head exercises the real predecessor ordering (including the
+    # historical 1518b05122bc migration) and the configuration schema revision.
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        connector_table = sa.Table(
+            "m8flow_connector_variable",
+            sa.MetaData(),
+            autoload_with=connection,
+        )
+        connector_rows = {
+            row.field_name: row
+            for row in connection.execute(
+                sa.select(connector_table).where(
+                    connector_table.c.connector_configuration_id == profile_id
+                )
+            ).mappings()
+        }
+        assert connector_rows["basic_auth_username"].is_sensitive is False
+        assert connector_rows["basic_auth_username"].value == "legacy-user"
+        assert connector_rows["basic_auth_password"].is_sensitive is True
+        assert connector_rows["basic_auth_password"].value is None
+        assert connector_rows["basic_auth_password"].provider_key == password_key
+
+        named_values = sa.Table(
+            "m8flow_named_value", sa.MetaData(), autoload_with=connection
+        )
+        named_secret = connection.execute(
+            sa.select(named_values).where(named_values.c.name == "API_TOKEN")
+        ).mappings().one()
+        assert named_secret.is_sensitive is True
+        assert named_secret.value is None
+        assert named_secret.provider_key == "API_TOKEN"
+        # Connector-owned legacy credentials remain represented only by the
+        # connector variable reference, never as independently editable named
+        # values.
+        assert connection.execute(
+            sa.select(named_values.c.id).where(
+                named_values.c.m8f_tenant_id == "m8flow",
+                named_values.c.provider_key == password_key,
+            )
+        ).first() is None
+
+        unchanged_secret = connection.execute(
+            sa.select(secret_table.c.value).where(secret_table.c.key == password_key)
+        ).scalar_one()
+        assert unchanged_secret == "legacy-encrypted-payload"
+
+    with engine.connect() as connection:
+        indexes = set(
+            connection.execute(
+                sa.text("SELECT name FROM sqlite_master WHERE type = 'index'")
+            ).scalars()
+        )
+    assert "uq_m8flow_named_value_tenant_name_ci" in indexes
+    assert "uq_m8flow_connector_variable_field_ci" in indexes
+    assert "uq_m8flow_connector_variable_field" in {
+        constraint["name"]
+        for constraint in sa.inspect(engine).get_unique_constraints(
+            "m8flow_connector_variable"
+        )
+    }
+
+    with pytest.raises(RuntimeError, match="Refusing to drop m8flow_named_value"):
+        command.downgrade(cfg, "c1e4f5a6b7d8")
+    with engine.connect() as connection:
+        assert connection.execute(
+            sa.text("SELECT version_num FROM alembic_version_m8flow")
+        ).scalar_one() == _script_head()
+    assert "m8flow_connector_variable" in sa.inspect(engine).get_table_names()
 
 
 def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):
@@ -348,6 +475,87 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     # that historical table shape, so it is the one expected survivor besides
     # Alembic's bookkeeping table.
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
+
+
+def test_alembic_root_downgrade_preserves_tables_added_by_newer_models(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-downgrade-preserves-newer-table.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "CREATE TABLE future_model_table "
+                "(id INTEGER PRIMARY KEY, value TEXT NOT NULL)"
+            )
+        )
+        connection.execute(
+            sa.text(
+                "INSERT INTO future_model_table (id, value) "
+                "VALUES (1, 'preserve me')"
+            )
+        )
+
+    # Model the live ORM metadata gaining a table after this historical root
+    # revision. The old `drop_all()` downgrade would drop this table.
+    current_metadata = backend_db.combined_model_metadata()
+    sa.Table(
+        "future_model_table",
+        current_metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("value", sa.Text, nullable=False),
+    )
+    # Alembic loads revision modules from disk for each command, so patch the
+    # source function the revision imports rather than a previously loaded copy.
+    monkeypatch.setattr(
+        backend_db, "combined_model_metadata", lambda: current_metadata
+    )
+    command.downgrade(cfg, "base")
+
+    with engine.connect() as connection:
+        preserved_value = connection.execute(
+            sa.text("SELECT value FROM future_model_table WHERE id = 1")
+        ).scalar_one()
+    assert preserved_value == "preserve me"
+    assert "m8flow_tenant" not in set(sa.inspect(engine).get_table_names())
+
+
+def test_root_upgrade_fails_clearly_when_baseline_table_is_missing(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-upgrade-missing-model.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    monkeypatch.setattr(backend_db, "combined_model_metadata", sa.MetaData)
+
+    with pytest.raises(RuntimeError, match="1518b05122bc migration baseline") as exc_info:
+        command.upgrade(cfg, "1518b05122bc")
+
+    assert "api_log" in str(exc_info.value)
+    engine = sa.create_engine(database_uri)
+    assert "m8flow_tenant" not in set(sa.inspect(engine).get_table_names())
+
+
+def test_root_downgrade_validates_baseline_before_dropping_any_tables(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-downgrade-missing-model.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+    monkeypatch.setattr(backend_db, "combined_model_metadata", sa.MetaData)
+
+    with pytest.raises(RuntimeError, match="1518b05122bc migration baseline"):
+        command.downgrade(cfg, "base")
+
+    engine = sa.create_engine(database_uri)
+    remaining = set(sa.inspect(engine).get_table_names())
+    assert "m8flow_tenant" in remaining
+    assert "m8flow_core_alembic_version" in remaining
 
 
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):

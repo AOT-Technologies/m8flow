@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_single_approval" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_single_approval"><bpmn:participant id="Participant_Process_flow_single_approval" name="E2E Expense Approval" processRef="Process_flow_single_approval" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_single_approval" name="E2E Expense Approval" isExecutable="true">
     <bpmn:documentation>An employee claims an expense; an approver approves it with a note.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_single_approval"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

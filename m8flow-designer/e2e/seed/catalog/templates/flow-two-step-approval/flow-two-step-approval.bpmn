@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_two_step_approval" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_two_step_approval"><bpmn:participant id="Participant_Process_flow_two_step_approval" name="E2E Purchase Two-Step Approval" processRef="Process_flow_two_step_approval" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_two_step_approval" name="E2E Purchase Two-Step Approval" isExecutable="true">
     <bpmn:documentation>An employee requests a purchase; it is approved by a manager (Approvers, first level) and then by an administrator (second level). A manager rejection ends it early.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_two_step_approval"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_submit_request</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>Activity_step1</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_other</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>Activity_step2</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

@@ -17,7 +17,7 @@ from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
 from m8flow_backend.config import connector_proxy_timeout_seconds
 from m8flow_backend.errors import ApiError
-from m8flow_backend.secrets.database import DatabaseSecretProvider
+from m8flow_backend.secrets.database import DatabaseSecretProvider, is_internal_secret_key
 from m8flow_backend.secrets.provider import (
     DEFAULT_SECRET_BACKEND_KIND,
     SecretListPage,
@@ -27,20 +27,46 @@ from m8flow_backend.secrets.provider import (
     registered_secret_backend_kinds,
     resolved_secret_backend_kind,
 )
-from m8flow_backend.secrets.vault import VaultSecretProvider
-
 SECRET_SENTINEL = re.compile(r"M8FLOW_SECRET:(?P<variable_name>\w+)")
 SECRET_KEY_PATTERN = re.compile(r"^\w+$")
 EMPTY_SECRET_LIST = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 
+
+def _vault_secret_provider():
+    """Load Vault integration only when the Vault provider is requested.
+
+    Keeping registration lazy prevents package initialization from importing
+    ``vault`` while ``provisioning`` is being imported.
+    """
+    from m8flow_backend.secrets.vault import VaultSecretProvider
+
+    return VaultSecretProvider()
+
+
 register_secret_provider(DEFAULT_SECRET_BACKEND_KIND, DatabaseSecretProvider)
-register_secret_provider("vault", VaultSecretProvider)
+register_secret_provider("vault", _vault_secret_provider)
 
 
 def require_secret_key(key: str) -> str:
     cleaned = (key or "").strip()
     if not SECRET_KEY_PATTERN.fullmatch(cleaned):
         raise ApiError("validation_error", "Secret key must be a word (letters, digits, underscore).", 400)
+    return cleaned
+
+
+def _require_public_secret_key(key: str, *, hide_internal: bool) -> str:
+    cleaned = require_secret_key(key)
+    if (
+        resolved_secret_backend_kind() == "database"
+        and is_internal_secret_key(cleaned)
+    ):
+        if hide_internal:
+            raise ApiError("not_found", "Secret not found.", 404)
+        raise ApiError(
+            "validation_error",
+            "This key is reserved for internal configuration storage.",
+            400,
+        )
     return cleaned
 
 
@@ -55,28 +81,118 @@ def add_secret(
     return get_secret_provider().add(
         session,
         tenant_id=tenant_id,
-        key=require_secret_key(key),
+        key=_require_public_secret_key(key, hide_internal=False),
         value=value,
         user_id=user_id,
     )
 
 
 def get_secret(session: Session, *, tenant_id: str, key: str) -> SecretRecord:
-    return get_secret_provider().get(session, tenant_id=tenant_id, key=require_secret_key(key))
+    return get_secret_provider().get(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+    )
 
 
 def get_secret_value(session: Session, *, tenant_id: str, key: str) -> str | None:
     if not SECRET_KEY_PATTERN.fullmatch(key or ""):
         return None
+    if (
+        resolved_secret_backend_kind() == "database"
+        and is_internal_secret_key(key)
+    ):
+        return None
     return get_secret_provider().get_value(session, tenant_id=tenant_id, key=key)
 
 
 def update_secret(session: Session, *, tenant_id: str, key: str, value: str) -> None:
-    get_secret_provider().update(session, tenant_id=tenant_id, key=require_secret_key(key), value=value)
+    get_secret_provider().update(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+        value=value,
+    )
 
 
 def delete_secret(session: Session, *, tenant_id: str, key: str) -> None:
-    get_secret_provider().delete(session, tenant_id=tenant_id, key=require_secret_key(key))
+    get_secret_provider().delete(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+    )
+
+
+def set_configuration_value(
+    session: Session,
+    *,
+    tenant_id: str,
+    variable_id: str,
+    value: str,
+    user_id: int,
+) -> None:
+    get_secret_provider().set_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+        value=value,
+        user_id=user_id,
+    )
+
+
+def get_configuration_value(session: Session, *, tenant_id: str, variable_id: str) -> str | None:
+    return get_secret_provider().get_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+    )
+
+
+def delete_configuration_value(session: Session, *, tenant_id: str, variable_id: str) -> None:
+    get_secret_provider().delete_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=variable_id,
+    )
+
+
+def set_connector_configuration(
+    session: Session,
+    *,
+    tenant_id: str,
+    configuration_id: int | str,
+    values: dict[str, str],
+    user_id: int,
+    replace_existing: bool = True,
+) -> None:
+    get_secret_provider().set_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+        values=values,
+        user_id=user_id,
+        replace_existing=replace_existing,
+    )
+
+
+def get_connector_configuration(
+    session: Session, *, tenant_id: str, configuration_id: int | str
+) -> dict[str, str] | None:
+    return get_secret_provider().get_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+    )
+
+
+def delete_connector_configuration(
+    session: Session, *, tenant_id: str, configuration_id: int | str
+) -> None:
+    get_secret_provider().delete_connector_configuration(
+        session,
+        tenant_id=tenant_id,
+        configuration_id=configuration_id,
+    )
 
 
 def list_secrets(
@@ -184,9 +300,13 @@ __all__ = [
     "build_host_service_task_registry",
     "connector_proxy_url",
     "delete_secret",
+    "delete_configuration_value",
+    "delete_connector_configuration",
     "get_secret",
     "get_secret_provider",
     "get_secret_value",
+    "get_configuration_value",
+    "get_connector_configuration",
     "install_registry_at_boot",
     "list_connectors",
     "list_secret_keys",
@@ -198,4 +318,6 @@ __all__ = [
     "resolve_possibly_secret_value",
     "serialize_secret_list",
     "update_secret",
+    "set_configuration_value",
+    "set_connector_configuration",
 ]

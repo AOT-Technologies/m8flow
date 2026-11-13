@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_e2e_invoice_approval" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_e2e_invoice_approval"><bpmn:participant id="Participant_e2e_invoice_approval" name="E2E Invoice Approval" processRef="e2e_invoice_approval" /></bpmn:collaboration>
-  
+
   <bpmn:process id="e2e_invoice_approval" name="E2E Invoice Approval" isExecutable="true">
     <bpmn:documentation>Accounts payable enters a supplier invoice; tax and total are calculated, new vendors are checked in the vendor registry, a manager approves it and finance records and schedules the payment.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_e2e_invoice_approval"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>start_invoice</bpmn:flowNodeRef><bpmn:flowNodeRef>enter_invoice</bpmn:flowNodeRef><bpmn:flowNodeRef>calculate_totals</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_vendor</bpmn:flowNodeRef><bpmn:flowNodeRef>check_vendor</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_vendor_done</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>approve_invoice</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_invoice_approved</bpmn:flowNodeRef><bpmn:flowNodeRef>end_invoice_rejected</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>ensure_payment_table</bpmn:flowNodeRef><bpmn:flowNodeRef>record_payment</bpmn:flowNodeRef><bpmn:flowNodeRef>schedule_payment</bpmn:flowNodeRef><bpmn:flowNodeRef>end_paid</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

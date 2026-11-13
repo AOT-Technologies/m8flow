@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_parallel_approval" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_parallel_approval"><bpmn:participant id="Participant_Process_flow_parallel_approval" name="E2E Contract Parallel Approval" processRef="Process_flow_parallel_approval" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_parallel_approval" name="E2E Contract Parallel Approval" isExecutable="true">
     <bpmn:documentation>A contract needs the manager's and finance's approval; both get their task at the same time and the contract is signed when both are done.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_parallel_approval"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_split</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_manager</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_join</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>Activity_finance</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

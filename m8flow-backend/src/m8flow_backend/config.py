@@ -41,6 +41,8 @@ __all__ = [
     "vault_enabled",
     "vault_mount_point",
     "vault_namespace",
+    "vault_provisioner_api_token",
+    "vault_provisioner_url",
     "vault_role_id",
     "vault_secret_id",
     "vault_secret_path_prefix",
@@ -390,6 +392,16 @@ def vault_secret_id() -> str | None:
         _get("M8FLOW_VAULT_SECRET_ID")
         or _get("VAULT_SECRET_ID")
         or _read_secret_file(_get("M8FLOW_VAULT_SECRET_ID_FILE") or _get("VAULT_SECRET_ID_FILE"))
+    )
+
+
+def vault_provisioner_url() -> str | None:
+    return _get("M8FLOW_VAULT_PROVISIONER_URL")
+
+
+def vault_provisioner_api_token() -> str | None:
+    return _get("M8FLOW_VAULT_PROVISIONER_API_TOKEN") or _read_secret_file(
+        _get("M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE")
     )
 
 

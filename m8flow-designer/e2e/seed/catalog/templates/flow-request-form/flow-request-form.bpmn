@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_request_form" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_request_form"><bpmn:participant id="Participant_Process_flow_request_form" name="E2E Purchase Request Form" processRef="Process_flow_request_form" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_request_form" name="E2E Purchase Request Form" isExecutable="true">
     <bpmn:documentation>A purchase request form with every field type: required title (at least 3 characters), amount and due date; optional priority (choice), urgent (yes/no), comment and a cost centre code of 5 to 10 characters.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_request_form"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_failing_step" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_failing_step"><bpmn:participant id="Participant_Process_flow_failing_step" name="E2E Reimbursement With A Failing Step" processRef="Process_flow_failing_step" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_failing_step" name="E2E Reimbursement With A Failing Step" isExecutable="true">
     <bpmn:documentation>After approval the reimbursement is calculated by a script that has a bug (an unknown variable), so the instance stops in Error.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_failing_step"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_fail</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

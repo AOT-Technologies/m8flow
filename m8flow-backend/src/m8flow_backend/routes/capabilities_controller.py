@@ -90,6 +90,8 @@ def get_capabilities():
             "can_review_tasks": permitted("POST", "/v1.0/tasks/1"),
             "can_read_secrets": permitted("GET", "/v1.0/secrets"),
             "can_manage_secrets": permitted("DELETE", "/v1.0/secrets"),
+            "can_read_named_values": permitted("GET", "/v1.0/m8flow/named-values"),
+            "can_manage_named_values": permitted("POST", "/v1.0/m8flow/named-values"),
             "can_read_connectors": permitted("GET", "/v1.0/m8flow/connectors-grouped"),
             "can_manage_connector_profiles": permitted(
                 "POST", "/v1.0/m8flow/connector-profiles"

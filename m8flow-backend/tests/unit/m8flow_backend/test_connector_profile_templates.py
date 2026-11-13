@@ -12,7 +12,11 @@ import time
 
 import pytest
 
-from m8flow_backend.connectors.templates import all_templates, template_for
+from m8flow_backend.connectors.templates import (
+    all_templates,
+    secret_field_names,
+    template_for,
+)
 
 _UPPERCASE_WORDS = {"URL", "ID", "API", "STARTTLS"}
 
@@ -102,6 +106,28 @@ def test_only_allowlisted_fields_are_prefilled() -> None:
         ("salesforce", "instance_url"),
         ("salesforce", "client_id"),
     }
+
+
+def test_http_basic_auth_username_is_plain_config_and_password_is_secret() -> None:
+    template = template_for("http")
+    assert template is not None
+    fields = {field["id"]: field for field in template["profileFields"]}
+
+    username = fields["basic_auth_username"]
+    assert username["binding"] == "secret_param"
+    assert username["secret"] is False
+    assert username["isHighlySensitive"] is False
+    assert username["isPrefillSafe"] is True
+
+    password = fields["basic_auth_password"]
+    assert password["binding"] == "secret_param"
+    assert password["secret"] is True
+    assert password["isHighlySensitive"] is True
+    assert password["isPrefillSafe"] is False
+
+    # The binding describes the connector runtime parameter, while this set
+    # controls Vault persistence and masking.
+    assert secret_field_names("http") == frozenset({"basic_auth_password"})
 
 
 @pytest.mark.parametrize(

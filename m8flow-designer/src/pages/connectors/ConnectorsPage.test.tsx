@@ -11,7 +11,7 @@ vi.mock('@/components/session/hooks', () => ({
   useActiveTenant: () => mockUseActiveTenant(),
   useCapabilities: () => mockUseCapabilities(),
   useTenantRegistry: () => ({
-    tenants: [],
+    tenants: [{ id: 't1', name: 'Tenant 1' }],
     refreshTenants: () => {},
     organizationMemberships: [],
     activeTenantLabel: null,
@@ -24,6 +24,7 @@ import ConnectorProfileEditPage, {
   connectorFieldError,
   DISPLAY_NAME_HINT,
   displayNameError,
+  isMaskedConnectorField,
   slugifyIdentifier,
 } from './ConnectorProfileEditPage';
 
@@ -124,6 +125,7 @@ const PROFILE = {
   description: null,
   config: {},
   configured_secrets: ['basic_auth_username', 'basic_auth_password'],
+  configured_fields: ['basic_auth_username', 'basic_auth_password'],
   is_active: true,
   updated_at: '2026-10-14T10:00:00+00:00',
 };
@@ -335,13 +337,41 @@ describe('Connectors UI', () => {
       profileFields: TEMPLATE.profileFields.map((field) => ({ ...field, required: true })),
     });
     mockFetchConnectorProfiles.mockResolvedValue([
-      { ...PROFILE, configured_secrets: ['basic_auth_username'], updated_at: null },
+      {
+        ...PROFILE,
+        configured_secrets: ['basic_auth_username'],
+        configured_fields: ['basic_auth_username'],
+        updated_at: null,
+      },
     ]);
     renderAt('/connectors/http/profiles', EDITOR);
 
     expect(await screen.findByText('Incomplete')).toBeInTheDocument();
     expect(screen.getByText('Missing: Basic Auth Password')).toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
+  });
+
+  it('counts saved ordinary connector fields when checking profile completeness', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue({
+      ...TEMPLATE,
+      id: 'smtp',
+      profileFields: [
+        { id: 'smtp_host', label: 'Host', type: 'text', required: true },
+        { id: 'smtp_port', label: 'Port', type: 'port', required: true },
+      ],
+    });
+    mockFetchConnectorProfiles.mockResolvedValue([
+      {
+        ...PROFILE,
+        connector_type: 'smtp',
+        configured_secrets: [],
+        configured_fields: ['smtp_host', 'smtp_port'],
+      },
+    ]);
+    renderAt('/connectors/smtp/profiles', EDITOR);
+
+    expect(await screen.findByText('Configured')).toBeInTheDocument();
+    expect(screen.queryByText(/Missing:/)).not.toBeInTheDocument();
   });
 
   it('lets an integrator create, edit, deactivate, and delete', async () => {
@@ -361,7 +391,7 @@ describe('Connectors UI', () => {
   });
 
   it('blocks an editor from the create form', () => {
-    renderAt('/connectors/http/profiles/new', EDITOR);
+    renderAt('/connectors/http/profiles/new', { ...EDITOR, activeTenantId: 't1' });
     expect(screen.getByText('Not allowed')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Connector profiles' })).toBeInTheDocument();
     expect(mockCreateConnectorProfile).not.toHaveBeenCalled();
@@ -774,6 +804,12 @@ describe('Connectors UI', () => {
 });
 
 describe('connector profile form helpers', () => {
+  it('masks fields marked highly sensitive without treating storage-only fields as sensitive', () => {
+    expect(isMaskedConnectorField({ id: 'token', label: 'Token', type: 'text', required: false, isHighlySensitive: true })).toBe(true);
+    expect(isMaskedConnectorField({ id: 'user', label: 'User', type: 'text', required: false, secret: true, isHighlySensitive: false })).toBe(false);
+    expect(isMaskedConnectorField({ id: 'legacy', label: 'Legacy', type: 'password', required: false })).toBe(true);
+  });
+
   it('slugifies display names into identifiers', () => {
     expect(slugifyIdentifier('  Slack – Prod!! ')).toBe('slack-prod');
     expect(slugifyIdentifier('Café Ops 2')).toBe('cafe-ops-2');

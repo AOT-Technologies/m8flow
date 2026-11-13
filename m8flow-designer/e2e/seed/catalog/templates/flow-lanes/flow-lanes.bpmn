@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_lanes" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_lanes"><bpmn:participant id="Participant_Process_flow_lanes" name="E2E Approval Lanes" processRef="Process_flow_lanes" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_lanes" name="E2E Approval Lanes" isExecutable="true">
     <bpmn:documentation>An access request goes to three lanes at the same time: a tenant administrator approves it (Administrators), the designers sign it off (Designers: editors, who have no Task Review) and a lane that matches no group, so nobody is given that task. Each branch ends on its own.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_lanes"><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_split</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_admin_approval</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_admin</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_designers" name="Designers"><bpmn:flowNodeRef>Activity_designers_signoff</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_designers</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_e2e nobody" name="E2E Nobody"><bpmn:flowNodeRef>Activity_unassigned</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_unassigned</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
