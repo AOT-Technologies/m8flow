@@ -72,7 +72,6 @@ def wait_for_backend_health() -> None:
         raise RuntimeError("Backend health wait timeout and poll interval must be positive.")
 
     deadline = time.monotonic() + timeout_seconds
-    last_check = "no response received"
     print(
         f"vault-seed: waiting up to {timeout_seconds:g}s for backend health at {health_url}.",
         flush=True,
