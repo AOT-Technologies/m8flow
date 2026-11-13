@@ -660,10 +660,21 @@ def start(
         # Detected by module rather than imported: the host must not import
         # spiffworkflow (see AGENTS.md).
         if type(exc).__module__.split(".", 1)[0] == "SpiffWorkflow":
+            message = f"This process model cannot be started: {exc}"
+            failed_instance_id = _error_instance_after_failed_start_script(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                process_model_identifier=process_model_identifier,
+                exc=exc,
+            )
+            if failed_instance_id is not None:
+                message = _sanitize_automatic_step_failure_detail(message)
+                message += f" Process instance {failed_instance_id} is now in Error."
             raise ApiError(
                 "invalid_process_model",
-                f"This process model cannot be started: {exc}",
+                message,
                 422,
+                process_instance_id=failed_instance_id,
             ) from exc
         raise
     _apply_model_display_name(
@@ -673,6 +684,98 @@ def start(
     record_process_instance_active_delta(tenant_id, 1)
     _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
+
+
+def _failed_task_process_instance_id(failed_task: Any) -> int | None:
+    """The id of the instance the failed task ran in, or None.
+
+    Core does not return it when a start fails. Its script engine for the run
+    carries it; the failed task's workflow holds that engine. Read by attribute,
+    as ``_workflow_task_exception_context`` does: the host must not import
+    SpiffWorkflow. Without it, nothing is marked, rather than guessing.
+    """
+    top_workflow = getattr(getattr(failed_task, "workflow", None), "top_workflow", None)
+    engine = getattr(top_workflow, "script_engine", None)
+    process_instance_id = getattr(engine, "_process_instance_id", None)
+    return process_instance_id if isinstance(process_instance_id, int) else None
+
+
+def _error_instance_after_failed_start_script(
+    *,
+    tenant_id: str,
+    user_id: int,
+    process_model_identifier: str,
+    exc: Exception,
+) -> int | None:
+    """Move the instance a failed start left behind to Error; return its id.
+
+    Core commits the new instance before running it and moves it to Error only
+    for a service-task failure. A failing script escaped with the instance still
+    ``not_started``. Record it in its own session so this recovery neither
+    commits nor rolls back unrelated caller work.
+    """
+    task_context = _workflow_task_exception_context(exc)
+    if task_context is None:
+        return None  # a parse/validation error: no task ran
+    failed_task, failed_task_spec = task_context
+    process_instance_id = _failed_task_process_instance_id(failed_task)
+    if process_instance_id is None:
+        return None
+    failed_task_guid = str(failed_task.id)
+    failed_task_name = (
+        getattr(failed_task_spec, "bpmn_name", None)
+        or getattr(failed_task_spec, "name", None)
+        or "Automatic task"
+    )
+    try:
+        from m8flow_backend.db import session_scope
+
+        with session_scope() as error_session:
+            if error_session.scalar(
+                select(ProcessInstanceModel.id).where(
+                    ProcessInstanceModel.id == process_instance_id,
+                    ProcessInstanceModel.m8f_tenant_id == tenant_id,
+                    ProcessInstanceModel.process_initiator_id == user_id,
+                    ProcessInstanceModel.process_model_identifier == process_model_identifier,
+                    ProcessInstanceModel.status == ProcessInstanceStatus.not_started.value,
+                )
+            ) is None:
+                return None
+            # Same scope as `start`'s own command: a super-admin acting in a
+            # tenant they don't belong to only passes core's membership check
+            # inside it, and this session opens after that scope has ended.
+            with _acting_tenant_membership(error_session, tenant_id=tenant_id, user_id=user_id):
+                api.execute_command(
+                    error_session,
+                    api.ErrorProcessInstanceCommand(
+                        tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+                    ),
+                )
+                api.execute_command(
+                    error_session,
+                    api.RecordProcessInstanceEventCommand(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        event_type="task_failed",
+                        task_guid=failed_task_guid,
+                        user_id=user_id,
+                    ),
+                )
+            _record_process_instance_error(
+                error_session,
+                tenant_id=tenant_id,
+                process_instance_id=process_instance_id,
+                task_guid=failed_task_guid,
+                message=_sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}"),
+            )
+    except Exception:
+        # Recording must never replace the script error the caller sees.
+        LOGGER.exception(
+            "Failed to move process instance %s to Error after a failed start",
+            process_instance_id,
+        )
+        return None
+    return process_instance_id
 
 
 def claim(
@@ -1143,6 +1246,63 @@ def _record_process_instance_error(
     )
 
 
+_BPMN_MODEL_NS = {"bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL"}
+
+
+def _error_boundary_catches(session: Session, *, context: Any, exc: BaseException) -> bool:
+    """True when core will catch this coded failure on an error boundary, so
+    the instance carries on and there is no failure to record (M8F-675).
+
+    Mirrors core's match: the task or an enclosing sub-process has an error
+    boundary whose code equals ``exc.error_code``, or that has no code.
+    """
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    code = getattr(exc, "error_code", None)
+    task_id = getattr(context, "task_name", None)
+    definition_id = getattr(context, "process_definition_id", None)
+    if not (code and task_id and definition_id):
+        return False
+    definition = session.scalar(
+        select(BpmnProcessDefinitionModel).where(
+            BpmnProcessDefinitionModel.id == definition_id,
+            BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id,
+        )
+    )
+    bpmn_xml = definition.source_bpmn_xml if definition is not None else None
+    if not bpmn_xml:
+        return False
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
+    raw = bpmn_xml.encode("utf-8") if isinstance(bpmn_xml, str) else bpmn_xml
+    try:
+        root = etree.fromstring(raw, parser)
+    except (etree.XMLSyntaxError, ValueError):
+        # An unreadable model can't show a catcher; record the failure.
+        LOGGER.debug("Could not parse BPMN of process definition %s", definition_id)
+        return False
+    codes = {e.get("id"): e.get("errorCode") for e in root.iterfind(".//bpmn:error", _BPMN_MODEL_NS)}
+    # ponytail: a task inside a called child process is not in this XML, so its
+    # failure is still recorded even if the call activity's boundary catches it.
+    tasks = root.xpath(
+        ".//bpmn:process//bpmn:serviceTask[@id=$id]", namespaces=_BPMN_MODEL_NS, id=task_id
+    )
+    if len(tasks) != 1:
+        return False  # not this definition's service task, or a duplicate id: record
+    # The task, then each enclosing sub-process, nearest first; never the
+    # process or definitions element, whose ids no boundary should attach to.
+    hosts = [tasks[0], *reversed(tasks[0].xpath("ancestor::bpmn:subProcess", namespaces=_BPMN_MODEL_NS))]
+    for host in hosts:
+        for definition in root.xpath(
+            ".//bpmn:boundaryEvent[@attachedToRef=$host]/bpmn:errorEventDefinition",
+            namespaces=_BPMN_MODEL_NS,
+            host=host.get("id"),
+        ):
+            error_ref = definition.get("errorRef")
+            if error_ref is None or codes.get(error_ref) in (None, code):
+                return True
+    return False
+
+
 def record_service_task_error(*, context: Any, exc: BaseException) -> None:
     """Persist why a service task failed, on its own committed session: the
     request session that ran the task rolls back on the error response, and
@@ -1167,6 +1327,8 @@ def record_service_task_error(*, context: Any, exc: BaseException) -> None:
             message = f"Service task failed ({type(exc).__name__})"
         message = message[:_ERROR_MESSAGE_MAX_LENGTH]
         with session_scope() as session:
+            if _error_boundary_catches(session, context=context, exc=exc):
+                return
             session.add(
                 ProcessInstanceErrorModel(
                     m8f_tenant_id=context.tenant_id,
@@ -2110,6 +2272,8 @@ def get_instance_detail_for_designer(
             TaskModel.m8f_tenant_id == scope_tenant_id,
         )
     ).all()
+    if not task_rows:
+        task_rows = _task_rows_from_workflow_state(instance.workflow_state_json)
     # Spiff may mark the throwing service task TERMINATED while unwinding the
     # process after a connector exception. The host records an explicit,
     # task-scoped task_failed event for that same element; use that durable
@@ -2218,6 +2382,73 @@ def get_instance_detail_for_designer(
     }
 
 
+# SpiffWorkflow's TaskState values, as core's serializer stores them; the host
+# must not import SpiffWorkflow to look them up.
+_SPIFF_TASK_STATE_NAMES = {
+    1: "MAYBE",
+    2: "LIKELY",
+    4: "FUTURE",
+    8: "WAITING",
+    16: "READY",
+    32: "STARTED",
+    64: "COMPLETED",
+    128: "ERROR",
+    256: "CANCELLED",
+}
+
+
+def _task_rows_from_workflow_state(raw: str | None) -> list[tuple[Any, ...]]:
+    """Diagram rows read from core's workflow snapshot, shaped like the task-row
+    query in ``get_instance_detail_for_designer``.
+
+    A failure while starting saves the snapshot but no task rows, so without
+    this the diagram showed nowhere it failed. Identifiers follow core's task
+    rows: the task spec name, as ``<subprocess spec>::<task spec>`` inside a
+    sub-process.
+    """
+    if not raw or not isinstance(raw, (str, bytes)):
+        return []
+    try:
+        state = json.loads(raw)
+    except (TypeError, ValueError):
+        # A corrupt snapshot must not break the designer: show no tasks.
+        LOGGER.debug("Ignoring a workflow snapshot that is not valid JSON")
+        return []
+
+    def _dict(value: Any) -> dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    state = _dict(state)
+    scopes = [(_dict(state.get("tasks")), _dict(_dict(state.get("spec")).get("task_specs")), None)]
+    subprocess_specs = _dict(state.get("subprocess_specs"))
+    for subprocess in _dict(state.get("subprocesses")).values():
+        subprocess = _dict(subprocess)
+        spec_name = subprocess.get("spec")
+        task_specs = _dict(_dict(subprocess_specs.get(spec_name)).get("task_specs"))
+        scopes.append((_dict(subprocess.get("tasks")), task_specs, spec_name))
+    rows: list[tuple[Any, ...]] = []
+    for tasks, task_specs, prefix in scopes:
+        for guid, task in tasks.items():
+            if not isinstance(task, dict):
+                continue
+            name = task.get("task_spec")
+            if not isinstance(name, str) or not name:
+                continue
+            spec = _dict(task_specs.get(name))
+            rows.append(
+                (
+                    guid,
+                    f"{prefix}::{name}" if prefix else name,
+                    spec.get("bpmn_name"),
+                    spec.get("typename"),
+                    _SPIFF_TASK_STATE_NAMES.get(task.get("state")),
+                    task,
+                    spec,
+                )
+            )
+    return rows
+
+
 def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_guid: str) -> dict[str, Any]:
     """A task's own data as SpiffWorkflow holds it -- what SpiffArena showed per
     task: what was in scope at that task plus what it set, never later steps'
@@ -2251,6 +2482,30 @@ def _task_data_from_workflow_state(instance: ProcessInstanceModel | None, task_g
     return {}
 
 
+def _snapshot_task_for_designer(
+    session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
+) -> dict[str, Any] | None:
+    """The diagram task modal for an instance whose start failed: its tasks
+    exist only in core's snapshot (see ``_task_rows_from_workflow_state``)."""
+    instance = session.get(ProcessInstanceModel, process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        return None
+    for guid, bpmn_identifier, bpmn_name, typename, state, task, _spec in _task_rows_from_workflow_state(
+        instance.workflow_state_json
+    ):
+        if guid == task_guid:
+            return {
+                "guid": guid,
+                "bpmn_identifier": bpmn_identifier,
+                "bpmn_name": bpmn_name,
+                "typename": typename,
+                "state": state,
+                "last_state_change": _last_state_change(task),
+                "data": _task_data_from_workflow_state(instance, guid),
+            }
+    return None
+
+
 def get_instance_task_for_designer(
     session: Session, *, tenant_id: str, process_instance_id: int, task_guid: str
 ) -> dict[str, Any] | None:
@@ -2274,7 +2529,9 @@ def get_instance_task_for_designer(
         )
     ).first()
     if row is None:
-        return None
+        return _snapshot_task_for_designer(
+            session, tenant_id=tenant_id, process_instance_id=process_instance_id, task_guid=task_guid
+        )
     task, bpmn_identifier, bpmn_name, typename = row
     data = _task_data(session, tenant_id=tenant_id, task_guid=task.guid) or _task_data_from_workflow_state(
         session.get(ProcessInstanceModel, process_instance_id), task.guid

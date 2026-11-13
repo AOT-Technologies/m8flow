@@ -284,6 +284,151 @@ def test_failed_service_task_without_instance_context_records_nothing(db_session
     assert db_session.query(ProcessInstanceErrorModel).count() == 0
 
 
+def _coded_error(message: str, error_code: str) -> ServiceTaskExecutionError:
+    # Set as an attribute: core 1.0.0b3's error takes no ``error_code`` argument.
+    exc = ServiceTaskExecutionError(message)
+    exc.error_code = error_code
+    return exc
+
+
+class _Http404Connector(_RecordingConnector):
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        raise _coded_error("proxy said 404 Not Found", "HttpError404")
+
+
+_NS = 'xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"'
+
+
+def _boundary_bpmn(*, catch_code: str | None, in_subprocess: bool = False) -> str:
+    """``Work`` (a service task, optionally inside sub-process ``Sub``) with an
+    error boundary on the outermost of the two."""
+    error_ref = ' errorRef="Err_1"' if catch_code else ""
+    error = f'<bpmn:error id="Err_1" errorCode="{catch_code}" />' if catch_code else ""
+    work = '<bpmn:serviceTask id="Work" />'
+    host = "Work"
+    if in_subprocess:
+        work = f'<bpmn:subProcess id="Sub">{work}</bpmn:subProcess>'
+        host = "Sub"
+    return (
+        f'<bpmn:definitions {_NS} id="D">{error}<bpmn:process id="P">{work}'
+        f'<bpmn:boundaryEvent id="Catch" attachedToRef="{host}">'
+        f"<bpmn:errorEventDefinition{error_ref} /></bpmn:boundaryEvent>"
+        "</bpmn:process></bpmn:definitions>"
+    )
+
+
+def _request_for_model(db_session, bpmn_xml: str) -> ServiceTaskRequest:
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    ensure_tenant(db_session, tenant_id="t1", slug="t1", name="t1")
+    definition = BpmnProcessDefinitionModel(
+        m8f_tenant_id="t1",
+        process_xml_digest="m8f675",
+        bpmn_identifier="P",
+        properties_json={},
+        source_bpmn_xml=bpmn_xml,
+    )
+    db_session.add(definition)
+    # Commit, not flush: the recorder reads on its own session.
+    db_session.commit()
+    return ServiceTaskRequest(
+        operation_id="http/GetRequestV2",
+        parameters={"url": "https://example.test"},
+        context=ServiceTaskContext(
+            tenant_id="t1",
+            process_instance_id=42,
+            process_definition_id=definition.id,
+            task_guid="g-1",
+            task_name="Work",
+        ),
+    )
+
+
+def _http404_registry() -> ServiceTaskRegistry:
+    registry = wrap_registry_for_connector_profiles(ServiceTaskRegistry())
+    registry.register_connector(_Http404Connector())
+    return registry
+
+
+@pytest.mark.parametrize(
+    ("catch_code", "in_subprocess"),
+    [("HttpError404", False), (None, False), ("HttpError404", True)],
+)
+def test_service_task_error_an_error_boundary_catches_records_nothing(
+    db_session, caplog, catch_code, in_subprocess
+):
+    """M8F-675: core routes a coded failure to a matching boundary, and the
+    instance carries on, so there is no failure to show."""
+    request = _request_for_model(
+        db_session, _boundary_bpmn(catch_code=catch_code, in_subprocess=in_subprocess)
+    )
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == []
+    # The recorder swallows its own errors; make sure it decided, not crashed.
+    assert "Failed to record service task error" not in caplog.text
+
+
+def test_service_task_error_is_recorded_when_the_model_xml_cannot_be_parsed(
+    db_session, caplog
+):
+    """The boundary check must fail safe: an unreadable model means record."""
+    request = _request_for_model(db_session, "<bpmn:definitions")
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == ["proxy said 404 Not Found"]
+    assert "Failed to record service task error" not in caplog.text
+
+
+_BOUNDARY_ON_WORK = (
+    '<bpmn:error id="Err_1" errorCode="HttpError404" />'
+    '<bpmn:boundaryEvent id="Catch" attachedToRef="Work">'
+    '<bpmn:errorEventDefinition errorRef="Err_1" /></bpmn:boundaryEvent>'
+)
+
+
+@pytest.mark.parametrize(
+    "process_body",
+    [
+        # The failing task isn't in this definition (version drift): no catcher known.
+        '<bpmn:serviceTask id="Other" />',
+        # "Work" is not a service task here, so its boundary can't be the one.
+        '<bpmn:scriptTask id="Work" />',
+        # A malformed model with a duplicate id: don't guess which one ran.
+        '<bpmn:serviceTask id="Work" /><bpmn:subProcess id="S"><bpmn:serviceTask id="Work" /></bpmn:subProcess>',
+    ],
+)
+def test_service_task_error_is_recorded_unless_the_failed_service_task_is_found(
+    db_session, caplog, process_body
+):
+    """Only a boundary on the very service task that failed (or a sub-process
+    around it) may suppress the record; anything uncertain records."""
+    xml = (
+        f'<bpmn:definitions {_NS} id="D"><bpmn:process id="P">'
+        f"{process_body}{_BOUNDARY_ON_WORK}</bpmn:process></bpmn:definitions>"
+    )
+    request = _request_for_model(db_session, xml)
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == ["proxy said 404 Not Found"]
+    assert "Failed to record service task error" not in caplog.text
+
+
+def test_service_task_error_with_no_matching_boundary_is_recorded(db_session):
+    request = _request_for_model(db_session, _boundary_bpmn(catch_code="HttpError500"))
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == ["proxy said 404 Not Found"]
+
+
 class _EchoingConnector(_RecordingConnector):
     """Fails like a proxy that echoes back the credentials it was sent."""
 
@@ -338,6 +483,28 @@ def test_failed_task_masks_a_profile_injected_secret(db_session, monkeypatch):
     assert error_body["automatic_step_error_message"] == "401 Unauthorized for password ***"
     assert "from-profile" not in error_body["automatic_step_error_message"]
     assert "from-profile" not in error_body["message"]
+
+
+class _CodedEchoingConnector(_EchoingConnector):
+    def execute(self, request: ServiceTaskRequest) -> ServiceTaskResult:
+        try:
+            super().execute(request)
+        except ServiceTaskExecutionError as exc:
+            raise _coded_error(str(exc), "HttpError401") from None
+
+
+def test_masking_a_secret_keeps_the_bpmn_error_code(db_session, monkeypatch):
+    """Core routes on ``error_code`` (M8F-675), so the masked copy must keep it."""
+    _seed_profile(db_session, monkeypatch)
+    db_session.commit()
+
+    with pytest.raises(ServiceTaskExecutionError) as raised:
+        _composed(_CodedEchoingConnector()).execute(
+            _instance_request({"m8flow_profile": "default", "url": "https://x"})
+        )
+
+    assert str(raised.value).endswith("***")
+    assert raised.value.error_code == "HttpError401"
 
 
 class _CrashingConnector(_RecordingConnector):
