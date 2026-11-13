@@ -119,17 +119,25 @@ def register_v1_routes(app: Flask) -> None:
     @app.post("/v1.0/process-models")
     @require_permission(forbidden_message="Not allowed to save process models")
     def save_process_model():
-        user = require_current_user()
+        from m8flow_backend.catalog import versioned, versions
+
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        tenant_id = require_tenant_id(require_current_user())
         body = request.get_json(force=True)
-        catalog.save(
-            session,
-            path=body["path"],
-            xml=body["xml"],
-            tenant_id=tenant_id,
-            user_id=user.id,
-        )
+        model_id = body["path"]
+        versions.lock_tenant(session, tenant_id)
+        if catalog.model_exists(tenant_id=tenant_id, process_model_identifier=model_id, session=session):
+            model = versioned.for_write(session, tenant_id, model_id)
+            file_name = versions.primary_bpmn(model.working, model_id)
+            versioned.write_file(model, file_name, body["xml"].encode("utf-8"))
+        else:
+            leaf = model_id.rsplit("/", 1)[-1]
+            file_name = f"{leaf}.bpmn"
+            versioned.create(
+                session, tenant_id, model_id, files={file_name: body["xml"].encode("utf-8")},
+                name=leaf, primary=file_name,
+            )
+        session.commit()
         return jsonify({"ok": True}), 201
 
     @app.get("/v1.0/process-models")

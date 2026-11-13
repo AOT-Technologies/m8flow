@@ -28,7 +28,9 @@ import {
   sortFilesPrimaryFirst,
 } from './SaveAsTemplateDialog';
 import { ProcessModelTestsCard } from './ProcessModelTestsCard';
+import { ProcessModelVersionStatus } from './ProcessModelVersionStatus';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
+import { Alert } from '@/components/library/alert/Alert';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Modal } from '@/components/library/modal/Modal';
 import { Pill } from '@/components/library/pill/Pill';
@@ -36,7 +38,6 @@ import { processInstanceStatusToPillProps } from '@/components/library/pill/proc
 import {
   normalizeProcessModelStatus,
   processModelStatusHint,
-  processModelStatusToPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -289,6 +290,9 @@ export type ProcessModelOverviewProps = {
   /** Publish lifecycle transition (M8F-508). Same catalog-write gate as Copy.
    * Should reject (throw) on failure so the reason can be surfaced. */
   onChangeStatus?: (status: ProcessModelStatus) => Promise<void>;
+  onPublish?: () => Promise<void>;
+  versionHistory?: ReactNode;
+  versionFeedback?: string;
   onRunBpmnTests?: () => Promise<ProcessModelTestRunResult>;
   onFetchScriptUnitTests?: () => Promise<ScriptUnitTest[]>;
   onCreateScriptUnitTest?: (input: {
@@ -320,6 +324,9 @@ export function ProcessModelOverview({
   onCopy,
   onSaveAsTemplate,
   onChangeStatus,
+  onPublish,
+  versionHistory,
+  versionFeedback,
   onRunBpmnTests,
   onFetchScriptUnitTests,
   onCreateScriptUnitTest,
@@ -372,12 +379,12 @@ export function ProcessModelOverview({
   // belongs to this exact model. Accepted since the alternative was
   // teaching that page a dedicated process-model-id filter param for one
   // entry point.
-  async function changeStatus(status: ProcessModelStatus) {
-    if (!onChangeStatus || changingStatus) return;
+  async function changeStatus(status: ProcessModelStatus, change = onChangeStatus) {
+    if (!change || changingStatus) return;
     setChangingStatus(true);
     setStatusError(null);
     try {
-      await onChangeStatus(status);
+      await change(status);
     } catch (err: unknown) {
       const reason =
         err instanceof ApiError && err.serverMessage
@@ -401,103 +408,120 @@ export function ProcessModelOverview({
 
   return (
     <div data-testid="process-model-detail">
-      <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
+      <header className="mb-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="mb-1.5 rounded-full font-semibold"
+            className="rounded-full font-semibold"
             onClick={() => navigate('/processes')}
           >
             <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
             {t('processModelDetail.allProcesses')}
           </Button>
-          <h1 className="font-display text-[32px] font-semibold tracking-tight break-words text-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2.5">
+            {/* Lifecycle decides the primary action: an unpublished model gets
+                Publish (Resume when paused), a published one gets Start. Start
+                is never shown for draft/paused -- workflow.start refuses them
+                with a 409. */}
+            {modelerHref ? (
+              <Button asChild variant={isPublished ? 'pill-dark' : 'pill-outline'} size="pill" className="h-10">
+                <Link to={modelerHref} className="no-underline">
+                  <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
+                  {isPublished ? t('processModelDetail.header.editInModeler') : t('processModelDetail.header.openInModeler')}
+                </Link>
+              </Button>
+            ) : canEditModel ? (
+              <Button type="button" disabled variant="pill-outline" size="pill" className={`h-10 ${inertBtn}`}>
+                <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
+                {t('processModelDetail.header.openInModeler')}
+              </Button>
+            ) : null}
+            {((status === 'paused' && onChangeStatus)
+              || (status !== 'paused' && (!isPublished || detail.has_unpublished_changes)
+                && (onPublish || (!detail.working_revision && onChangeStatus)))) ? (
+              <Button
+                type="button"
+                variant="pill"
+                size="pill"
+                className="h-10"
+                disabled={changingStatus}
+                onClick={() => void changeStatus('published', status === 'paused' ? onChangeStatus : onPublish ?? onChangeStatus)}
+              >
+                <Send className="size-[15px]" strokeWidth={2} aria-hidden />
+                {changingStatus
+                  ? status === 'paused'
+                    ? t('processModelDetail.header.resuming')
+                    : t('processModelDetail.header.publishing')
+                  : status === 'paused'
+                    ? t('processModelDetail.header.resume')
+                    : isPublished
+                      ? t('common.modelVersions.publishChanges')
+                      : t('processModelDetail.header.publish')}
+              </Button>
+            ) : null}
+            {isPublished && onStart ? (
+              <Button
+                type="button"
+                variant="pill"
+                size="pill"
+                className="h-10"
+                disabled={starting}
+                onClick={async () => {
+                  setStarting(true);
+                  setStartError(null);
+                  try {
+                    await onStart();
+                  } catch (err: unknown) {
+                    setStartError(startErrorMessage(err, detail.display_name));
+                  } finally {
+                    setStarting(false);
+                  }
+                }}
+              >
+                <Play className="size-[15px]" strokeWidth={2} aria-hidden />
+                {starting ? t('processModelDetail.header.starting') : t('processModelDetail.header.startProcess')}
+              </Button>
+            ) : null}
+            {versionHistory}
+            <HeaderActionsMenu
+              onEditIdentity={
+                canManage && onUpdateIdentity
+                  ? () => {
+                      setEditName(detail.display_name);
+                      setEditDescription(detail.description);
+                      setEditError(null);
+                      setEditOpen(true);
+                    }
+                  : undefined
+              }
+              onCopy={onCopy ? () => setCopyOpen(true) : undefined}
+              onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
+              status={status}
+              onChangeStatus={onChangeStatus ? changeStatus : undefined}
+            />
+          </div>
+        </div>
+        <div>
+          <h1 className="font-display text-[32px] leading-tight font-semibold tracking-tight text-foreground [overflow-wrap:anywhere]">
             {detail.display_name}
           </h1>
           <div className="mt-2 flex flex-wrap items-center gap-2.5" data-testid="process-model-status">
-            <Pill {...processModelStatusToPillProps(detail.status)} />
+            <ProcessModelVersionStatus {...detail} />
             <span className="text-[13px] text-muted-foreground">
               {processModelStatusHint(detail.status)}
             </span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Lifecycle decides the primary action: an unpublished model gets
-              Publish (Resume when paused), a published one gets Start. Start
-              is never shown for draft/paused -- workflow.start refuses them
-              with a 409. */}
-          {modelerHref ? (
-            <Button asChild variant={isPublished ? 'pill-dark' : 'pill-outline'} size="pill">
-              <Link to={modelerHref} className="no-underline">
-                <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-                {isPublished ? t('processModelDetail.header.editInModeler') : t('processModelDetail.header.openInModeler')}
-              </Link>
-            </Button>
-          ) : canEditModel ? (
-            <Button type="button" disabled variant="pill-outline" size="pill" className={inertBtn}>
-              <Pencil className="size-[15px]" strokeWidth={2} aria-hidden />
-              {t('processModelDetail.header.openInModeler')}
-            </Button>
-          ) : null}
-          {!isPublished && onChangeStatus ? (
-            <Button
-              type="button"
-              variant="pill"
-              size="pill"
-              disabled={changingStatus}
-              onClick={() => void changeStatus('published')}
-            >
-              <Send className="size-[15px]" strokeWidth={2} aria-hidden />
-              {changingStatus
-                ? status === 'paused'
-                  ? t('processModelDetail.header.resuming')
-                  : t('processModelDetail.header.publishing')
-                : status === 'paused'
-                  ? t('processModelDetail.header.resume')
-                  : t('processModelDetail.header.publish')}
-            </Button>
-          ) : null}
-          {isPublished && onStart ? (
-            <Button
-              type="button"
-              variant="pill"
-              size="pill"
-              disabled={starting}
-              onClick={async () => {
-                setStarting(true);
-                setStartError(null);
-                try {
-                  await onStart();
-                } catch (err: unknown) {
-                  setStartError(startErrorMessage(err, detail.display_name));
-                } finally {
-                  setStarting(false);
-                }
-              }}
-            >
-              <Play className="size-[15px]" strokeWidth={2} aria-hidden />
-              {starting ? t('processModelDetail.header.starting') : t('processModelDetail.header.startProcess')}
-            </Button>
-          ) : null}
-          <HeaderActionsMenu
-            onEditIdentity={
-              canManage && onUpdateIdentity
-                ? () => {
-                    setEditName(detail.display_name);
-                    setEditDescription(detail.description);
-                    setEditError(null);
-                    setEditOpen(true);
-                  }
-                : undefined
-            }
-            onCopy={onCopy ? () => setCopyOpen(true) : undefined}
-            onSaveAsTemplate={onSaveAsTemplate ? () => setSaveAsTemplateOpen(true) : undefined}
-            status={status}
-            onChangeStatus={onChangeStatus ? changeStatus : undefined}
-          />
-        </div>
+      </header>
+
+      <div role="status">
+        {versionFeedback && (
+          <Alert tone="success" role={undefined} className="mb-4 min-w-0 [overflow-wrap:anywhere]">
+            {versionFeedback}
+          </Alert>
+        )}
       </div>
 
       {startError ? (

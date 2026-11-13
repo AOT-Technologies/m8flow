@@ -169,12 +169,12 @@ export function CreateProcessModelDialog({
             </div>
           ) : (
             <Select value={processGroupId} onValueChange={setProcessGroupId}>
-              <SelectTrigger id="cpm-group">
+              <SelectTrigger id="cpm-group" className="[&>span]:min-w-0 [&>span]:line-clamp-none [&>span]:truncate">
                 <SelectValue placeholder={t('processes.create.selectGroup')} />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="w-[var(--radix-select-trigger-width)]">
                 {groups.map((g) => (
-                  <SelectItem key={g.id} value={g.id}>
+                  <SelectItem key={g.id} value={g.id} className="[overflow-wrap:anywhere]">
                     {g.display_name || g.id}
                   </SelectItem>
                 ))}
@@ -226,7 +226,7 @@ export function CreateProcessModelDialog({
         </div>
 
         {error ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="text-sm text-destructive [overflow-wrap:anywhere]" role="alert">
             {error}
           </p>
         ) : null}

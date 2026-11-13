@@ -84,6 +84,44 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
     assert seeded == "m8flow"
 
 
+def test_process_model_version_upgrade_preserves_catalog_status_and_baseline(tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_backend.models.process_model_version import ProcessModelState
+
+    db_path = tmp_path / "catalog.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    root = tmp_path / "catalog"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(root))
+    command.upgrade(cfg, "d1e2f3a4b5c6")
+    for name, metadata in (
+        ("published", '{"status":"published"}'), ("paused", '{"status":"paused"}'),
+        ("draft", '{"status":"draft"}'), ("legacy", '{}'),
+    ):
+        folder = root / "m8flow" / "test" / name
+        folder.mkdir(parents=True)
+        (folder / f"{name}.bpmn").write_bytes(default_bpmn_xml(process_id=name).encode())
+        (folder / "form-schema.json").write_bytes(b'{"title":"Baseline"}')
+        (folder / "process_model.json").write_text(metadata, encoding="utf-8")
+
+    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with Session(engine) as session:
+        for name in ("published", "paused", "draft", "legacy"):
+            model = session.get(ProcessModelState, ("m8flow", f"test/{name}"))
+            assert model.status == ("published" if name == "legacy" else name)
+            entries = versions.model_releases(session, model)
+            if name == "draft":
+                assert entries == []
+                assert versions.draft_number(session, model) == 1
+            else:
+                entry, = entries
+                assert entry.version == 1
+                assert versions.read_file(entry.contents, "form-schema.json") == b'{"title":"Baseline"}'
+
+
 def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):
     db_path = tmp_path / "wrong-core-head.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)

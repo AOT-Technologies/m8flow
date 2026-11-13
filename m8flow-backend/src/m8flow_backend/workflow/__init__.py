@@ -6,8 +6,10 @@ import logging
 import math
 import time
 from collections import OrderedDict
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from threading import Lock
+from types import SimpleNamespace
 from typing import Any
 
 from lxml import etree
@@ -22,6 +24,7 @@ from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadata
 from m8flow_core.models.work_item import WorkItemModel
 from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
+from m8flow_backend.models.process_model_version import ProcessInstanceCalledReleases, ProcessModelRelease
 from m8flow_backend.auth import is_super_admin_request
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
@@ -295,9 +298,15 @@ def import_definition(
     source_dmn_xml: str | None = None,
     bpmn_name: str | None = None,
     properties_json: dict[str, Any] | None = None,
+    process_xml_digest: str | None = None,
+    version_reference: str | None = None,
+    membership_already_scoped: bool = False,
 ) -> Any:
     try:
-        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+        with (
+            nullcontext() if membership_already_scoped
+            else _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id)
+        ):
             return api.execute_command(
                 session,
                 api.ImportBpmnProcessDefinitionCommand(
@@ -308,10 +317,104 @@ def import_definition(
                     source_dmn_xml=source_dmn_xml,
                     bpmn_name=bpmn_name,
                     properties_json=properties_json,
+                    process_xml_digest=process_xml_digest,
+                    bpmn_version_control_type="m8flow_release" if version_reference else None,
+                    bpmn_version_control_identifier=version_reference,
                 ),
             )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+
+
+def _model_definitions(session: Session, *, tenant_id: str, model_id: str):
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    query = select(BpmnProcessDefinitionModel).where(BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id)
+    return [row for row in session.scalars(query) if row.process_model_identifier == model_id]
+
+
+def _timer_start_jobs(session: Session, *, tenant_id: str, definition_ids: set[int]):
+    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+
+    return list(session.scalars(select(SchedulerJobModel).where(
+        SchedulerJobModel.m8f_tenant_id == tenant_id,
+        SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+        SchedulerJobModel.bpmn_process_definition_id.in_(definition_ids),
+    ))) if definition_ids else []
+
+
+def deploy_release(
+    session: Session, *, entry, user_id: int, resume: bool = False, bootstrap: bool = False,
+) -> None:
+    from m8flow_backend.catalog import versions, versioned
+
+    tenant_id, model_id = entry.m8f_tenant_id, entry.model_id
+    reference = versions.definition_reference(entry)
+    existing = _model_definitions(session, tenant_id=tenant_id, model_id=model_id)
+    jobs = _timer_start_jobs(session, tenant_id=tenant_id, definition_ids={row.id for row in existing})
+    current_ids = set()
+    for name in versions.bpmn_names(entry.contents):
+        xml = versioned.bpmn_xml(entry.contents, name)
+        versioned.validate_bpmn(xml)
+        dmn = versioned.dmn_xml(entry.contents, xml)
+        digest = versions.definition_digest(entry, name)
+        previous = next((row for row in existing if row.process_xml_digest == digest), None)
+        if previous is not None and not resume:
+            current_ids.add(previous.id)
+            continue
+        legacy = next((
+            row for row in existing
+            if row.bpmn_version_control_type != "m8flow_release"
+            and _same_definition_sources(row, xml, dmn)
+        ), None) if bootstrap else None
+        scope = _StartImportPolicy() if bootstrap else None
+        try:
+            with api.authorization_policy_scope(scope) if scope else nullcontext():
+                definition = import_definition(
+                    session, tenant_id=tenant_id, user_id=user_id, bpmn_identifier=model_id,
+                    source_bpmn_xml=xml, source_dmn_xml=dmn, bpmn_name=name,
+                    process_xml_digest=digest, version_reference=reference,
+                    membership_already_scoped=True,
+                )
+        except Exception as exc:
+            if type(exc).__module__.split(".", 1)[0] == "SpiffWorkflow":
+                raise ApiError("invalid_process_model", f"This process model cannot be published: {exc}", 422) from exc
+            raise
+        current_ids.add(definition.id)
+        if legacy is not None:
+            old_jobs = {
+                job.job_key.partition("|q:")[2]: job for job in jobs
+                if job.bpmn_process_definition_id == legacy.id
+            }
+            for job in _timer_start_jobs(session, tenant_id=tenant_id, definition_ids={definition.id}):
+                old = old_jobs.get(job.job_key.partition("|q:")[2])
+                if old is None:
+                    session.delete(job)
+                else:
+                    job.run_at = old.run_at
+                    job.payload_json = old.payload_json
+                    job.created_at = old.created_at
+    for job in jobs:
+        if job.bpmn_process_definition_id not in current_ids:
+            session.delete(job)
+    session.flush()
+
+
+def _same_definition_sources(definition, bpmn: str, dmn: str | None) -> bool:
+    def normalize(source: str | None) -> str | None:
+        return source.replace("\r\n", "\n") if source is not None else None
+
+    return (
+        normalize(definition.source_bpmn_xml) == normalize(bpmn)
+        and normalize(definition.source_dmn_xml) == normalize(dmn)
+    )
+
+
+def disable_model_timers(session: Session, *, tenant_id: str, model_id: str) -> None:
+    definitions = _model_definitions(session, tenant_id=tenant_id, model_id=model_id)
+    for job in _timer_start_jobs(session, tenant_id=tenant_id, definition_ids={row.id for row in definitions}):
+        session.delete(job)
+    session.flush()
 
 
 def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
@@ -492,7 +595,10 @@ def _call_activity_definition_index(session: Session, *, tenant_id: str) -> _Cal
     return index
 
 
-def _call_activity_resolver(session: Session, *, definitions: bool = False):
+def _call_activity_resolver(
+    session: Session, *, definitions: bool = False,
+    resolved_releases: dict[str, dict[str, str]] | None = None,
+):
     """Resolve called BPMN processes from definitions owned by the same tenant.
 
     ``calledElement`` is a BPMN process id, while M8Flow stores definitions by
@@ -507,10 +613,12 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
     from m8flow_core.errors import CallActivityResolutionError
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.services.call_activities import CallActivityDefinition
+    from m8flow_backend import catalog
+    from m8flow_backend.catalog import versioned, versions
+
+    published_by_tenant: dict[str, tuple[set[str], dict[str, list[Any]]]] = {}
 
     def resolve_definition(context):
-        from m8flow_backend import catalog
-
         if not context.tenant_id or not context.called_element:
             raise CallActivityResolutionError("Call activity is missing tenant or calledElement context")
 
@@ -519,6 +627,33 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
         )
         status_by_model_identifier = {}
         matches_by_model_identifier = {}
+        if context.tenant_id not in published_by_tenant:
+            managed = versions.states(session, context.tenant_id)
+            published_index: dict[str, list[Any]] = {}
+            for model in managed:
+                if model.deleted or model.status != "published":
+                    continue
+                entry = versions.release(session, model, model.latest_version)
+                for name in versions.bpmn_names(entry.contents):
+                    try:
+                        xml = versioned.bpmn_xml(entry.contents, name)
+                        root = versioned.validate_bpmn(xml)
+                    except ApiError:
+                        # A legacy model may already contain an invalid BPMN file.
+                        continue
+                    for element in root:
+                        if catalog._xml_local_name(element.tag) == "process" and element.get("id"):
+                            published_index.setdefault(element.get("id"), []).append((entry, name, xml))
+            published_by_tenant[context.tenant_id] = ({model.model_id for model in managed}, published_index)
+        managed_models, published_index = published_by_tenant[context.tenant_id]
+        for entry, name, xml in published_index.get(context.called_element, ()):
+            if entry.model_id in matches_by_model_identifier:
+                raise CallActivityResolutionError(f"More than one published BPMN file defines {context.called_element!r}")
+            matches_by_model_identifier[entry.model_id] = SimpleNamespace(
+                process_model_identifier=entry.model_id, source_bpmn_xml=xml,
+                source_dmn_xml=versioned.dmn_xml(entry.contents, xml),
+                release_reference=versions.definition_reference(entry), file_name=name,
+            )
 
         def model_status(model_identifier: str) -> str:
             if model_identifier not in status_by_model_identifier:
@@ -530,6 +665,8 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
 
         malformed_published_definitions = []
         for model_identifier, bpmn_identifier, parse_error in malformed_definitions:
+            if model_identifier in managed_models:
+                continue
             try:
                 status = model_status(model_identifier)
             except ApiError:
@@ -556,6 +693,8 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
             malformed_published_definitions.append(bpmn_identifier)
 
         for definition_id, model_identifier, _bpmn_identifier in process_id_index.get(context.called_element, ()):
+            if model_identifier in managed_models:
+                continue
             try:
                 status = model_status(model_identifier)
             except ApiError as exc:
@@ -587,6 +726,8 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
             )
 
         definition_id = next(iter(matches_by_model_identifier.values()))
+        if not isinstance(definition_id, int):
+            return definition_id
         definition = session.get(BpmnProcessDefinitionModel, definition_id)
         if definition is None:
             raise CallActivityResolutionError(
@@ -597,6 +738,12 @@ def _call_activity_resolver(session: Session, *, definitions: bool = False):
 
     def resolve(context):
         definition = resolve_definition(context)
+        if resolved_releases is not None and getattr(definition, "release_reference", None):
+            resolved_releases[context.called_element] = {
+                "model_id": definition.process_model_identifier,
+                "reference": definition.release_reference,
+                "file_name": definition.file_name,
+            }
         return CallActivityDefinition(
             process_id=context.called_element,
             bpmn_xml=definition.source_bpmn_xml,
@@ -615,7 +762,7 @@ def start(
     summary: str | None = None,
     submission_metadata: dict[str, Any] | None = None,
 ) -> ProcessInstanceModel:
-    """Start an instance of the model's BPMN as it is on disk.
+    """Start an instance from the current published release.
 
     Transaction contract: Start is not atomic with the caller's transaction.
     Core creates the instance in its own session and commits it there. When the
@@ -625,13 +772,29 @@ def start(
     before calling Start if they must roll back with a failed Start. The route
     callers stage nothing: auth commits its own user/group sync.
     """
-    _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
-    definition_id = _definition_id_for_start(
-        session,
-        tenant_id=tenant_id,
-        user_id=user_id,
-        process_model_identifier=process_model_identifier,
-    )
+    from m8flow_backend.catalog import versioned, versions
+
+    if session.get_bind().dialect.name == "postgresql":
+        versions.lock_tenant(session, tenant_id)
+    model = versions.state(session, tenant_id, process_model_identifier)
+    process_id = None
+    release_number = 1
+    if model is None:
+        _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
+        definition_id = _definition_id_for_start(
+            session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=process_model_identifier,
+        )
+    else:
+        if model.deleted:
+            raise ApiError("not_found", "Process model not found", 404)
+        if model.status != "published":
+            raise ApiError("process_model_not_startable", f"Process model is {model.status} and cannot be started. Publish it first.", 409)
+        entry = versions.release(session, model, model.latest_version)
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            definition_id = _published_definition_id(session, entry, user_id=user_id)
+        process_id = versioned.selected_process_id(entry.contents, entry.model_id)
+        release_number = entry.version
+    called_releases: dict[str, dict[str, str]] = {}
     try:
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             instance = api.execute_command(
@@ -640,6 +803,8 @@ def start(
                     tenant_id=tenant_id,
                     bpmn_process_definition_id=definition_id,
                     process_initiator_id=user_id,
+                    bpmn_process_id=process_id,
+                    process_version=release_number,
                     summary=summary,
                     submission_metadata={
                         str(key): _stringify_metadata_value(value)
@@ -647,7 +812,9 @@ def start(
                     }
                     or None,
                     started_at=datetime.now(timezone.utc),
-                    call_activity_resolver=_call_activity_resolver(session),
+                    call_activity_resolver=_call_activity_resolver(
+                        session, resolved_releases=called_releases,
+                    ),
                 ),
             )
     except BpmnCoreError as exc:
@@ -666,13 +833,49 @@ def start(
                 422,
             ) from exc
         raise
-    _apply_model_display_name(
-        session, instance, tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
+    if called_releases:
+        session.add(ProcessInstanceCalledReleases(
+            m8f_tenant_id=tenant_id, process_instance_id=instance.id,
+            releases=called_releases,
+        ))
+    if model is None:
+        _apply_model_display_name(
+            session, instance, tenant_id=tenant_id, process_model_identifier=process_model_identifier
+        )
+    else:
+        instance.process_model_display_name = model.display_name
+        session.flush()
     record_process_instance_created(tenant_id)
     record_process_instance_active_delta(tenant_id, 1)
     _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
     return instance
+
+
+def _published_definition_id(session: Session, entry, *, user_id: int) -> int:
+    from m8flow_backend.catalog import versions
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+
+    name = versions.primary_bpmn(entry.contents, entry.model_id)
+    digest = versions.definition_digest(entry, name)
+    query = select(BpmnProcessDefinitionModel.id).where(
+        BpmnProcessDefinitionModel.m8f_tenant_id == entry.m8f_tenant_id,
+        BpmnProcessDefinitionModel.process_xml_digest == digest,
+    )
+    definition_id = session.scalar(query)
+    if definition_id is None:
+        versions.lock_tenant(session, entry.m8f_tenant_id)
+        model = versions.state(session, entry.m8f_tenant_id, entry.model_id)
+        session.refresh(model)
+        if model.deleted or model.status != "published" or model.latest_version != entry.version:
+            raise ApiError("stale_working_revision", "The published version changed. Try starting again.", 409)
+        try:
+            deploy_release(session, entry=entry, user_id=user_id, bootstrap=True)
+            definition_id = session.scalar(query)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+    return definition_id
 
 
 def claim(
@@ -1313,6 +1516,7 @@ def delete_instance(
         TaskInstructionsForEndUserModel,
         ProcessInstanceFileDataModel,
         ExternalFormRequestModel,
+        ProcessInstanceCalledReleases,
     ):
         session.execute(
             sql_delete(model).where(
@@ -1328,6 +1532,19 @@ def delete_instance(
         process_instance_id,
     )
     return process_instance_id
+
+
+def called_release_file(
+    session: Session, *, tenant_id: str, instance_id: int, process_id: str,
+) -> tuple[ProcessModelRelease, str] | None:
+    from m8flow_backend.catalog import versions
+
+    recorded = session.get(ProcessInstanceCalledReleases, (tenant_id, instance_id))
+    selected = recorded.releases.get(process_id) if recorded is not None else None
+    if selected is None:
+        return None
+    entry = versions.release_by_reference(session, tenant_id, selected["model_id"], selected["reference"])
+    return (entry, selected["file_name"]) if entry is not None else None
 
 
 def list_instances(
@@ -2167,24 +2384,32 @@ def get_instance_detail_for_designer(
     if bpmn_process_identifier is not None:
         if bpmn_process_identifier not in called_process_identifiers:
             raise ApiError("not_found", "Called process not found for this process instance", 404)
-        # ponytail: the child's current published definition, which can be newer
-        # than the one this instance ran; record the resolved definition per call
-        # if that drift matters.
-        try:
-            child_definition = _call_activity_resolver(session, definitions=True)(
-                CallActivityContext(
-                    tenant_id=scope_tenant_id,
-                    called_element=bpmn_process_identifier,
-                    parent_process_instance_id=instance.id,
-                    parent_process_definition_id=instance.bpmn_process_definition_id,
+        pinned = called_release_file(
+            session, tenant_id=scope_tenant_id, instance_id=instance.id, process_id=bpmn_process_identifier,
+        )
+        if pinned is not None:
+            from m8flow_backend.catalog import versioned
+
+            entry, file_name = pinned
+            bpmn_xml = versioned.bpmn_xml(entry.contents, file_name)
+            child_model_id = entry.model_id
+        else:
+            try:
+                child_definition = _call_activity_resolver(session, definitions=True)(
+                    CallActivityContext(
+                        tenant_id=scope_tenant_id,
+                        called_element=bpmn_process_identifier,
+                        parent_process_instance_id=instance.id,
+                        parent_process_definition_id=instance.bpmn_process_definition_id,
+                    )
                 )
-            )
-        except CallActivityResolutionError as exc:
-            raise ApiError("not_found", "The called process diagram is not available", 404) from exc
-        bpmn_xml = child_definition.source_bpmn_xml
+            except CallActivityResolutionError as exc:
+                raise ApiError("not_found", "The called process diagram is not available", 404) from exc
+            bpmn_xml = child_definition.source_bpmn_xml
+            child_model_id = child_definition.process_model_identifier
         called_process = {
             "bpmn_process_identifier": bpmn_process_identifier,
-            "process_model_identifier": child_definition.process_model_identifier,
+            "process_model_identifier": child_model_id,
         }
         prefix = f"{bpmn_process_identifier}::"
         tasks = [
@@ -2921,6 +3146,12 @@ def run_due(
     for that recovery state -- core already commits it internally for the
     job types processed here.
     """
+    from m8flow_backend.catalog import versions
+
+    if tenant_id is not None:
+        if session.get_bind().dialect.name == "postgresql":
+            versions.lock_tenant(session, tenant_id)
+        _retire_stale_timer_starts(session, tenant_id)
     try:
         return api.run_due_scheduler_jobs(
             session,
@@ -2931,6 +3162,56 @@ def run_due(
         )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+
+
+def _retire_stale_timer_starts(session: Session, tenant_id: str) -> None:
+    from m8flow_backend import catalog
+    from m8flow_backend.catalog import versions
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+
+    states = {model.model_id: model for model in versions.states(session, tenant_id)}
+    rows = session.execute(
+        select(SchedulerJobModel, BpmnProcessDefinitionModel)
+        .join(BpmnProcessDefinitionModel, BpmnProcessDefinitionModel.id == SchedulerJobModel.bpmn_process_definition_id)
+        .where(
+            SchedulerJobModel.m8f_tenant_id == tenant_id,
+            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+        )
+    )
+    for job, definition in rows:
+        model_id = definition.process_model_identifier
+        model = states.get(model_id)
+        if model is None:
+            active = catalog.process_model_status(tenant_id=tenant_id, process_model_identifier=model_id) == "published"
+        else:
+            active = not model.deleted and model.status == "published" and (
+                (definition.bpmn_version_control_type == "m8flow_release"
+                 and definition.bpmn_version_control_identifier == f"{model.generation}:{model.latest_version}")
+                or _matches_imported_baseline(session, model, definition)
+            )
+        if not active:
+            session.delete(job)
+    session.flush()
+
+
+def _matches_imported_baseline(session: Session, model, definition) -> bool:
+    from m8flow_backend.catalog import versioned, versions
+
+    if model.latest_version != 1 or definition.bpmn_version_control_type == "m8flow_release":
+        return False
+    entry = versions.release(session, model, 1)
+    if entry is None or entry.published_at is not None:
+        return False
+    for name in versions.bpmn_names(entry.contents):
+        try:
+            xml = versioned.bpmn_xml(entry.contents, name)
+            if _same_definition_sources(definition, xml, versioned.dmn_xml(entry.contents, xml)):
+                return True
+        except ApiError:
+            continue
+    return False
 
 
 class _StartImportPolicy:

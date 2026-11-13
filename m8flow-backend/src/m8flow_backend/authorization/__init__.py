@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import unquote
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -263,6 +264,20 @@ def _normalize_authorization_path(path: str) -> str:
     return normalized
 
 
+def _process_model_version_permission(action: str, path: str) -> tuple[str, str]:
+    prefix = "/m8flow/process-models/"
+    if not path.startswith(prefix):
+        return action, path
+    model_id, _, operation = path[len(prefix):].rpartition("/")
+    if action == "read" and operation == "versions":
+        return action, f"/process-model-files/{unquote(model_id).replace(':', '/')}"
+    if (action, operation) in {("create", "publish"), ("update", "working-version")}:
+        return "update", "/process-models"
+    if action == "create" and operation == "start":
+        return action, "/process-instances"
+    return action, path
+
+
 def allow_uri(
     user: UserModel,
     method: str,
@@ -298,6 +313,7 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    action, path = _process_model_version_permission(action, path)
     lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
     if lifecycle_route:
         target = lifecycle_route.group(1)

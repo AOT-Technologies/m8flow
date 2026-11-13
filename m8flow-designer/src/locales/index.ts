@@ -53,4 +53,14 @@ export type Translation = typeof en & {
 /** English strings for the lazy page areas; loaded before any lazy page renders. */
 export type PageTranslation = Omit<Translation, keyof typeof en>;
 
+/** New version actions use English until a locale supplies their translations. */
+export type LocaleTranslation = Omit<Translation, 'common'> & {
+  common: Omit<Translation['common'], 'modelVersions' | 'modelStatus'> & {
+    modelVersions?: Translation['common']['modelVersions'];
+    modelStatus: Omit<Translation['common']['modelStatus'], 'publishedWithChanges'> & {
+      publishedWithChanges?: string;
+    };
+  };
+};
+
 export const resources = { 'en-US': { translation: en } };

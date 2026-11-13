@@ -198,7 +198,7 @@ def register_process_model_tools(mcp: FastMCP) -> None:
 
     @mcp.tool(
         name="publish_process_model",
-        description="Publish a process model so process instances can be started from it",
+        description="Publish the saved process model draft or resume a paused process model",
         tags={"process-models"},
         annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False),
     )
@@ -216,7 +216,12 @@ def register_process_model_tools(mcp: FastMCP) -> None:
             return {"error": "No authentication token available"}
 
         try:
-            return await client.put(model_path(process_model_id), token, data={"status": "published"})
+            path = model_path(process_model_id)
+            model = await client.get(path, token)
+            revision = model.get("working_revision")
+            if revision and model.get("status") != "paused":
+                return await client.post(f"{path}/publish", token, headers={"If-Match": f'"{revision}"'})
+            return await client.put(path, token, data={"status": "published"})
         except Exception as e:
             logger.error(f"Failed to publish process model {process_model_id}: {e}")
             return {"error": str(e)}

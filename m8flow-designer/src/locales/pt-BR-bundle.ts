@@ -1,4 +1,4 @@
-import type { Translation } from '.';
+import type { LocaleTranslation } from '.';
 import acceptInvitation from './pt-BR/acceptInvitation.json';
 import apiKeys from './pt-BR/apiKeys.json';
 import celery from './pt-BR/celery.json';
@@ -22,7 +22,7 @@ import tenantSelect from './pt-BR/tenantSelect.json';
 import tenants from './pt-BR/tenants.json';
 
 // Typed as the English tree, so a key missing from Brazilian Portuguese fails `tsc`.
-const ptBR: Translation = {
+const ptBR: LocaleTranslation = {
   acceptInvitation,
   apiKeys,
   celery,
