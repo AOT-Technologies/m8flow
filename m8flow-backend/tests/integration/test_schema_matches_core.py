@@ -22,6 +22,9 @@ KNOWN_DIFFERENCES = {
     # Core declares UniqueConstraint(work_item_id, user_id); the host schema
     # enforces the same pair as the primary key (pk_work_item_user).
     ("add_constraint", "work_item_user", ("work_item_id", "user_id")),
+    # Host migration d1e2f3a4b5c6 records each task completion event once
+    # (partial unique index uq_process_instance_event_task_completed_once).
+    ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
 }
 
 

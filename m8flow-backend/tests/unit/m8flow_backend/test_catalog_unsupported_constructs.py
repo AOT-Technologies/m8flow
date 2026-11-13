@@ -40,32 +40,23 @@ def test_regular_subprocess_is_not_rejected(value):
 
 
 @pytest.mark.parametrize(
-    ("value", "should_reject"),
-    [
-        ("true", False),
-        ("1", False),
-        ("false", True),
-        ("0", True),
-        ("", True),
-        (None, True),
-    ],
+    "value",
+    ["true", "1", "false", "0", "", None],
     ids=["true", "xml-boolean-1", "false", "xml-boolean-0", "empty", "default-parallel"],
 )
-def test_multi_instance_sequential_boolean_uses_xml_boolean_values(value, should_reject):
+def test_multi_instance_completion_condition_is_accepted_sequential_or_parallel(value):
+    """Core evaluates the condition after each iteration of either loop kind (M8F-640)."""
     attribute = "" if value is None else f' isSequential="{value}"'
     xml = (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
         "<bpmn:process id='process'><bpmn:task id='task'>"
         f"<bpmn:multiInstanceLoopCharacteristics{attribute}>"
-        "<bpmn:completionCondition>1</bpmn:completionCondition>"
+        "<bpmn:loopCardinality>2</bpmn:loopCardinality>"
+        "<bpmn:completionCondition>nrOfCompletedInstances &gt;= 1</bpmn:completionCondition>"
         "</bpmn:multiInstanceLoopCharacteristics></bpmn:task></bpmn:process></bpmn:definitions>"
     )
 
-    if should_reject:
-        with pytest.raises(ApiError, match="Completion conditions on parallel multi-instance"):
-            _reject_unsupported_constructs(xml)
-    else:
-        _reject_unsupported_constructs(xml)
+    _reject_unsupported_constructs(xml)
 
 
 @pytest.mark.parametrize(

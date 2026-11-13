@@ -1209,24 +1209,21 @@ def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, 
     assert saved_file.read_text(encoding="utf-8") == xml
 
 
-def test_catalog_rejects_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
+def test_catalog_accepts_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
     xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
     xml = xml.replace(
         "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>",
         "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>"
-        "<bpmn:completionCondition>it2 == 1</bpmn:completionCondition>",
+        "<bpmn:completionCondition>nrOfCompletedInstances &gt;= 2</bpmn:completionCondition>",
         1,
     )
-    from m8flow_backend.errors import ApiError
 
-    with pytest.raises(ApiError) as error:
-        catalog.save(db_session, path="bad/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    catalog.save(db_session, path="p/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
 
-    assert error.value.status_code == 400
-    assert error.value.error_code == "unsupported_bpmn"
-    assert "parallel multi-instance" in str(error.value)
+    saved = tmp_path / tenant.id / "p" / "parallel-condition" / "parallel-condition.bpmn"
+    assert "nrOfCompletedInstances &gt;= 2" in saved.read_text(encoding="utf-8")
 
 
 def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_path, monkeypatch):
@@ -2037,3 +2034,122 @@ def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp
     (failed_event,) = [e for e in events if e["event_type"] == "task_failed"]
     assert failed_event["task_identifier"] == "fail"
     assert "deliberate" in failed_event["error_message"]
+
+
+_MI_REVIEW_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+  id="Defs_mi_review" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_mi_review" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="prep"><bpmn:script>items = ['a', 'b', 'c']</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="review">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>Review {{ it }}</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
+      <bpmn:multiInstanceLoopCharacteristics>
+        <bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>
+        <bpmn:loopDataOutputRef>out</bpmn:loopDataOutputRef>
+        <bpmn:inputDataItem id="it" name="it" />
+        <bpmn:outputDataItem id="res" name="res" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="prep" />
+    <bpmn:sequenceFlow id="f2" sourceRef="prep" targetRef="review" />
+    <bpmn:sequenceFlow id="f3" sourceRef="review" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_multi_instance_review_forms_show_their_own_item(db_session, tmp_path, monkeypatch):
+    """M8F-640: an iteration's input item and counters exist only on its task,
+    so its form values and instructions must come from the task's own scope."""
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import human_task
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/m8f640", xml=_MI_REVIEW_BPMN, tenant_id=tenant.id, user_id=user.id)
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/m8f640")
+    reviews = sorted(
+        workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id), key=lambda task: task.id
+    )
+
+    def values(task):
+        work_item = db_session.get(WorkItemModel, task.id)
+        return human_task.form_schema_for_task(db_session, tenant_id=tenant.id, work_item=work_item)["values"]
+
+    assert [(values(task)["it"], values(task)["loopCounter"]) for task in reviews] == [("a", 0), ("b", 1), ("c", 2)]
+    second = db_session.get(WorkItemModel, reviews[1].id)
+    assert human_task.instructions_for_task(db_session, tenant_id=tenant.id, work_item=second) == "Review b"
+
+    # The designer posts every prefilled value back; that must not leak into
+    # the other reviews.
+    first = values(reviews[0])
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=reviews[0].id, user_id=user.id)
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=reviews[0].id,
+        user_id=user.id,
+        task_payload={**first, "res": "A"},
+    )
+
+    assert [values(task)["it"] for task in reviews[1:]] == ["b", "c"]
+    assert values(reviews[1])["nrOfCompletedInstances"] == 1
+
+
+_REWORK_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Defs_rework" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_rework" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="prep"><bpmn:script>rounds = 0</bpmn:script></bpmn:scriptTask>
+    <bpmn:scriptTask id="bump"><bpmn:script>rounds = rounds + 1</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="ask" />
+    <bpmn:exclusiveGateway id="again" default="f_done" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="prep" />
+    <bpmn:sequenceFlow id="f2" sourceRef="prep" targetRef="bump" />
+    <bpmn:sequenceFlow id="f3" sourceRef="bump" targetRef="ask" />
+    <bpmn:sequenceFlow id="f4" sourceRef="ask" targetRef="again" />
+    <bpmn:sequenceFlow id="f_redo" sourceRef="again" targetRef="bump">
+      <bpmn:conditionExpression>outcome == 'redo'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_done" sourceRef="again" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_form_values_follow_a_script_change_after_an_earlier_submission(db_session, tmp_path, monkeypatch):
+    """M8F-640: the first form posts ``rounds`` back as process metadata; when a
+    script raises it later, the next form must show the new value."""
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import human_task
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/rework", xml=_REWORK_BPMN, tenant_id=tenant.id, user_id=user.id)
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/rework")
+
+    def ask_values():
+        (task,) = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
+        work_item = db_session.get(WorkItemModel, task.id)
+        return task, human_task.form_schema_for_task(db_session, tenant_id=tenant.id, work_item=work_item)["values"]
+
+    task, values = ask_values()
+    assert values["rounds"] == 1
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=task.id,
+        user_id=user.id,
+        task_payload={**values, "outcome": "redo"},
+    )
+
+    _task, values = ask_values()
+    assert values["rounds"] == 2

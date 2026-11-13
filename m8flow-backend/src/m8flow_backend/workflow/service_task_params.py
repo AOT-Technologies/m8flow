@@ -41,7 +41,7 @@ def install_service_task_literal_fallback() -> None:
     if _INSTALLED.is_set():
         return
 
-    from m8flow_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
+    from m8flow_core.services.workflow_engine import _RuntimeServiceTaskScriptEngine
 
     original = _RuntimeServiceTaskScriptEngine.evaluate
 

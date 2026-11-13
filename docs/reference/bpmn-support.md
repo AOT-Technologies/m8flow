@@ -43,18 +43,42 @@ completes.
 
 ### Multi-instance activities
 
-Sequential and parallel multi-instance tasks are supported with a collection
-variable in `loopDataInputRef` or a `loopCardinality`. A collection reference
-names a process variable; inline collection expressions are not supported.
-Cardinality expressions are evaluated when the process starts. A cardinality
-of zero completes the activity with an empty output collection; negative
-literal cardinalities are rejected.
+A multi-instance activity runs once per item of the collection variable named in
+`loopDataInputRef`, or `loopCardinality` times. It runs its iterations one after
+another (`isSequential="true"`) or side by side. A collection reference names a
+process variable; inline collection expressions are not supported. Cardinality
+expressions are evaluated when the activity starts. A cardinality of zero, or an
+empty collection, completes the activity at once with an empty output
+collection; negative literal cardinalities are rejected.
 
-For mapped outputs, define both `loopDataOutputRef` and `outputDataItem`.
-Sequential completion conditions are supported. Completion conditions on
-parallel multi-instance activities are rejected until the runtime can apply
-them reliably. Parallel output order is not guaranteed, so consumers should
-compare the values without relying on their order.
+Each iteration has its own data:
+
+| Name | Value |
+|---|---|
+| `inputDataItem` | The iteration's item. In a cardinality loop, its zero-based index. |
+| `outputDataItem` | The iteration's result. |
+| `loopCounter` | The iteration's zero-based position, as in Camunda 7. |
+| `nrOfInstances` | How many iterations the activity runs. |
+| `nrOfActiveInstances` | How many iterations haven't finished. In a sequential loop, 1 until the last one finishes. |
+| `nrOfCompletedInstances` | How many iterations have finished. |
+
+These names stay in their iteration: they never become process variables, and
+one iteration can't overwrite another's. A user task's form opens with its own
+iteration's values, and what the user submits stays in that iteration.
+
+To collect results, define both `loopDataOutputRef` and `outputDataItem`. The
+output collection lists each finished iteration's `outputDataItem` in input
+order, whatever order the iterations finish in. When the activity runs again,
+for example in a rework loop, it starts a new output collection. Without an
+output mapping, the other variables an iteration sets flow back to the process,
+and the last iteration to finish wins.
+
+A `completionCondition` is evaluated after each iteration finishes, with that
+iteration's data, so it can use the output item and the counters, for example
+`nrOfCompletedInstances >= 2`. When it's true, the activity completes: a
+sequential loop starts no more iterations, and a parallel loop cancels the ones
+still running, including their user tasks. Iterations that didn't finish aren't
+in the output collection.
 
 ## Error and escalation events
 

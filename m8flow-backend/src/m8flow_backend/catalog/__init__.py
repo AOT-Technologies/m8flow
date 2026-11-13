@@ -1231,14 +1231,6 @@ def _validate_multi_instance_features(root) -> None:
             for child in characteristics
             if isinstance(child.tag, str)
         }
-        is_sequential = _xml_boolean_is_true(characteristics.attrib.get("isSequential"))
-        if not is_sequential and "completionCondition" in children:
-            raise ApiError(
-                "unsupported_bpmn",
-                "Completion conditions on parallel multi-instance activities are not supported",
-                400,
-            )
-
         input_reference = children.get("loopDataInputRef")
         input_reference_text = (
             input_reference.text.strip() if input_reference is not None and input_reference.text else ""

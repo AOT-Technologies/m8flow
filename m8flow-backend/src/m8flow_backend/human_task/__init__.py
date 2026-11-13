@@ -478,9 +478,23 @@ def _prior_submission_values(
     # being rendered) it is `{}` and the form would open blank. The accumulated process
     # variables live one level up, on the instance's bpmn_process. Fall back to those so
     # a reviewer sees what earlier steps submitted.
-    return workflow._process_data(
+    process_data = workflow._process_data(
         session, tenant_id=tenant_id, process_instance_id=work_item.process_instance_id
     )
+    # The task's own scope wins (M8F-640): a multi-instance iteration's input item
+    # and loop counters exist only there, and process variables can still hold a
+    # value an earlier form posted back after a later step changed it. Process
+    # variables fill in whatever the scope lacks.
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    instance = session.get(ProcessInstanceModel, work_item.process_instance_id)
+    if instance is None or instance.m8f_tenant_id != tenant_id:
+        return process_data
+    scope = workflow._task_data_from_workflow_state(instance, work_item.task_guid)
+    return {
+        **process_data,
+        **{key: value for key, value in scope.items() if key not in workflow._ENGINE_DATA_KEYS},
+    }
 
 
 # ---------------------------------------------------------------------------

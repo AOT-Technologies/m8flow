@@ -584,3 +584,94 @@ def test_multi_instance_incomplete_output_mapping_is_rejected(missing_mapping, m
     assert error.value.status_code == 400
     assert error.value.error_code == "invalid_process_model"
     assert "both loopDataOutputRef and outputDataItem" in str(error.value)
+
+
+_PARALLEL_REVIEW = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Defs_parallel_review" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_parallel_review" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:scriptTask id="prep"><bpmn:script>items = ['a', 'b', 'c']</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="review">
+      <bpmn:multiInstanceLoopCharacteristics>
+        <bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>
+        <bpmn:loopDataOutputRef>out</bpmn:loopDataOutputRef>
+        <bpmn:inputDataItem id="it" name="it" />
+        <bpmn:outputDataItem id="res" name="res" />
+        <bpmn:completionCondition>nrOfCompletedInstances &gt;= 2</bpmn:completionCondition>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:scriptTask id="chk">
+      <bpmn:script>if out != ['A', 'C']: raise Exception('out was ' + repr(out))</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="f1" sourceRef="StartEvent_1" targetRef="prep" />
+    <bpmn:sequenceFlow id="f2" sourceRef="prep" targetRef="review" />
+    <bpmn:sequenceFlow id="f3" sourceRef="review" targetRef="chk" />
+    <bpmn:sequenceFlow id="f4" sourceRef="chk" targetRef="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_parallel_review_keeps_each_iteration_apart():
+    """M8F-640 on Postgres and RLS: each form shows its own item, the completion
+    condition cancels the last review, outputs keep input order, and no
+    iteration value becomes process metadata."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+    from m8flow_core.models.work_item import WorkItemModel
+    from sqlalchemy import select
+
+    from m8flow_backend import human_task, workflow
+
+    tenant_id = new_tenant_id("multi-instance-review")
+    model_id = "bpmn-gap-tracker-tests/parallel-review"
+    with tenant_session(tenant_id) as session:
+        editor = provision_member(session, tenant_id=tenant_id, role="editor")
+        save_model(
+            session,
+            tenant_id=tenant_id,
+            user_id=editor.id,
+            path=model_id,
+            fixture="simple-multi-instance.bpmn",
+            xml=_PARALLEL_REVIEW,
+        )
+
+    with tenant_session(tenant_id) as session:
+        started = workflow.start(
+            session, tenant_id=tenant_id, user_id=editor.id, process_model_identifier=model_id
+        )
+        review_ids = sorted(
+            item.id for item in workflow.list_pending_tasks(session, tenant_id=tenant_id, user_id=editor.id)
+        )
+    assert len(review_ids) == 3
+
+    # Complete c first, then a, posting back every prefilled value as the designer does.
+    for review_id, item in ((review_ids[2], "c"), (review_ids[0], "a")):
+        with tenant_session(tenant_id) as session:
+            work_item = session.get(WorkItemModel, review_id)
+            values = human_task.form_schema_for_task(session, tenant_id=tenant_id, work_item=work_item)["values"]
+            assert values["it"] == item
+            workflow.claim(session, tenant_id=tenant_id, work_item_id=review_id, user_id=editor.id)
+            workflow.complete(
+                session,
+                tenant_id=tenant_id,
+                work_item_id=review_id,
+                user_id=editor.id,
+                task_payload={**values, "res": item.upper()},
+            )
+
+    with tenant_session(tenant_id) as session:
+        instance = session.get(ProcessInstanceModel, started.id)
+        assert instance is not None
+        # The model's last script raises unless out == ['A', 'C'].
+        assert instance.status == "complete"
+        assert workflow.list_pending_tasks(session, tenant_id=tenant_id, user_id=editor.id) == []
+        keys = set(
+            session.scalars(
+                select(ProcessInstanceMetadataModel.key).where(
+                    ProcessInstanceMetadataModel.process_instance_id == started.id
+                )
+            )
+        )
+        assert not keys & {"it", "res", "loopCounter"}
