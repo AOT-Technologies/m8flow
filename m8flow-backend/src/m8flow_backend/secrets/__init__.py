@@ -17,7 +17,7 @@ from m8flow_core.services.service_tasks import ServiceTaskRegistry
 
 from m8flow_backend.config import connector_proxy_timeout_seconds
 from m8flow_backend.errors import ApiError
-from m8flow_backend.secrets.database import DatabaseSecretProvider
+from m8flow_backend.secrets.database import DatabaseSecretProvider, is_internal_secret_key
 from m8flow_backend.secrets.provider import (
     DEFAULT_SECRET_BACKEND_KIND,
     SecretListPage,
@@ -54,6 +54,22 @@ def require_secret_key(key: str) -> str:
     return cleaned
 
 
+def _require_public_secret_key(key: str, *, hide_internal: bool) -> str:
+    cleaned = require_secret_key(key)
+    if (
+        resolved_secret_backend_kind() == "database"
+        and is_internal_secret_key(cleaned)
+    ):
+        if hide_internal:
+            raise ApiError("not_found", "Secret not found.", 404)
+        raise ApiError(
+            "validation_error",
+            "This key is reserved for internal configuration storage.",
+            400,
+        )
+    return cleaned
+
+
 def add_secret(
     session: Session,
     *,
@@ -65,28 +81,46 @@ def add_secret(
     return get_secret_provider().add(
         session,
         tenant_id=tenant_id,
-        key=require_secret_key(key),
+        key=_require_public_secret_key(key, hide_internal=False),
         value=value,
         user_id=user_id,
     )
 
 
 def get_secret(session: Session, *, tenant_id: str, key: str) -> SecretRecord:
-    return get_secret_provider().get(session, tenant_id=tenant_id, key=require_secret_key(key))
+    return get_secret_provider().get(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+    )
 
 
 def get_secret_value(session: Session, *, tenant_id: str, key: str) -> str | None:
     if not SECRET_KEY_PATTERN.fullmatch(key or ""):
         return None
+    if (
+        resolved_secret_backend_kind() == "database"
+        and is_internal_secret_key(key)
+    ):
+        return None
     return get_secret_provider().get_value(session, tenant_id=tenant_id, key=key)
 
 
 def update_secret(session: Session, *, tenant_id: str, key: str, value: str) -> None:
-    get_secret_provider().update(session, tenant_id=tenant_id, key=require_secret_key(key), value=value)
+    get_secret_provider().update(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+        value=value,
+    )
 
 
 def delete_secret(session: Session, *, tenant_id: str, key: str) -> None:
-    get_secret_provider().delete(session, tenant_id=tenant_id, key=require_secret_key(key))
+    get_secret_provider().delete(
+        session,
+        tenant_id=tenant_id,
+        key=_require_public_secret_key(key, hide_internal=True),
+    )
 
 
 def set_configuration_value(

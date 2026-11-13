@@ -53,8 +53,8 @@ class NamedValueModel(HostBase):
         default=False,
         server_default="false",
     )
-    # Legacy provider key during the staged migration; cleared after an ID-keyed
-    # provider document is written and verified.
+    # Provider pointer: legacy keys remain supported during migration; values
+    # staged under configuration-variable paths use a prefixed UUID marker.
     provider_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by_user_id: Mapped[int | None] = mapped_column(
         Integer,

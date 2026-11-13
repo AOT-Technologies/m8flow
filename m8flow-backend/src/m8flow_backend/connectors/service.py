@@ -191,7 +191,9 @@ def create_profile(
         description=(body.get("description") or None),
         config_json={},
         secret_refs={},
-        provider_key=str(uuid4()),
+        # Profiles without sensitive fields have no provider document and must
+        # remain usable when the secret provider is unavailable.
+        provider_key=str(uuid4()) if sensitive_values else None,
         is_active=True,
         created_by_user_id=user_id,
     )
@@ -374,23 +376,26 @@ def resolve_for_runtime(
     refs = _profile_secret_refs(session, profile)
     sensitive_names = secret_field_names(profile.connector_type)
     document = None
-    if profile.provider_key:
+    document_references = {
+        name for name, key in refs.items() if key == profile.provider_key
+    }
+    sensitive_document_references = document_references & sensitive_names
+    if profile.provider_key and document_references:
         document = get_connector_configuration(
             session,
             tenant_id=tenant_id,
             configuration_id=profile.provider_key,
         )
-        if document is None and any(name in sensitive_names for name in refs):
+        if document is None and sensitive_document_references:
             raise ServiceTaskExecutionError(
                 f"Profile '{profile_name}' is missing its stored credentials. Re-enter them under Connectors."
             )
     for name, key in refs.items():
         if name in sensitive_names:
-            value = (
-                document.get(name)
-                if document is not None and name in document
-                else get_secret_value(session, tenant_id=tenant_id, key=key)
-            )
+            if key == profile.provider_key:
+                value = document.get(name) if document is not None else None
+            else:
+                value = get_secret_value(session, tenant_id=tenant_id, key=key)
         else:
             value = _legacy_profile_value(session, profile, name)
         if value is None:
@@ -528,9 +533,10 @@ def _sync_profile_secret_document(
     old_provider_key: str | None,
     old_refs: dict[str, str],
 ) -> None:
-    provider_key = profile.provider_key or str(uuid4())
+    provider_key = (profile.provider_key or str(uuid4())) if values else None
     profile.provider_key = provider_key
     if values:
+        assert provider_key is not None
         if old_provider_key != provider_key:
             _schedule_connector_secret_cleanup(
                 session,
@@ -701,6 +707,7 @@ def _current_profile_values(
     plain_values: dict[str, Any] = dict(profile.config_json or {})
     sensitive_values: dict[str, str] = {}
     sensitive_names = secret_field_names(profile.connector_type)
+    refs = _profile_secret_refs(session, profile)
     document = (
         get_connector_configuration(
             session,
@@ -708,6 +715,7 @@ def _current_profile_values(
             configuration_id=profile.provider_key,
         )
         if profile.provider_key
+        and any(key == profile.provider_key for key in refs.values())
         else None
     )
     for name, value in (document or {}).items():
@@ -716,7 +724,6 @@ def _current_profile_values(
         else:
             plain_values[name] = value
 
-    refs = _profile_secret_refs(session, profile)
     for name, key in refs.items():
         if name in sensitive_values or name in plain_values or key == profile.provider_key:
             continue
@@ -768,7 +775,8 @@ def _legacy_profile_value(
     profile: ConnectorConfigurationModel,
     name: str,
 ) -> Any | None:
-    if profile.provider_key:
+    key = _profile_secret_refs(session, profile).get(name)
+    if key and key == profile.provider_key:
         document = get_connector_configuration(
             session,
             tenant_id=profile.m8f_tenant_id,
@@ -776,7 +784,6 @@ def _legacy_profile_value(
         )
         if document is not None and name in document:
             return document[name]
-    key = _profile_secret_refs(session, profile).get(name)
     return (
         get_secret_value(session, tenant_id=profile.m8f_tenant_id, key=key)
         if key and key != profile.provider_key

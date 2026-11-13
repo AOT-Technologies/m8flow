@@ -12,27 +12,28 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from m8flow_backend.errors import ApiError
+from m8flow_backend.db import session_scope
 from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.secrets import (
-    add_secret,
     delete_configuration_value,
     delete_secret,
     set_configuration_value,
-    update_secret,
 )
 
 LOGGER = logging.getLogger(__name__)
 _NAME = re.compile(r"^[A-Za-z0-9_-]{1,255}$")
 _CLEANUP_KEY = "m8flow_named_value_secret_cleanup"
+_STAGED_CLEANUP_KEY = "m8flow_named_value_staged_secret_cleanup"
+_CONFIGURATION_PROVIDER_KEY_PREFIX = "configuration-variable:"
 
 
 @event.listens_for(Session, "after_commit")
 def _cleanup_after_commit(session: Session) -> None:
+    # The new provider pointer is durable now; only retire its predecessor.
+    session.info.pop(_STAGED_CLEANUP_KEY, None)
     pending = session.info.pop(_CLEANUP_KEY, [])
     if not pending:
         return
-    from m8flow_backend.db import session_scope
-
     for tenant_id, variable_id, provider_key in pending:
         try:
             with session_scope() as cleanup_session:
@@ -41,14 +42,12 @@ def _cleanup_after_commit(session: Session) -> None:
                         text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
                         {"tenant_id": tenant_id},
                     )
-                if provider_key == variable_id:
-                    delete_configuration_value(
-                        cleanup_session,
-                        tenant_id=tenant_id,
-                        variable_id=variable_id,
-                    )
-                else:
-                    delete_secret(cleanup_session, tenant_id=tenant_id, key=provider_key)
+                _delete_provider_value(
+                    cleanup_session,
+                    tenant_id=tenant_id,
+                    variable_id=variable_id,
+                    provider_key=provider_key,
+                )
         except ApiError as exc:
             if exc.status_code != 404:
                 _log_cleanup_failure(exc)
@@ -65,6 +64,8 @@ def _log_cleanup_failure(exc: Exception) -> None:
 @event.listens_for(Session, "after_rollback")
 def _discard_pending_cleanup(session: Session) -> None:
     session.info.pop(_CLEANUP_KEY, None)
+    pending = session.info.pop(_STAGED_CLEANUP_KEY, [])
+    _run_staged_cleanup(pending)
 
 
 def list_named_values(session: Session, *, tenant_id: str) -> list[dict[str, Any]]:
@@ -163,24 +164,24 @@ def update_named_value(
                 )
             _require_secret_string(body["value"])
             row.value = None
-            row.provider_key = row.id
-            row.is_configured = True
-            set_configuration_value(
+            row.provider_key = _stage_configuration_value(
                 session,
                 tenant_id=tenant_id,
-                variable_id=row.id,
                 value=body["value"],
                 user_id=user_id,
             )
+            row.is_configured = True
         elif has_value:
             _require_secret_string(body["value"])
-            _write_existing_sensitive(
+            old_key = row.provider_key
+            row.provider_key = _stage_configuration_value(
                 session,
-                row,
                 tenant_id=tenant_id,
                 value=body["value"],
                 user_id=user_id,
             )
+            if old_key and old_key != row.provider_key:
+                _schedule_cleanup(session, tenant_id, row.id, old_key)
             row.is_configured = True
         row.is_sensitive = True
     else:
@@ -219,52 +220,81 @@ def delete_named_value(session: Session, *, tenant_id: str, variable_id: str) ->
     session.flush()
 
 
-def _write_existing_sensitive(
+def _stage_configuration_value(
     session: Session,
-    row: NamedValueModel,
     *,
     tenant_id: str,
     value: str,
     user_id: int,
-) -> None:
-    if row.provider_key == row.id:
-        set_configuration_value(
-            session,
-            tenant_id=tenant_id,
-            variable_id=row.id,
-            value=value,
-            user_id=user_id,
-        )
-        return
+) -> str:
+    """Write a replacement at a fresh key and return its DB pointer.
 
-    # Rows backfilled from the legacy table or Vault path keep using their old
-    # key until a separately verified path migration changes the pointer.
-    if not row.provider_key:
-        set_configuration_value(
-            session,
-            tenant_id=tenant_id,
-            variable_id=row.id,
-            value=value,
-            user_id=user_id,
-        )
-        row.provider_key = row.id
-        return
-    try:
-        update_secret(session, tenant_id=tenant_id, key=row.provider_key, value=value)
-    except ApiError as exc:
-        if exc.status_code != 404:
-            raise
-        add_secret(
-            session,
-            tenant_id=tenant_id,
-            key=row.provider_key,
-            value=value,
-            user_id=user_id,
-        )
+    A distinct key prevents a database rollback from exposing the replacement
+    through the still-committed pointer. The ``cv_`` marker distinguishes this
+    configuration-variable path from legacy generic secret keys.
+    """
+    configuration_id = str(uuid.uuid4())
+    set_configuration_value(
+        session,
+        tenant_id=tenant_id,
+        variable_id=configuration_id,
+        value=value,
+        user_id=user_id,
+    )
+    provider_key = f"{_CONFIGURATION_PROVIDER_KEY_PREFIX}{configuration_id}"
+    session.info.setdefault(_STAGED_CLEANUP_KEY, []).append((tenant_id, configuration_id))
+    return provider_key
 
 
 def _schedule_cleanup(session: Session, tenant_id: str, variable_id: str, provider_key: str) -> None:
     session.info.setdefault(_CLEANUP_KEY, []).append((tenant_id, variable_id, provider_key))
+
+
+def _delete_provider_value(
+    session: Session, *, tenant_id: str, variable_id: str, provider_key: str
+) -> None:
+    configuration_id = _configuration_id_for_provider_key(
+        provider_key, named_value_id=variable_id
+    )
+    if configuration_id is not None:
+        delete_configuration_value(
+            session, tenant_id=tenant_id, variable_id=configuration_id
+        )
+    else:
+        delete_secret(session, tenant_id=tenant_id, key=provider_key)
+
+
+def _configuration_id_for_provider_key(
+    provider_key: str, *, named_value_id: str
+) -> str | None:
+    if provider_key == named_value_id:
+        return named_value_id
+    if provider_key.startswith(_CONFIGURATION_PROVIDER_KEY_PREFIX):
+        return provider_key[len(_CONFIGURATION_PROVIDER_KEY_PREFIX) :]
+    return None
+
+
+def _run_staged_cleanup(
+    pending: list[tuple[str, str]],
+) -> None:
+    for tenant_id, configuration_id in pending:
+        try:
+            with session_scope() as cleanup_session:
+                if cleanup_session.bind and cleanup_session.bind.dialect.name == "postgresql":
+                    cleanup_session.execute(
+                        text("SELECT set_config('app.current_tenant', :tenant_id, true)"),
+                        {"tenant_id": tenant_id},
+                    )
+                delete_configuration_value(
+                    cleanup_session,
+                    tenant_id=tenant_id,
+                    variable_id=configuration_id,
+                )
+        except ApiError as exc:
+            if exc.status_code != 404:
+                _log_cleanup_failure(exc)
+        except Exception as exc:
+            _log_cleanup_failure(exc)
 
 
 def _cleanup_failed_create(session: Session, row: NamedValueModel) -> None:

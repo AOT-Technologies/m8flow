@@ -70,6 +70,44 @@ def _tenant_and_user(db_session):
     return tenant.id, user.id
 
 
+def test_unauthenticated_http_profile_runs_when_vault_is_unavailable(
+    db_session, monkeypatch
+):
+    tenant_id, user_id = _tenant_and_user(db_session)
+    provider_calls = []
+
+    def vault_unavailable(*_args, **_kwargs):
+        provider_calls.append(True)
+        raise RuntimeError("Vault is unavailable")
+
+    monkeypatch.setattr(service, "set_connector_configuration", vault_unavailable)
+    monkeypatch.setattr(service, "get_connector_configuration", vault_unavailable)
+
+    profile = service.create_profile(
+        db_session,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        body={
+            "connector_type": "http",
+            "profile_name": "http-no-auth",
+            "display_name": "HTTP without auth",
+            "config": {},
+        },
+    )
+    assert profile.provider_key is None
+    db_session.commit()
+
+    resolved = service.resolve_for_runtime(
+        db_session,
+        tenant_id=tenant_id,
+        connector_type="http",
+        profile_name="http-no-auth",
+    )
+
+    assert resolved == {}
+    assert provider_calls == []
+
+
 def test_profile_update_uses_new_vault_key_and_cleans_old_key_after_commit(
     db_session, monkeypatch
 ):

@@ -347,8 +347,11 @@ def delete_tenant_vault_data(tenant_id: str, *, control: Any | None = None) -> N
     # its tenant's Vault subtree has been deleted.
     invalidate_tenant_store_cache(normalized)
     role_name = tenant_role_name(normalized)
-    broker = control if control is not None else HttpVault.from_env()
     try:
+        # Broker construction can fail before any Vault request (for example,
+        # when the address is missing). Keep it inside this boundary so callers
+        # can report cleanup as pending with the tenant ID for operator action.
+        broker = control if control is not None else HttpVault.from_env()
         tenant_store = broker.store_for_tenant(normalized, role_name=role_name)
         tenant_store.delete_tree(secret_root(normalized))
     except Exception as exc:

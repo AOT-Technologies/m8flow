@@ -122,7 +122,9 @@ def _validate_field_name(name: Any, *, profile_id: Any) -> str:
     return name
 
 
-def _legacy_secret_rows(bind: sa.Connection) -> list[dict[str, Any]]:
+def _legacy_secret_rows(
+    bind: sa.Connection, *, connector_secret_refs: set[tuple[str, str]]
+) -> list[dict[str, Any]]:
     if not _table_exists(bind, LEGACY_SECRET_TABLE):
         return []
 
@@ -139,6 +141,11 @@ def _legacy_secret_rows(bind: sa.Connection) -> list[dict[str, Any]]:
     for column in ("created_by_user_id", "created_at", "updated_at"):
         selected.append(legacy.c[column] if column in legacy.c else sa.null().label(column))
     rows = [dict(row._mapping) for row in bind.execute(sa.select(*selected)).all()]
+    rows = [
+        row
+        for row in rows
+        if (row["m8f_tenant_id"], row["key"]) not in connector_secret_refs
+    ]
 
     by_tenant_and_name: dict[tuple[str, str], list[str]] = defaultdict(list)
     for row in rows:
@@ -327,8 +334,15 @@ def upgrade() -> None:
 
     # Validate and collect the legacy rows before touching schema. The transaction
     # never copies secret payloads or changes their original provider references.
-    legacy_secrets = _legacy_secret_rows(bind)
     legacy_profiles = _legacy_connector_rows(bind)
+    connector_secret_refs = {
+        (profile["m8f_tenant_id"], provider_key)
+        for profile in legacy_profiles
+        for provider_key in profile["secret_refs"].values()
+    }
+    legacy_secrets = _legacy_secret_rows(
+        bind, connector_secret_refs=connector_secret_refs
+    )
 
     op.add_column(
         CONNECTOR_CONFIGURATION_TABLE,

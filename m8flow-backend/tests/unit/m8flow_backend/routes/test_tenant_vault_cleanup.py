@@ -129,3 +129,45 @@ def test_vault_cleanup_failure_returns_operator_action_with_tenant_id(
     assert body["tenant_id"] == tenant_id
     assert body["vault_cleanup_pending"] is True
     assert db_session.get(M8flowTenantModel, tenant_id) is None
+
+
+def test_vault_broker_setup_failure_returns_cleanup_pending_with_tenant_id(
+    app, db_session, monkeypatch
+):
+    from m8flow_backend.secrets.http import VaultTransportError
+
+    tenant = ensure_tenant(
+        db_session,
+        tenant_id="tenant-vault-broker-setup-fail",
+        name="Vault broker setup failure",
+        slug="vault-broker-setup-fail",
+    )
+    tenant_id = tenant.id
+    db_session.commit()
+    admin = _DirectoryAdmin()
+
+    def fail_broker_setup():
+        raise VaultTransportError("Vault address is not configured.")
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.resolved_secret_backend_kind",
+        lambda: "vault",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.HttpVault.from_env",
+        staticmethod(fail_broker_setup),
+    )
+
+    body, status = _invoke_delete(
+        app,
+        db_session,
+        slug="vault-broker-setup-fail",
+        monkeypatch=monkeypatch,
+        admin=admin,
+    )
+
+    assert status == 202
+    assert body["tenant_id"] == tenant_id
+    assert body["vault_cleanup_pending"] is True
+    assert db_session.get(M8flowTenantModel, tenant_id) is None
+    assert admin.deleted[0].id == tenant_id

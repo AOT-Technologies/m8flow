@@ -25,6 +25,13 @@ def _connector_configuration_key(configuration_id: int | str) -> str:
     return f"{_CONNECTOR_CONFIGURATION_KEY_PREFIX}{configuration_id}"
 
 
+def is_internal_secret_key(key: str) -> bool:
+    """Whether ``key`` belongs to an internal configuration storage record."""
+    return key.casefold().startswith(
+        (_CONFIGURATION_VALUE_KEY_PREFIX, _CONNECTOR_CONFIGURATION_KEY_PREFIX)
+    )
+
+
 def _is_internal_key(key_column):
     return ~key_column.like(f"{_CONFIGURATION_VALUE_KEY_PREFIX}%") & ~key_column.like(
         f"{_CONNECTOR_CONFIGURATION_KEY_PREFIX}%"

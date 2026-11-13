@@ -27,9 +27,10 @@ def _command_module():
 class _Session:
     bind = None
 
-    def __init__(self, module, profile):
+    def __init__(self, module, profile, variables=None):
         self.module = module
         self.profile = profile
+        self.variables = variables or []
         self.added = []
         self.named_values = []
 
@@ -42,7 +43,7 @@ class _Session:
         if entity is self.module.NamedValueModel:
             return iter(self.named_values)
         if entity is self.module.ConnectorVariableModel:
-            return iter([])
+            return iter(self.variables)
         raise AssertionError(f"Unexpected entity in backfill query: {entity}")
 
     def add(self, row):
@@ -58,8 +59,9 @@ def _install_fakes(
     legacy_secret_value="sensitive-sentinel-value",
     provider_keys=None,
     provider_values=None,
+    variables=None,
 ):
-    session = _Session(module, profile)
+    session = _Session(module, profile, variables=variables)
     documents = {}
     writes = []
 
@@ -107,6 +109,43 @@ def _install_fakes(
 
     monkeypatch.setattr(module, "set_connector_configuration", set_document)
     return session, documents, writes
+
+
+def test_backfill_rerun_preserves_new_profile_document_credentials(monkeypatch):
+    module = _command_module()
+    document_key = "f668fa7d-08fb-4fa4-a567-052ea2424f6c"
+    profile = _profile(provider_key=document_key)
+    profile.secret_refs = {"password": document_key}
+    profile.schema_version = "1"
+    variable = SimpleNamespace(
+        connector_configuration_id=profile.id,
+        field_name="password",
+        provider_key=document_key,
+        is_sensitive=True,
+        is_configured=True,
+    )
+    session, _documents, writes = _install_fakes(
+        monkeypatch,
+        module,
+        profile=profile,
+        existing_document={"password": "intact-document-secret"},
+        variables=[variable],
+    )
+
+    first_stats = module.run(apply=True)
+    second_stats = module.run(apply=True)
+
+    assert variable.is_configured is True
+    assert first_stats["connector_payload_found"] == 1
+    assert second_stats["connector_payload_found"] == 1
+    assert first_stats["connector_documents_verified"] == 1
+    assert second_stats["connector_documents_verified"] == 1
+    assert first_stats["connector_flags_to_update"] == 0
+    assert second_stats["connector_flags_to_update"] == 0
+    assert first_stats["connector_document_conflicts"] == 0
+    assert second_stats["connector_document_conflicts"] == 0
+    assert writes == []
+    assert session.added == []
 
 
 def _profile(*, provider_key="legacy-profile-key"):

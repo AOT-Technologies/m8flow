@@ -142,6 +142,21 @@ def run(*, apply: bool) -> Counter[str]:
                     )
                 )
             )
+            profiles_by_id = {profile.id: profile for profile in profiles}
+            documents_by_key: dict[str, dict[str, str] | None] = {}
+
+            def profile_document(profile: ConnectorConfigurationModel):
+                key = profile.provider_key
+                if not key:
+                    return None
+                if key not in documents_by_key:
+                    documents_by_key[key] = get_connector_configuration(
+                        session,
+                        tenant_id=tenant_id,
+                        configuration_id=key,
+                    )
+                return documents_by_key[key]
+
             referenced_keys = {
                 variable.provider_key for variable in variables if variable.provider_key
             }
@@ -172,7 +187,18 @@ def run(*, apply: bool) -> Counter[str]:
                 if not key:
                     stats["connector_missing_reference"] += 1
                     continue
-                configured = provider.get_value(session, tenant_id=tenant_id, key=key) is not None
+                profile = profiles_by_id.get(variable.connector_configuration_id)
+                if profile and profile.provider_key == key:
+                    document = profile_document(profile)
+                    configured = (
+                        document is not None
+                        and variable.field_name in document
+                        and document[variable.field_name] is not None
+                    )
+                else:
+                    configured = provider.get_value(
+                        session, tenant_id=tenant_id, key=key
+                    ) is not None
                 stats["connector_payload_found" if configured else "connector_payload_missing"] += 1
                 if variable.is_configured != configured:
                     stats["connector_flags_to_update"] += 1
@@ -183,9 +209,30 @@ def run(*, apply: bool) -> Counter[str]:
                 refs = dict(profile.secret_refs or {})
                 if not refs and profile.provider_key != str(profile.id):
                     continue
+                document_refs = {
+                    field_name: key
+                    for field_name, key in refs.items()
+                    if profile.provider_key and key == profile.provider_key
+                }
+                legacy_refs = {
+                    field_name: key
+                    for field_name, key in refs.items()
+                    if not profile.provider_key or key != profile.provider_key
+                }
                 values: dict[str, str] = {}
                 missing_fields: list[str] = []
-                for field_name, key in refs.items():
+                existing_document = profile_document(profile) if document_refs else None
+                if document_refs:
+                    if existing_document is None:
+                        missing_fields.extend(document_refs)
+                    else:
+                        for field_name in document_refs:
+                            value = existing_document.get(field_name)
+                            if value is None:
+                                missing_fields.append(field_name)
+                            else:
+                                values[field_name] = value
+                for field_name, key in legacy_refs.items():
                     value = get_secret_value(session, tenant_id=tenant_id, key=key)
                     if value is None:
                         missing_fields.append(field_name)
@@ -196,18 +243,23 @@ def run(*, apply: bool) -> Counter[str]:
                     stats["connector_profile_payloads_missing"] += len(missing_fields)
                     continue
 
-                existing_document = get_connector_configuration(
-                    session,
-                    tenant_id=tenant_id,
-                    configuration_id=profile.id,
-                )
+                # New profiles already point at their UUID-keyed document.
+                # Keep that pointer; legacy profiles are migrated to the
+                # profile-ID document below.
+                target_key = profile.provider_key if document_refs else str(profile.id)
+                if not document_refs:
+                    existing_document = get_connector_configuration(
+                        session,
+                        tenant_id=tenant_id,
+                        configuration_id=target_key,
+                    )
                 documents_match = existing_document is not None and _connector_documents_match(
                     existing_document, values
                 )
                 if existing_document is not None and not documents_match:
                     stats["connector_document_conflicts"] += 1
                     continue
-                if documents_match and profile.provider_key == str(profile.id):
+                if documents_match and profile.provider_key == target_key:
                     stats["connector_documents_verified"] += 1
                     continue
 
@@ -216,15 +268,15 @@ def run(*, apply: bool) -> Counter[str]:
                     set_connector_configuration(
                         session,
                         tenant_id=tenant_id,
-                        configuration_id=profile.id,
+                        configuration_id=target_key,
                         values=values,
                         user_id=profile.created_by_user_id,
-                        replace_existing=profile.provider_key == str(profile.id),
+                        replace_existing=profile.provider_key == target_key,
                     )
                     written_document = get_connector_configuration(
                         session,
                         tenant_id=tenant_id,
-                        configuration_id=profile.id,
+                        configuration_id=target_key,
                     )
                     if written_document is None or not _connector_documents_match(
                         written_document, values
@@ -232,7 +284,7 @@ def run(*, apply: bool) -> Counter[str]:
                         raise RuntimeError(
                             f"Connector profile {profile.id} provider document verification failed."
                         )
-                    profile.provider_key = str(profile.id)
+                    profile.provider_key = target_key
                     profile.schema_version = "1"
 
             # Secret keys not referenced by connector profiles represent the

@@ -172,6 +172,15 @@ def test_upgrade_from_legacy_connector_data_backfills_schema_and_guards_downgrad
         assert named_secret.is_sensitive is True
         assert named_secret.value is None
         assert named_secret.provider_key == "API_TOKEN"
+        # Connector-owned legacy credentials remain represented only by the
+        # connector variable reference, never as independently editable named
+        # values.
+        assert connection.execute(
+            sa.select(named_values.c.id).where(
+                named_values.c.m8f_tenant_id == "m8flow",
+                named_values.c.provider_key == password_key,
+            )
+        ).first() is None
 
         unchanged_secret = connection.execute(
             sa.select(secret_table.c.value).where(secret_table.c.key == password_key)

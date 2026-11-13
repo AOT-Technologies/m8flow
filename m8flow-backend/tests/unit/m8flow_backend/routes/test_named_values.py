@@ -222,7 +222,11 @@ def test_sensitivity_transitions_require_value_and_never_return_sensitive_data(
     assert sensitive_body["isSensitive"] is True
     assert sensitive_body["value"] is None
     assert secret not in json.dumps(sensitive_body)
-    assert provider_values[("tenant-a", variable_id)] == secret
+    staged_key = db_session.get(NamedValueModel, variable_id).provider_key
+    assert staged_key.startswith("configuration-variable:")
+    assert provider_values[
+        ("tenant-a", staged_key.removeprefix("configuration-variable:"))
+    ] == secret
 
     missing_plain_value = client.put(
         f"{_COLLECTION}/{variable_id}",
