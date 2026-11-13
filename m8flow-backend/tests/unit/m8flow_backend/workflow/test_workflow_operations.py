@@ -2065,6 +2065,9 @@ _MI_REVIEW_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
 def test_multi_instance_review_forms_show_their_own_item(db_session, tmp_path, monkeypatch):
     """M8F-640: an iteration's input item and counters exist only on its task,
     so its form values and instructions must come from the task's own scope."""
+    pytest.importorskip(
+        "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with M8F-640"
+    )
     from m8flow_core.models.work_item import WorkItemModel
 
     from m8flow_backend import human_task
