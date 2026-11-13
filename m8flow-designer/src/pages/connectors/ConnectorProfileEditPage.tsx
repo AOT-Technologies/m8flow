@@ -217,7 +217,6 @@ function FormField({
   label,
   required,
   status,
-  staticLabel,
   help,
   error,
   children,
@@ -226,33 +225,24 @@ function FormField({
   label: string;
   required?: boolean;
   status?: FieldStatus;
-  staticLabel?: boolean;
   help?: ReactNode;
   error?: string | null;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const labelClassName = 'text-sm font-medium text-foreground';
-  const labelContent = (
-    <>
-      {label}
-      {required ? (
-        <span className="ml-0.5 text-destructive" aria-hidden>
-          *
-        </span>
-      ) : (
-        <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
-      )}
-    </>
-  );
   return (
     <div className="mt-4 first:mt-0">
       <div className="flex items-center gap-2">
-        {staticLabel ? (
-          <span className={labelClassName}>{labelContent}</span>
-        ) : (
-          <label htmlFor={id} className={labelClassName}>{labelContent}</label>
-        )}
+        <label htmlFor={id} className="text-sm font-medium text-foreground">
+          {label}
+          {required ? (
+            <span className="ml-0.5 text-destructive" aria-hidden>
+              *
+            </span>
+          ) : (
+            <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
+          )}
+        </label>
         {status ? (
           <Badge
             variant={status === 'configured' ? 'success' : 'outline'}
@@ -771,7 +761,6 @@ function ConnectorProfileEditBody() {
         id={inputId}
         label={field.label}
         required={field.required}
-        staticLabel={hideSecret}
         status={isEdit && !isCleared
           ? (savedCredential ? 'configured' : !filled && !keepsSavedSetting ? 'notSet' : undefined)
           : undefined}
