@@ -79,10 +79,16 @@ describe('classifyDroppedConstruct', () => {
     ).toBe('message');
     expect(
       classifyDroppedConstruct({
-        type: 'bpmn:EndEvent',
+        type: 'bpmn:StartEvent',
         businessObject: { eventDefinitions: [{ $type: 'bpmn:CompensateEventDefinition' }] },
       }),
     ).toBe('compensate');
+    expect(
+      classifyDroppedConstruct({
+        type: 'bpmn:BoundaryEvent',
+        businessObject: { eventDefinitions: [{ $type: 'bpmn:CompensateEventDefinition' }] },
+      }),
+    ).toBeNull();
   });
 
   it('leaves keep-scope elements unclassified', () => {

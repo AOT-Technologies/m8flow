@@ -1,5 +1,8 @@
 import pytest
 
+from m8flow_core import api
+from m8flow_core.errors import ValidationError
+
 from m8flow_backend.catalog import _reject_unsupported_constructs
 from m8flow_backend.errors import ApiError
 
@@ -102,3 +105,82 @@ def test_unsupported_construct_elements_are_rejected_regardless_of_prefix(elemen
 
     with pytest.raises(ApiError, match="Unsupported BPMN construct"):
         _reject_unsupported_constructs(xml)
+
+
+def test_compensation_validation_handles_core_error_without_api_alias(monkeypatch):
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="process"><bpmn:endEvent id="cancel">'
+        '<bpmn:cancelEventDefinition /></bpmn:endEvent></bpmn:process></bpmn:definitions>'
+    )
+
+    def validate(bpmn_xml):
+        assert bpmn_xml == xml
+        raise ValidationError("Cancel end event must be inside a transaction")
+
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validate, raising=False)
+    monkeypatch.delattr(api, "ValidationError", raising=False)
+
+    with pytest.raises(ApiError, match="Cancel end event must be inside a transaction") as error:
+        _reject_unsupported_constructs(xml)
+
+    assert error.value.error_code == "unsupported_bpmn"
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("event", [
+    '<bpmn:task id="task" /><bpmn:boundaryEvent attachedToRef="task"><bpmn:compensateEventDefinition /></bpmn:boundaryEvent>',
+    '<bpmn:intermediateThrowEvent><bpmn:compensateEventDefinition /></bpmn:intermediateThrowEvent>',
+    '<bpmn:endEvent><bpmn:compensateEventDefinition /></bpmn:endEvent>',
+])
+def test_catalog_delegates_supported_compensation_event_types_to_core(monkeypatch, event):
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        f'<bpmn:process id="process">{event}</bpmn:process></bpmn:definitions>'
+    )
+    validated = []
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validated.append, raising=False)
+
+    _reject_unsupported_constructs(xml)
+
+    assert validated == [xml]
+
+
+def test_compensation_scan_skips_non_element_nodes(monkeypatch):
+    from xml.etree import ElementTree
+
+    from defusedxml import ElementTree as SafeElementTree
+
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<!-- preserve this comment --><?example instruction?>'
+        '<bpmn:process id="process"><bpmn:endEvent>'
+        '<bpmn:compensateEventDefinition /></bpmn:endEvent></bpmn:process></bpmn:definitions>'
+    )
+    parser = SafeElementTree.DefusedXMLParser(
+        target=ElementTree.TreeBuilder(insert_comments=True, insert_pis=True)
+    )
+    parser.feed(xml)
+    root = parser.close()
+    monkeypatch.setattr(SafeElementTree, "fromstring", lambda _xml: root)
+    validated = []
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validated.append, raising=False)
+
+    _reject_unsupported_constructs(xml)
+
+    assert validated == [xml]
+
+
+def test_catalog_rejects_compensation_start_before_core_validation(monkeypatch):
+    xml = (
+        '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        '<bpmn:process id="process"><bpmn:startEvent id="start">'
+        '<bpmn:compensateEventDefinition /></bpmn:startEvent></bpmn:process></bpmn:definitions>'
+    )
+    validated = []
+    monkeypatch.setattr(api, "validate_compensation_bpmn", validated.append, raising=False)
+
+    with pytest.raises(ApiError, match="Compensation start events are not supported"):
+        _reject_unsupported_constructs(xml)
+
+    assert validated == []

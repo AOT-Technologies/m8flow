@@ -56,10 +56,30 @@ jobs:
           enable-cache: true
           cache-dependency-glob: m8flow-backend/uv.lock
 
+      - name: Install backend dependencies
+        run: uv sync --frozen --group dev
+
+      - name: Load Alembic revisions
+        run: uv run --frozen alembic -c migrations/alembic.ini heads
+
       - name: Unit tests
+        run: uv run --frozen pytest -q -n auto
+
+      - name: PostgreSQL compensation journal isolation
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
         run: |
-          uv sync --frozen --group dev
-          uv run pytest -q -n auto
+          postgres_container=$(docker run --detach \
+            --env POSTGRES_PASSWORD=postgres --publish 127.0.0.1::5432 postgres:15.19)
+          trap 'docker rm -f "$postgres_container" >/dev/null' EXIT
+          if ! timeout 60 bash -c '
+            until docker exec "$1" pg_isready -h 127.0.0.1 -U postgres; do sleep 1; done
+          ' _ "$postgres_container"; then
+            docker logs "$postgres_container"
+            exit 1
+          fi
+          postgres_address=$(docker port "$postgres_container" 5432/tcp)
+          M8FLOW_TEST_POSTGRES_URI="postgresql+psycopg://postgres:postgres@$postgres_address/postgres" \
+            uv run --frozen pytest -q tests/integration/test_tenant_isolation.py -k compensation_journal
 
   designer:
     name: Designer (Node.js ${{ matrix.node }}, ${{ matrix.os }})

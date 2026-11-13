@@ -15,6 +15,9 @@ from typing import Any
 from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
+from m8flow_core import api
+from m8flow_core.errors import ValidationError
+
 from m8flow_backend.errors import ApiError
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend import workflow
@@ -1206,12 +1209,35 @@ def _reject_unsupported_constructs(xml: str) -> None:
             400,
         )
 
+    bpmn = "{http://www.omg.org/spec/BPMN/20100524/MODEL}"
+    if any(
+        event.find(bpmn + "compensateEventDefinition") is not None
+        for event in root.iter(bpmn + "startEvent")
+    ):
+        raise ApiError("unsupported_bpmn", "Compensation start events are not supported", 400)
+
     unsupported = set(UNSUPPORTED_CONSTRUCTS)
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]
-            if construct in unsupported:
+            if construct in unsupported and element.tag != bpmn + "compensateEventDefinition":
                 raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+    feature_tags = {bpmn + "compensateEventDefinition", bpmn + "cancelEventDefinition"}
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if element.tag in feature_tags or (
+            element.tag.startswith(bpmn) and element.get("isForCompensation") in {"true", "1"}
+        ):
+            validate = getattr(api, "validate_compensation_bpmn", None)
+            if validate is None:
+                raise ApiError("unsupported_bpmn", "The installed core does not support compensation or Cancel Events", 400)
+            try:
+                validate(xml)
+            except ValidationError as exc:
+                raise ApiError("unsupported_bpmn", str(exc), 400) from exc
+            break
 
 
 def _xml_boolean_is_true(value: str | None) -> bool:

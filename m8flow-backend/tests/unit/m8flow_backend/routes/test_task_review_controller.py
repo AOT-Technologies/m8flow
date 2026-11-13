@@ -807,25 +807,80 @@ def _start_real_instance(db_session, *, tenant_id, user, xml: str | None = None)
     return instance, pending[0]
 
 
-def test_submit_happy_path_advances_instance(client, db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize("entry_point", ["task-review", "complete", "legacy-form"])
+def test_submit_happy_path_advances_instance(client, app, db_session, tmp_path, monkeypatch, entry_point):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    if entry_point == "legacy-form":
+        # Exercise the Flask handler separately from the signed-link API.
+        client = app.test_client()
+    user, token = _login_user(
+        client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
+    )
+    _seed_instance(db_session, tenant_id="t1", initiator_id=user.id)
+    instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
+    assert task.id != instance.id
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    if entry_point == "complete":
+        claimed = client.put(f"/v1.0/tasks/{task.id}/claim", headers=headers)
+        assert claimed.status_code == 200
+        path = f"/v1.0/tasks/{task.id}/complete"
+    elif entry_point == "legacy-form":
+        path = f"/v1.0/m8flow/external-forms/{task.id}/submit"
+    else:
+        path = f"/v1.0/m8flow/task-review/{task.id}/submit"
+    response = client.post(
+        path,
+        json={"comment": "Looks good, within policy."},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.get_json()
+    body = response.get_json()
+    if entry_point == "task-review":
+        assert body == {
+            "process_instance_id": instance.id,
+            "process_status": "complete",
+            "process_complete": True,
+            "message": "Task completed. The process is now complete.",
+        }
+    else:
+        assert body == {"process_instance_id": instance.id, "status": "complete"}
+
+
+def test_complete_rolls_back_when_process_instance_disappears(client, db_session, tmp_path, monkeypatch):
+    from sqlalchemy import delete
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import workflow
+
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
         client, db_session, username="submitter", groups=["t1:submitter"], tenant_id="t1"
     )
     instance, task = _start_real_instance(db_session, tenant_id="t1", user=user)
+    original_status = instance.status
     db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.put(f"/v1.0/tasks/{task.id}/claim", headers=headers).status_code == 200
 
-    response = client.post(
-        f"/v1.0/m8flow/task-review/{task.id}/submit",
-        json={"comment": "Looks good, within policy."},
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert response.status_code == 200
-    body = response.get_json()
-    assert body["process_instance_id"] == instance.id
-    assert body["process_status"] == "complete"
-    assert body["process_complete"] is True
-    assert "Task completed" in body["message"]
+    execute_command = workflow.api.execute_command
+
+    def complete_without_instance(session, command):
+        result = execute_command(session, command)
+        if isinstance(command, workflow.api.CompleteTaskCommand):
+            session.execute(delete(ProcessInstanceModel).where(ProcessInstanceModel.id == instance.id))
+        return result
+
+    monkeypatch.setattr(workflow.api, "execute_command", complete_without_instance)
+    response = client.post(f"/v1.0/tasks/{task.id}/complete", headers=headers, json={})
+
+    assert response.status_code == 404, response.get_json()
+    assert response.get_json()["error_code"] == "not_found"
+    db_session.refresh(instance)
+    assert instance.status == original_status
+    assert db_session.get(WorkItemModel, task.id).completed is False
 
 
 _MANUAL_TASK_BPMN = """\

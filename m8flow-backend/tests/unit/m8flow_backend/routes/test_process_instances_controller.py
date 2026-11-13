@@ -5,6 +5,8 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
@@ -1214,6 +1216,509 @@ def test_submitter_cannot_suspend_instance_with_process_create_grant(client, db_
     )
     assert response.status_code == 403
     assert response.get_json()["error_code"] == "permission_denied"
+
+
+@pytest.mark.parametrize("role", ["viewer", "submitter"])
+def test_retry_permission_denial_does_not_reveal_instance_existence(client, db_session, role):
+    user, token = _login_user(
+        client, db_session, username=f"{role}-retry", groups=[f"t1:{role}"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=user.id,
+        process_model_identifier="finance/invoice-approval",
+        start=int(time.time()),
+        status="error",
+    )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    existing = client.post(f"/v1.0/m8flow/process-instances/{instance.id}/retry", headers=headers)
+    missing = client.post(f"/v1.0/m8flow/process-instances/{instance.id + 1}/retry", headers=headers)
+
+    assert existing.status_code == missing.status_code == 403
+    assert existing.get_json() == missing.get_json()
+    assert existing.get_json()["error_code"] == "permission_denied"
+
+
+def test_retry_masks_instances_outside_management_scope(client, db_session):
+    editor, token = _login_user(
+        client, db_session, username="editor-retry", groups=["t1:editor"], tenant_id="t1"
+    )
+    other = _seed_other_user(db_session, tenant_id="t1", username="other-initiator")
+    outside = _seed_other_user(db_session, tenant_id="t2", username="other-tenant-initiator")
+    own, assigned, cross_tenant = [
+        _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="error",
+        )
+        for tenant_id, initiator in (("t1", editor), ("t1", other), ("t2", outside))
+    ]
+    _seed_pending_task(db_session, tenant_id="t1", process_instance_id=assigned.id, assignee_user_id=editor.id)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def retry(instance_id):
+        return client.post(f"/v1.0/m8flow/process-instances/{instance_id}/retry", headers=headers)
+
+    missing = retry(cross_tenant.id + 1)
+    assert missing.status_code == 404
+    assert missing.get_json()["error_code"] == "not_found"
+    for hidden in (assigned, cross_tenant):
+        denied = retry(hidden.id)
+        assert denied.status_code == 404
+        assert denied.get_json() == missing.get_json()
+
+    invalid = retry(own.id)
+    assert invalid.status_code == 409
+    assert invalid.get_json()["error_code"] == "invalid_state"
+
+
+@pytest.fixture
+def compensation_retry_dispatch(monkeypatch):
+    from dataclasses import dataclass
+    from unittest.mock import Mock
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+
+    from m8flow_backend import workflow
+
+    @dataclass
+    class RetryCommand:
+        tenant_id: str
+        process_instance_id: int
+        user_id: int
+        compensation_only: bool
+
+    def complete(session, command):
+        assert command.compensation_only is True
+        user = session.get(UserModel, command.user_id)
+        assert user_belongs_to_tenant(user, tenant_identifiers_for(session, command.tenant_id))
+        instance = session.get(ProcessInstanceModel, command.process_instance_id)
+        assert instance.m8f_tenant_id == command.tenant_id
+        instance.status = "complete"
+        session.flush()
+        return instance
+
+    dispatch = Mock(side_effect=complete)
+    execute_command = workflow.api.execute_command
+
+    def execute(session, command):
+        if isinstance(command, RetryCommand):
+            return dispatch(session, command)
+        return execute_command(session, command)
+
+    monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", RetryCommand)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    return dispatch
+
+
+def test_retry_is_scoped_to_the_selected_organization(client, db_session, monkeypatch, compensation_retry_dispatch):
+    from types import SimpleNamespace
+
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from m8flow_backend.integrations.auth.base.models import IssuerRef, TenantRef
+    from m8flow_backend.integrations.auth.core.switching import SwitchMode
+    from m8flow_backend.integrations.auth.keycloak.claims import verified_claims_from_payload
+
+    editor, _ = _login_user(
+        client, db_session, username="multi-org-retry", groups=["t1:editor"], tenant_id="t1"
+    )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    instances = {
+        tenant: _seed_instance(
+            db_session, tenant_id=tenant, initiator_id=editor.id,
+            process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+        )
+        for tenant in ("t1", "t2")
+    }
+    db_session.commit()
+
+    payload = {
+        "sub": editor.service_id,
+        "iss": editor.service,
+        "preferred_username": editor.username,
+        "exp": int(time.time()) + 3600,
+        "m8flow_tenant_alias": "t1",
+        "organization": {tenant: {"id": tenant, "groups": ["editor"]} for tenant in instances},
+    }
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = jwt.encode(payload, private_key, algorithm="RS256")
+
+    def verify_token(encoded):
+        return verified_claims_from_payload(jwt.decode(encoded, private_key.public_key(), algorithms=["RS256"]))
+
+    provider = SimpleNamespace(
+        verify_token=verify_token,
+        list_memberships=lambda *, username: verified_claims_from_payload(payload).memberships,
+        default_tenant_ref=lambda: TenantRef(alias="m8flow"),
+        default_issuer=lambda: IssuerRef(value="m8flow"),
+        switch_mode=SwitchMode.COOKIE_ONLY,
+    )
+    monkeypatch.setattr("m8flow_backend.integrations.auth.get_auth_provider", lambda: provider)
+    # Use the host-scoped cookie set by finalization for both switches.
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    client.set_cookie("access_token", token)
+    headers = {"Authorization": f"Bearer {token}"}
+    completed = set()
+
+    def retry(tenant):
+        return client.post(f"/v1.0/m8flow/process-instances/{instances[tenant].id}/retry", headers=headers)
+
+    for tenant, other in (("t2", "t1"), ("t1", "t2")):
+        finalized = client.get("/v1.0/login", query_string={
+            "authentication_identifier": "m8flow", "tenant_finalization": "1",
+            "tenant": tenant, "redirect_url": "/app",
+        })
+        assert finalized.status_code == 302, finalized.get_json()
+        assert any(
+            cookie.startswith(f"{SELECTED_TENANT_COOKIE_NAME}={tenant};")
+            for cookie in finalized.headers.getlist("Set-Cookie")
+        )
+
+        denied = retry(other)
+        assert denied.status_code == 404, denied.get_json()
+        assert denied.get_json()["error_code"] == "not_found"
+        assert compensation_retry_dispatch.call_count == len(completed)
+
+        retried = retry(tenant)
+        assert retried.status_code == 200, retried.get_json()
+        assert retried.get_json() == {"id": instances[tenant].id, "status": "complete"}
+        assert compensation_retry_dispatch.call_count == len(completed) + 1
+        command = compensation_retry_dispatch.call_args.args[1]
+        assert (command.tenant_id, command.process_instance_id, command.user_id) == (
+            tenant, instances[tenant].id, editor.id,
+        )
+        completed.add(tenant)
+        db_session.expire_all()
+        for selected, instance in instances.items():
+            assert instance.status == ("complete" if selected in completed else "error")
+        assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+        assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+
+def test_super_admin_retry_requires_a_matching_concrete_tenant(client, db_session, compensation_retry_dispatch):
+    admin, token = _login_user(
+        client, db_session, username="super-admin-retry", groups=["super-admin"], tenant_id="t1"
+    )
+    outside = _seed_other_user(db_session, tenant_id="t2", username="t2-retry-initiator")
+    instances = [
+        _seed_instance(
+            db_session, tenant_id=tenant, initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+        )
+        for tenant, initiator in (("t1", admin), ("t2", outside))
+    ]
+    db_session.commit()
+    previous_membership = admin.external_user_id
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    headers = {"Authorization": f"Bearer {token}"}
+    path = f"/v1.0/m8flow/process-instances/{instances[1].id}/retry"
+
+    for query, status_code, error_code in (("", 400, "tenant_required"), ("?tenantId=t1", 404, "not_found")):
+        denied = client.post(path + query, headers=headers)
+        assert (denied.status_code, denied.get_json()["error_code"]) == (status_code, error_code)
+        compensation_retry_dispatch.assert_not_called()
+        db_session.expire_all()
+        assert [instance.status for instance in instances] == ["error", "error"]
+
+    retried = client.post(path + "?tenantId=t2", headers=headers)
+    assert retried.status_code == 200, retried.get_json()
+    assert retried.get_json() == {"id": instances[1].id, "status": "complete"}
+    compensation_retry_dispatch.assert_called_once()
+    command = compensation_retry_dispatch.call_args.args[1]
+    assert (command.tenant_id, command.process_instance_id) == ("t2", instances[1].id)
+    db_session.expire_all()
+    assert [instance.status for instance in instances] == ["error", "complete"]
+    assert admin.external_user_id == previous_membership
+
+
+def test_workflow_retry_checks_scope_and_permission_before_compensation(client, db_session, monkeypatch):
+    from unittest.mock import Mock
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    editor, _ = _login_user(client, db_session, username="editor-host-retry", groups=["t1:editor"], tenant_id="t1")
+    viewer, _ = _login_user(client, db_session, username="viewer-host-retry", groups=["t1:viewer"], tenant_id="t1")
+    outside = _seed_other_user(db_session, tenant_id="t2", username="outside-host-retry")
+    own, hidden, cross_tenant = [
+        _seed_instance(
+            db_session,
+            tenant_id=tenant_id,
+            initiator_id=initiator.id,
+            process_model_identifier="finance/invoice-approval",
+            start=int(time.time()),
+            status="error",
+        )
+        for tenant_id, initiator in (("t1", editor), ("t1", viewer), ("t2", outside))
+    ]
+    editor_id, viewer_id = editor.id, viewer.id
+    own_id, hidden_id, cross_tenant_id = own.id, hidden.id, cross_tenant.id
+    db_session.commit()
+    eligibility = Mock(return_value=False)
+    monkeypatch.setattr(workflow, "_has_failed_compensation", eligibility)
+
+    def retry(tenant_id, process_instance_id, user_id):
+        return workflow.retry_instance(
+            db_session, tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+        )
+
+    for tenant_id, instance_id in (
+        ("t1", cross_tenant_id + 1), ("t1", cross_tenant_id), ("t2", cross_tenant_id), ("t1", hidden_id)
+    ):
+        with pytest.raises(ApiError) as denied:
+            retry(tenant_id, instance_id, editor_id)
+        assert denied.value.status_code == 404
+        assert denied.value.error_code == "not_found"
+
+    with pytest.raises(ApiError) as forbidden:
+        retry("t1", hidden_id, viewer_id)
+    assert forbidden.value.status_code == 403
+    assert forbidden.value.error_code == "permission_denied"
+    eligibility.assert_not_called()
+
+    with pytest.raises(ApiError) as invalid:
+        retry("t1", own_id, editor_id)
+    assert invalid.value.status_code == 409
+    assert invalid.value.error_code == "invalid_state"
+    assert "does not support compensation-only retry" in invalid.value.message
+    eligibility.assert_not_called()
+
+
+def test_compensation_retry_uses_command_eligibility_instead_of_journal_precheck(client, db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from m8flow_core.errors import InvalidStateError
+
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    editor, _ = _login_user(client, db_session, username="editor-retry-command", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+
+    def retry_command(*, tenant_id, process_instance_id, user_id, compensation_only):
+        return SimpleNamespace(
+            tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id,
+            compensation_only=compensation_only,
+        )
+
+    eligibility = Mock(return_value=False)
+    execute = Mock(side_effect=[InvalidStateError("Compensation was already retried"), instance])
+    monkeypatch.setattr(workflow, "_has_failed_compensation", eligibility)
+    monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", retry_command)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    kwargs = {"tenant_id": "t1", "process_instance_id": instance.id, "user_id": editor.id}
+    db_session.commit()
+
+    with pytest.raises(ApiError, match="Compensation was already retried") as denied:
+        workflow.retry_instance(db_session, **kwargs)
+    assert denied.value.status_code == 409
+    assert workflow.retry_instance(db_session, **kwargs) is instance
+    assert execute.call_count == 2
+    assert all(call.args[1] == retry_command(**kwargs, compensation_only=True) for call in execute.call_args_list)
+    eligibility.assert_not_called()
+
+
+def test_compensation_retry_rejects_a_caller_transaction(client, db_session, compensation_retry_dispatch):
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+    from m8flow_backend.db import get_session_factory
+
+    editor, _ = _login_user(client, db_session, username="editor-retry-boundary", groups=["t1:editor"], tenant_id="t1")
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+    unrelated = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/other", start=int(time.time()), status="waiting",
+    )
+    db_session.commit()
+    unrelated.status = "suspended"
+    db_session.flush()
+
+    with pytest.raises(RuntimeError, match="requires a session without an active transaction"):
+        workflow.retry_instance(db_session, tenant_id="t1", process_instance_id=instance.id, user_id=editor.id)
+    compensation_retry_dispatch.assert_not_called()
+    assert unrelated.status == "suspended"
+    with get_session_factory()() as observer:
+        assert observer.get(ProcessInstanceModel, unrelated.id).status == "waiting"
+    db_session.rollback()
+
+
+@pytest.mark.parametrize(
+    ("error_code", "status_code"),
+    [("invalid_state", 409), ("compensation_failed", 500), ("bpmn_core_error", 500), ("internal_server_error", 500)],
+)
+def test_retry_http_errors_preserve_only_marked_recovery(
+    client, db_session, monkeypatch, compensation_retry_dispatch, error_code, status_code
+):
+    from unittest.mock import Mock
+
+    from m8flow_core.errors import BpmnCoreError, InvalidStateError
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+    from m8flow_core.models.user import UserModel
+
+    from m8flow_backend import workflow
+
+    admin, token = _login_user(
+        client, db_session, username="super-admin-retry-failure", groups=["super-admin"], tenant_id="t1"
+    )
+    outside = _seed_other_user(db_session, tenant_id="t2", username="t2-retry-failure-initiator")
+    instance = _seed_instance(
+        db_session, tenant_id="t2", initiator_id=outside.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+    db_session.commit()
+    previous_membership = admin.external_user_id
+
+    def execute(session, command):
+        assert session.get(UserModel, command.user_id).external_user_id == "t2"
+        instance_to_retry = session.get(ProcessInstanceModel, command.process_instance_id)
+        instance_to_retry.last_milestone_bpmn_name = "retry checkpoint"
+        session.flush()
+        if error_code == "invalid_state":
+            raise InvalidStateError("Compensation was already retried")
+        if error_code == "internal_server_error":
+            raise RuntimeError("core exploded")
+        error = BpmnCoreError("compensation handler failed")
+        if error_code == "compensation_failed":
+            error.compensation_recovery_flushed = True
+        raise error
+
+    compensation_retry_dispatch.side_effect = execute
+    emit = Mock()
+    monkeypatch.setattr(workflow, "_emit_external_form_requests", emit)
+    response = client.post(
+        f"/v1.0/m8flow/process-instances/{instance.id}/retry?tenantId=t2",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == status_code, response.get_json()
+    assert response.get_json()["error_code"] == error_code
+    compensation_retry_dispatch.assert_called_once()
+    emit.assert_not_called()
+    db_session.expire_all()
+    assert instance.last_milestone_bpmn_name == ("retry checkpoint" if error_code == "compensation_failed" else None)
+    assert admin.external_user_id == previous_membership
+
+
+@pytest.mark.parametrize("command_shape", ["missing", "opaque", "positional-only", "incomplete"])
+def test_retry_is_unavailable_without_a_compatible_command(client, db_session, monkeypatch, command_shape):
+    from m8flow_backend import workflow
+
+    editor, token = _login_user(
+        client, db_session, username="editor-legacy-core-retry", groups=["t1:editor"], tenant_id="t1"
+    )
+    instance = _seed_instance(
+        db_session, tenant_id="t1", initiator_id=editor.id,
+        process_model_identifier="finance/invoice-approval", start=int(time.time()), status="error",
+    )
+    db_session.commit()
+
+    def positional_only(compensation_only, /):
+        raise AssertionError("An incompatible command was dispatched")
+
+    def incomplete(*, tenant_id, process_instance_id, compensation_only):
+        raise AssertionError("An incompatible command was dispatched")
+
+    if command_shape == "missing":
+        monkeypatch.delattr(workflow.api, "RetryProcessInstanceCommand", raising=False)
+    else:
+        command = {"opaque": dict, "positional-only": positional_only, "incomplete": incomplete}[command_shape]
+        monkeypatch.setattr(workflow.api, "RetryProcessInstanceCommand", command)
+    monkeypatch.setattr(workflow, "_has_failed_compensation", lambda *_args, **_kwargs: True)
+    headers = {"Authorization": f"Bearer {token}"}
+    path = f"/v1.0/m8flow/process-instances/{instance.id}"
+
+    detail = client.get(path, headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["has_failed_compensation"] is False
+    response = client.post(f"{path}/retry", headers=headers)
+    assert response.status_code == 409, response.get_json()
+    assert response.get_json()["error_code"] == "invalid_state"
+
+
+def test_retry_transaction_preserves_checkpoint_after_http_error(client, db_session):
+    from pathlib import Path
+
+    from m8flow_core import api
+
+    from m8flow_backend import catalog, workflow
+
+    if not hasattr(api, "validate_compensation_bpmn") or workflow._compensation_only_retry_command() is None:
+        pytest.skip("Requires a core wheel with compensation validation and compensation-only retry")
+    editor, editor_token = _login_user(
+        client, db_session, username="editor-transaction", groups=["t1:editor"], tenant_id="t1"
+    )
+    _, viewer_token = _login_user(
+        client, db_session, username="viewer-transaction", groups=["t1:viewer"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {editor_token}"}
+    xml = (Path(__file__).resolve().parents[3] / "fixtures/transaction_cancel.bpmn").read_text(encoding="utf-8")
+    catalog._reject_unsupported_constructs(xml)
+    definition = workflow.import_definition(
+        db_session, tenant_id="t1", user_id=editor.id,
+        bpmn_identifier="orders/transaction", source_bpmn_xml=xml,
+    )
+    db_session.commit()
+    instance = api.execute_command(db_session, api.InitializeProcessInstanceFromDefinitionCommand(
+        tenant_id="t1", bpmn_process_definition_id=definition.id, process_initiator_id=editor.id,
+    ))
+    instance_id = instance.id
+    db_session.commit()
+    detail_uri = f"/v1.0/m8flow/process-instances/{instance_id}"
+
+    def tasks():
+        db_session.expire_all()
+        return {item.task_title: item.id for item in api.execute_query(db_session, api.GetPendingTasksQuery("t1"))}
+
+    def finish(name):
+        work_item_id = tasks()[name]
+        claimed = client.put(f"/v1.0/tasks/{work_item_id}/claim", headers=headers)
+        assert claimed.status_code == 200, claimed.get_json()
+        return client.post(f"/v1.0/tasks/{work_item_id}/complete", headers=headers, json={})
+
+    assert set(tasks()) == {"Cancel order", "Ship order"}
+    assert finish("Cancel order").status_code == 200
+    assert set(tasks()) == {"Refund charge"}
+    failed = finish("Refund charge")
+    assert failed.status_code == 500
+    assert failed.get_json()["error_code"] == "compensation_failed"
+    assert not tasks()
+    detail = client.get(detail_uri, headers=headers)
+    assert detail.get_json()["has_failed_compensation"] is True
+    denied = client.post(detail_uri + "/retry", headers={"Authorization": f"Bearer {viewer_token}"})
+    assert denied.status_code == 403
+
+    api.execute_command(db_session, api.UpsertProcessInstanceMetadataCommand(
+        "t1", instance_id, "operator_fixed", "true", datetime.now(UTC),
+    ))
+    db_session.commit()
+    retried = client.post(detail_uri + "/retry", headers=headers)
+    assert retried.status_code == 200, retried.get_json()
+    assert set(tasks()) == {"After cancel"}
+    journal = api.execute_query(db_session, api.GetProcessInstanceCompensationsQuery("t1", instance_id))
+    assert [(record.status, record.attempts) for record in journal] == [("completed", 2), ("completed", 1)]
+    assert client.post(detail_uri + "/retry", headers=headers).status_code == 409
+    assert set(tasks()) == {"After cancel"}
+    assert finish("After cancel").status_code == 200
+    assert not tasks()
 
 
 def test_lifecycle_other_tenant_is_404(client, db_session):

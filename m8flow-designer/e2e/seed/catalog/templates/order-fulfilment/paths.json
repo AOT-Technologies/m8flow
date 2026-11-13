@@ -85,7 +85,7 @@
     },
     {
       "id": "ORD-03",
-      "title": "Order: payment fails, the transaction is cancelled and stock released",
+      "title": "Order: payment fails, stock is released and the order is cancelled",
       "answers": {
         "enter_order": {
           "customer": "E2E Acme",
