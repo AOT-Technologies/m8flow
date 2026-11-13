@@ -9,9 +9,10 @@
                   id="Definitions_e2e_order_fulfilment" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_e2e_order_fulfilment"><bpmn:participant id="Participant_e2e_order_fulfilment" name="E2E Order Fulfilment" processRef="e2e_order_fulfilment" /></bpmn:collaboration>
   <bpmn:escalation id="Escalation_backorder" name="Item on backorder" escalationCode="BACKORDER" />
+  <bpmn:error id="Error_payment_failed" name="Payment failed" errorCode="PAYMENT_FAILED" />
   <bpmn:category id="Category_group_payment"><bpmn:categoryValue id="CategoryValue_group_payment" value="Payment" /></bpmn:category>
   <bpmn:process id="e2e_order_fulfilment" name="E2E Order Fulfilment" isExecutable="true">
-    <bpmn:documentation>A sales order is picked item by item, paid in a transaction that is cancelled when the payment fails, recorded in the database and shipped on the dispatch date. A back-ordered item escalates to purchasing without stopping the order.</bpmn:documentation>
+    <bpmn:documentation>A sales order is picked item by item, paid, recorded in the database and shipped on the dispatch date. A payment failure releases the stock and stops the order. A back-ordered item escalates to purchasing without stopping the order.</bpmn:documentation>
     <bpmn:ioSpecification><bpmn:dataInput id="order_channel" name="Order channel" /><bpmn:dataOutput id="order_outcome" name="Order outcome" /><bpmn:inputSet><bpmn:dataInputRefs>order_channel</bpmn:dataInputRefs></bpmn:inputSet><bpmn:outputSet><bpmn:dataOutputRefs>order_outcome</bpmn:dataOutputRefs></bpmn:outputSet></bpmn:ioSpecification>
     <bpmn:laneSet id="LaneSet_e2e_order_fulfilment"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>start_order</bpmn:flowNodeRef><bpmn:flowNodeRef>enter_order</bpmn:flowNodeRef><bpmn:flowNodeRef>pick</bpmn:flowNodeRef><bpmn:flowNodeRef>b_backorder</bpmn:flowNodeRef><bpmn:flowNodeRef>payment</bpmn:flowNodeRef><bpmn:flowNodeRef>b_cancelled</bpmn:flowNodeRef><bpmn:flowNodeRef>ensure_order_table</bpmn:flowNodeRef><bpmn:flowNodeRef>record_order</bpmn:flowNodeRef><bpmn:flowNodeRef>wait_dispatch</bpmn:flowNodeRef><bpmn:flowNodeRef>ship_order</bpmn:flowNodeRef><bpmn:flowNodeRef>end_shipped</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>notify_purchasing</bpmn:flowNodeRef><bpmn:flowNodeRef>end_purchasing</bpmn:flowNodeRef><bpmn:flowNodeRef>release_stock</bpmn:flowNodeRef><bpmn:flowNodeRef>end_payment_failed</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
     <bpmn:startEvent id="start_order" name="Order received"><bpmn:outgoing>Flow_start_order_enter_order</bpmn:outgoing></bpmn:startEvent>
@@ -36,18 +37,18 @@ pick_index += 1</bpmn:script></bpmn:scriptTask>
     <bpmn:boundaryEvent id="b_backorder" name="Backorder" attachedToRef="pick" cancelActivity="false"><bpmn:outgoing>Flow_b_backorder_notify_purchasing</bpmn:outgoing><bpmn:escalationEventDefinition escalationRef="Escalation_backorder" /></bpmn:boundaryEvent>
     <bpmn:userTask id="notify_purchasing" name="Notify purchasing"><bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="purchasing-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="purchasing-uischema.json" /></spiffworkflow:properties><spiffworkflow:instructionsForEndUser>Items on backorder for {{ customer }}: {{ items }}. Raise a purchase order.</spiffworkflow:instructionsForEndUser></bpmn:extensionElements><bpmn:incoming>Flow_b_backorder_notify_purchasing</bpmn:incoming><bpmn:outgoing>Flow_notify_purchasing_end_purchasing</bpmn:outgoing></bpmn:userTask>
     <bpmn:endEvent id="end_purchasing" name="Purchasing notified"><bpmn:incoming>Flow_notify_purchasing_end_purchasing</bpmn:incoming></bpmn:endEvent>
-    <bpmn:transaction id="payment" name="Take payment"><bpmn:incoming>Flow_pick_payment</bpmn:incoming><bpmn:outgoing>Flow_payment_ensure_order_table</bpmn:outgoing>
+    <bpmn:subProcess id="payment" name="Take payment"><bpmn:incoming>Flow_pick_payment</bpmn:incoming><bpmn:outgoing>Flow_payment_ensure_order_table</bpmn:outgoing>
       <bpmn:startEvent id="pay_start"><bpmn:outgoing>Flow_pay_start_reserve_stock</bpmn:outgoing></bpmn:startEvent>
       <bpmn:scriptTask id="reserve_stock" name="Reserve stock" scriptFormat="python"><bpmn:incoming>Flow_pay_start_reserve_stock</bpmn:incoming><bpmn:outgoing>Flow_reserve_stock_gw_paid</bpmn:outgoing><bpmn:script>reserved = True</bpmn:script></bpmn:scriptTask>
       <bpmn:exclusiveGateway id="gw_paid" name="Payment ok?" default="Flow_gw_paid_pay_end"><bpmn:incoming>Flow_reserve_stock_gw_paid</bpmn:incoming><bpmn:outgoing>Flow_gw_paid_pay_cancel</bpmn:outgoing><bpmn:outgoing>Flow_gw_paid_pay_end</bpmn:outgoing></bpmn:exclusiveGateway>
       <bpmn:endEvent id="pay_end" name="Paid"><bpmn:incoming>Flow_gw_paid_pay_end</bpmn:incoming></bpmn:endEvent>
-      <bpmn:endEvent id="pay_cancel" name="Payment failed"><bpmn:incoming>Flow_gw_paid_pay_cancel</bpmn:incoming><bpmn:cancelEventDefinition /></bpmn:endEvent>
+      <bpmn:endEvent id="pay_cancel" name="Payment failed"><bpmn:incoming>Flow_gw_paid_pay_cancel</bpmn:incoming><bpmn:errorEventDefinition errorRef="Error_payment_failed" /></bpmn:endEvent>
       <bpmn:sequenceFlow id="Flow_pay_start_reserve_stock" sourceRef="pay_start" targetRef="reserve_stock"></bpmn:sequenceFlow>
       <bpmn:sequenceFlow id="Flow_reserve_stock_gw_paid" sourceRef="reserve_stock" targetRef="gw_paid"></bpmn:sequenceFlow>
       <bpmn:sequenceFlow id="Flow_gw_paid_pay_cancel" name="failed" sourceRef="gw_paid" targetRef="pay_cancel"><bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">payment_ok == False</bpmn:conditionExpression></bpmn:sequenceFlow>
       <bpmn:sequenceFlow id="Flow_gw_paid_pay_end" name="paid" sourceRef="gw_paid" targetRef="pay_end"></bpmn:sequenceFlow>
-    </bpmn:transaction>
-    <bpmn:boundaryEvent id="b_cancelled" name="Cancelled" attachedToRef="payment"><bpmn:outgoing>Flow_b_cancelled_release_stock</bpmn:outgoing><bpmn:cancelEventDefinition /></bpmn:boundaryEvent>
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="b_cancelled" name="Payment failed" attachedToRef="payment"><bpmn:outgoing>Flow_b_cancelled_release_stock</bpmn:outgoing><bpmn:errorEventDefinition errorRef="Error_payment_failed" /></bpmn:boundaryEvent>
     <bpmn:scriptTask id="release_stock" name="Release stock" scriptFormat="python"><bpmn:incoming>Flow_b_cancelled_release_stock</bpmn:incoming><bpmn:outgoing>Flow_release_stock_end_payment_failed</bpmn:outgoing><bpmn:script>reserved = False
 order_outcome = 'payment_failed'</bpmn:script></bpmn:scriptTask>
     <bpmn:endEvent id="end_payment_failed" name="Order cancelled"><bpmn:incoming>Flow_release_stock_end_payment_failed</bpmn:incoming></bpmn:endEvent>

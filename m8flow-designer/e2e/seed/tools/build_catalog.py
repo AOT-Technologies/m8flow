@@ -256,11 +256,12 @@ def customer_complaint():
 # ---------------------------------------------------------------------------------------------
 def order_fulfilment():
     d = Diagram("e2e_order_fulfilment", "E2E Order Fulfilment", [("Submitters", 2), ("Administrators", 2)],
-                documentation="A sales order is picked item by item, paid in a transaction that is cancelled when "
-                              "the payment fails, recorded in the database and shipped on the dispatch date. A "
+                documentation="A sales order is picked item by item, paid, recorded in the database and shipped on "
+                              "the dispatch date. A payment failure releases the stock and stops the order. A "
                               "back-ordered item escalates to purchasing without stopping the order.")
     S, F = "Submitters", "Administrators"
     d.root_xml.append('<bpmn:escalation id="Escalation_backorder" name="Item on backorder" escalationCode="BACKORDER" />')
+    d.root_xml.append('<bpmn:error id="Error_payment_failed" name="Payment failed" errorCode="PAYMENT_FAILED" />')
     d.io_spec = ('<bpmn:ioSpecification><bpmn:dataInput id="order_channel" name="Order channel" />'
                  '<bpmn:dataOutput id="order_outcome" name="Order outcome" />'
                  '<bpmn:inputSet><bpmn:dataInputRefs>order_channel</bpmn:dataInputRefs></bpmn:inputSet>'
@@ -288,13 +289,16 @@ def order_fulfilment():
     d.user("notify_purchasing", "Notify purchasing", 6, F, form="purchasing",
            instructions="Items on backorder for {{ customer }}: {{ items }}. Raise a purchase order.")
     d.end("end_purchasing", "Purchasing notified", 7, F)
-    d.container("payment", "Take payment", 7, S, tag="transaction", span=4)
+    # The baseline runs with the pinned core, which supports BPMN errors but not Cancel Events.
+    d.container("payment", "Take payment", 7, S, span=4)
     d.start("pay_start", None, 7, S, parent="payment")
     d.script("reserve_stock", "Reserve stock", 8, S, code="reserved = True", parent="payment")
     d.gateway("gw_paid", "Payment ok?", 9, S, default="Flow_gw_paid_pay_end", parent="payment")
     d.end("pay_end", "Paid", 10, S, 0.22, parent="payment")
-    d.end("pay_cancel", "Payment failed", 10, S, -0.22, parent="payment", definition="<bpmn:cancelEventDefinition />")
-    d.boundary("b_cancelled", "Cancelled", "payment", at=0.5, definition="<bpmn:cancelEventDefinition />")
+    d.end("pay_cancel", "Payment failed", 10, S, -0.22, parent="payment",
+          definition='<bpmn:errorEventDefinition errorRef="Error_payment_failed" />')
+    d.boundary("b_cancelled", "Payment failed", "payment", at=0.5,
+               definition='<bpmn:errorEventDefinition errorRef="Error_payment_failed" />')
     d.script("release_stock", "Release stock", 9, F, 1, code="reserved = False\norder_outcome = 'payment_failed'")
     d.end("end_payment_failed", "Order cancelled", 10, F, 1)
     d.service("ensure_order_table", "Ensure order table", 11, S, operator="postgres_v2/DoSQL", result="order_table",
