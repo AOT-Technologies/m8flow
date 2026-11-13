@@ -384,6 +384,42 @@ def test_service_task_error_is_recorded_when_the_model_xml_cannot_be_parsed(
     assert "Failed to record service task error" not in caplog.text
 
 
+_BOUNDARY_ON_WORK = (
+    '<bpmn:error id="Err_1" errorCode="HttpError404" />'
+    '<bpmn:boundaryEvent id="Catch" attachedToRef="Work">'
+    '<bpmn:errorEventDefinition errorRef="Err_1" /></bpmn:boundaryEvent>'
+)
+
+
+@pytest.mark.parametrize(
+    "process_body",
+    [
+        # The failing task isn't in this definition (version drift): no catcher known.
+        '<bpmn:serviceTask id="Other" />',
+        # "Work" is not a service task here, so its boundary can't be the one.
+        '<bpmn:scriptTask id="Work" />',
+        # A malformed model with a duplicate id: don't guess which one ran.
+        '<bpmn:serviceTask id="Work" /><bpmn:subProcess id="S"><bpmn:serviceTask id="Work" /></bpmn:subProcess>',
+    ],
+)
+def test_service_task_error_is_recorded_unless_the_failed_service_task_is_found(
+    db_session, caplog, process_body
+):
+    """Only a boundary on the very service task that failed (or a sub-process
+    around it) may suppress the record; anything uncertain records."""
+    xml = (
+        f'<bpmn:definitions {_NS} id="D"><bpmn:process id="P">'
+        f"{process_body}{_BOUNDARY_ON_WORK}</bpmn:process></bpmn:definitions>"
+    )
+    request = _request_for_model(db_session, xml)
+
+    with pytest.raises(ServiceTaskExecutionError):
+        _http404_registry().execute(request)
+
+    assert _recorded_messages(db_session) == ["proxy said 404 Not Found"]
+    assert "Failed to record service task error" not in caplog.text
+
+
 def test_service_task_error_with_no_matching_boundary_is_recorded(db_session):
     request = _request_for_model(db_session, _boundary_bpmn(catch_code="HttpError500"))
 

@@ -741,22 +741,26 @@ def _error_instance_after_failed_start_script(
                 )
             ) is None:
                 return None
-            api.execute_command(
-                error_session,
-                api.ErrorProcessInstanceCommand(
-                    tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
-                ),
-            )
-            api.execute_command(
-                error_session,
-                api.RecordProcessInstanceEventCommand(
-                    tenant_id=tenant_id,
-                    process_instance_id=process_instance_id,
-                    event_type="task_failed",
-                    task_guid=failed_task_guid,
-                    user_id=user_id,
-                ),
-            )
+            # Same scope as `start`'s own command: a super-admin acting in a
+            # tenant they don't belong to only passes core's membership check
+            # inside it, and this session opens after that scope has ended.
+            with _acting_tenant_membership(error_session, tenant_id=tenant_id, user_id=user_id):
+                api.execute_command(
+                    error_session,
+                    api.ErrorProcessInstanceCommand(
+                        tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+                    ),
+                )
+                api.execute_command(
+                    error_session,
+                    api.RecordProcessInstanceEventCommand(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        event_type="task_failed",
+                        task_guid=failed_task_guid,
+                        user_id=user_id,
+                    ),
+                )
             _record_process_instance_error(
                 error_session,
                 tenant_id=tenant_id,
@@ -1279,17 +1283,23 @@ def _error_boundary_catches(session: Session, *, context: Any, exc: BaseExceptio
     codes = {e.get("id"): e.get("errorCode") for e in root.iterfind(".//bpmn:error", _BPMN_MODEL_NS)}
     # ponytail: a task inside a called child process is not in this XML, so its
     # failure is still recorded even if the call activity's boundary catches it.
-    scope = next(iter(root.xpath(".//bpmn:*[@id=$id]", namespaces=_BPMN_MODEL_NS, id=task_id)), None)
-    while scope is not None and scope.get("id"):
+    tasks = root.xpath(
+        ".//bpmn:process//bpmn:serviceTask[@id=$id]", namespaces=_BPMN_MODEL_NS, id=task_id
+    )
+    if len(tasks) != 1:
+        return False  # not this definition's service task, or a duplicate id: record
+    # The task, then each enclosing sub-process, nearest first; never the
+    # process or definitions element, whose ids no boundary should attach to.
+    hosts = [tasks[0], *reversed(tasks[0].xpath("ancestor::bpmn:subProcess", namespaces=_BPMN_MODEL_NS))]
+    for host in hosts:
         for definition in root.xpath(
             ".//bpmn:boundaryEvent[@attachedToRef=$host]/bpmn:errorEventDefinition",
             namespaces=_BPMN_MODEL_NS,
-            host=scope.get("id"),
+            host=host.get("id"),
         ):
             error_ref = definition.get("errorRef")
             if error_ref is None or codes.get(error_ref) in (None, code):
                 return True
-        scope = scope.getparent()
     return False
 
 

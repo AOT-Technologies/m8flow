@@ -435,18 +435,124 @@ FAILS_AT_START_BPMN = """\
 """
 
 
+def _failed_start_script_error(process_instance_id: int):
+    """Shaped like Spiff's WorkflowTaskException from a failed start: the failed
+    task, whose workflow's script engine carries the instance id."""
+    exception_type = type(
+        "WorkflowTaskException", (RuntimeError,), {"__module__": "SpiffWorkflow.bpmn.exceptions"}
+    )
+    failure = exception_type("Exception:boom at start")
+    engine = SimpleNamespace(_process_instance_id=process_instance_id)
+    failure.task = SimpleNamespace(
+        id="failed-script-task",
+        task_spec=SimpleNamespace(bpmn_name="Explode"),
+        workflow=SimpleNamespace(top_workflow=SimpleNamespace(script_engine=engine)),
+    )
+    return failure
+
+
+def _not_started_instance(db_session, tenant, user):
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.not_started.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    return instance
+
+
 @pytest.mark.parametrize("starter_role", ["admin", "user"])
-def test_script_failure_at_start_moves_the_instance_to_error(
-    db_session, tmp_path, monkeypatch, starter_role
-):
-    """Core commits the new instance before running it and only moves it to
-    Error for a service-task failure; a failing script left it not_started.
-    A starter with only the ``user`` role (start, claim, complete) must get the
-    same result: recording the failure needs no rights beyond starting."""
+def test_failed_start_recovery_moves_the_instance_to_error(db_session, starter_role):
+    """Core commits a new instance before running it and only moves it to Error
+    for a service-task failure; a failing script left it not_started. The
+    recovery runs on its own session, as in the app after a failed start. A
+    starter with only the ``user`` role (start, claim, complete) gets the same
+    result: recording the failure needs no rights beyond starting."""
     from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
     from m8flow_core.services.authorization import ensure_v1_role
 
+    tenant, starter = _seed_actor(db_session)
+    if starter_role == "user":
+        starter = identity.ensure_user(
+            db_session,
+            username="starter",
+            service="https://example.test/realms/m8flow",
+            service_id="starter-1",
+            email="starter@example.test",
+        )
+        identity.ensure_membership(db_session, starter, tenant)
+        ensure_v1_role(db_session, tenant_id=tenant.id, role_name="user", user_ids=(starter.id,))
+    instance = _not_started_instance(db_session, tenant, starter)
+    # The app commits before the run; the recovery's own session sees committed rows only.
+    db_session.commit()
+
+    failed_id = workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=starter.id,
+        process_model_identifier="examples/fails-at-start",
+        exc=_failed_start_script_error(instance.id),
+    )
+
+    db_session.expire_all()
+    assert failed_id == instance.id
+    assert db_session.get(ProcessInstanceModel, instance.id).status == ProcessInstanceStatus.error.value
+    errors = workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=instance.id)
+    assert errors == [("failed-script-task", "Explode: Exception:boom at start")]
+    failed_events = (
+        db_session.query(ProcessInstanceEventModel)
+        .filter_by(process_instance_id=instance.id, event_type="task_failed")
+        .all()
+    )
+    assert [event.task_guid for event in failed_events] == ["failed-script-task"]
+
+
+def test_failed_start_recovery_marks_only_its_own_instance(db_session):
+    """A concurrent start of the same model by the same user leaves a newer
+    not_started instance. Only the instance the failed task ran in moves to
+    Error; another tenant's, model's or user's instance is never touched."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    tenant, user = _seed_actor(db_session)
+    failed = _not_started_instance(db_session, tenant, user)
+    concurrent = _not_started_instance(db_session, tenant, user)
+    db_session.commit()
+
+    assert workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/other-model",
+        exc=_failed_start_script_error(failed.id),
+    ) is None
+    assert workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/fails-at-start",
+        exc=_failed_start_script_error(failed.id),
+    ) == failed.id
+
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, failed.id).status == ProcessInstanceStatus.error.value
+    assert (
+        db_session.get(ProcessInstanceModel, concurrent.id).status
+        == ProcessInstanceStatus.not_started.value
+    )
+
+
+def test_super_admin_start_failure_in_another_tenant_reaches_error(db_session, tmp_path, monkeypatch):
+    """A super-admin starts in a tenant they don't belong to through a temporary
+    membership. The recovery runs in its own session after that scope ended, so
+    it must take the same membership or core rejects the Error transition."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+
+    from m8flow_backend.authorization import HostAuthorizationPolicy
     from m8flow_backend.errors import ApiError
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
@@ -458,106 +564,42 @@ def test_script_failure_at_start_moves_the_instance_to_error(
         tenant_id=tenant.id,
         user_id=admin.id,
     )
-    starter = admin
-    if starter_role == "user":
-        starter = identity.ensure_user(
-            db_session,
-            username="starter",
-            service="https://example.test/realms/m8flow",
-            service_id="starter-1",
-            email="starter@example.test",
-        )
-        identity.ensure_membership(db_session, starter, tenant)
-        ensure_v1_role(db_session, tenant_id=tenant.id, role_name="user", user_ids=(starter.id,))
-        db_session.flush()
-
-    with pytest.raises(ApiError) as raised:
-        workflow.start(
-            db_session,
-            tenant_id=tenant.id,
-            user_id=starter.id,
-            process_model_identifier="examples/fails-at-start",
-        )
-
-    db_session.expire_all()
-    instance = (
-        db_session.query(ProcessInstanceModel)
-        .filter_by(m8f_tenant_id=tenant.id, process_model_identifier="examples/fails-at-start")
-        .one()
-    )
-    assert instance.status == ProcessInstanceStatus.error.value
-    assert raised.value.status_code == 422
-    assert "boom at start" in raised.value.message
-    assert f"Process instance {instance.id} is now in Error." in raised.value.message
-    errors = workflow.list_instance_errors(
-        db_session, tenant_id=tenant.id, process_instance_id=instance.id
-    )
-    assert len(errors) == 1
-    assert errors[0][1].startswith("Explode: Exception:boom at start")
-    failed_events = (
-        db_session.query(ProcessInstanceEventModel)
-        .filter_by(process_instance_id=instance.id, event_type="task_failed")
-        .all()
-    )
-    assert [event.task_guid for event in failed_events] == [errors[0][0]]
-
-
-def test_failed_start_marks_only_its_own_instance_when_another_start_is_concurrent(
-    db_session, tmp_path, monkeypatch
-):
-    """A concurrent start of the same model by the same user creates a newer
-    not_started instance while this one fails. Only the failed one moves to Error."""
-    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
-
-    from m8flow_backend.errors import ApiError
-
-    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
-    tenant, user = _seed_actor(db_session)
-    catalog.save(
+    home = identity.ensure_tenant(db_session, tenant_id="home", slug="home")
+    root = identity.ensure_user(
         db_session,
-        path="examples/fails-at-start",
-        xml=FAILS_AT_START_BPMN,
-        tenant_id=tenant.id,
-        user_id=user.id,
+        username="root",
+        service="https://example.test/realms/home",
+        service_id="root-1",
+        email="root@example.test",
     )
-    real_execute_command = workflow.api.execute_command
-    concurrent: dict[str, int] = {}
+    identity.ensure_membership(db_session, root, home)
+    identity.sync_groups(db_session, user=root, group_identifiers=["super-admin"], tenant_id="home")
+    db_session.commit()
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
+    external_user_id_before = root.external_user_id
 
-    def _execute_command(session, command):
-        try:
-            return real_execute_command(session, command)
-        except Exception:
-            if type(command).__name__ == "InitializeProcessInstanceFromDefinitionCommand":
-                other = ProcessInstanceModel(
-                    m8f_tenant_id=tenant.id,
-                    process_model_identifier="examples/fails-at-start",
-                    process_model_display_name="Fails at start",
-                    process_initiator_id=user.id,
-                    status=ProcessInstanceStatus.not_started.value,
-                )
-                session.add(other)
-                session.flush()
-                concurrent["id"] = other.id
-            raise
-
-    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
-
-    with pytest.raises(ApiError) as raised:
-        workflow.start(
-            db_session,
-            tenant_id=tenant.id,
-            user_id=user.id,
-            process_model_identifier="examples/fails-at-start",
-        )
+    # The app installs the host policy, which lets a super-admin act anywhere.
+    with workflow.api.authorization_policy_scope(HostAuthorizationPolicy()):
+        with pytest.raises(ApiError) as raised:
+            workflow.start(
+                db_session,
+                tenant_id=tenant.id,
+                user_id=root.id,
+                process_model_identifier="examples/fails-at-start",
+            )
 
     db_session.expire_all()
     failed_id = raised.value.process_instance_id
-    assert failed_id is not None and failed_id != concurrent["id"]
+    assert failed_id is not None
     assert db_session.get(ProcessInstanceModel, failed_id).status == ProcessInstanceStatus.error.value
-    assert (
-        db_session.get(ProcessInstanceModel, concurrent["id"]).status
-        == ProcessInstanceStatus.not_started.value
-    )
+    assert raised.value.status_code == 422
+    assert "boom at start" in raised.value.message
+    assert f"Process instance {failed_id} is now in Error." in raised.value.message
+    errors = workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=failed_id)
+    assert len(errors) == 1 and errors[0][1].startswith("Explode: Exception:boom at start")
+    root = db_session.get(UserModel, root.id)
+    assert root.external_user_id == external_user_id_before
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
 
 
 def test_failing_to_record_a_start_failure_still_reports_the_script_error(
