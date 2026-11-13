@@ -71,21 +71,25 @@ class MemoryControlPlane:
         *,
         mount: str,
         token_policies: list[str],
+        bind_secret_id: bool = True,
         token_no_default_policy: bool = True,
         secret_id_num_uses: int | None = None,
         secret_id_ttl: str | int | None = None,
         token_ttl: str | int | None = None,
         token_max_ttl: str | int | None = None,
+        token_period: str | int = 0,
     ) -> None:
         self.role_writes.append(role_name)
         self.roles[role_name] = {
             "token_policies": list(token_policies),
             "mount": mount,
+            "bind_secret_id": bind_secret_id,
             "token_no_default_policy": token_no_default_policy,
             "secret_id_num_uses": secret_id_num_uses,
             "secret_id_ttl": secret_id_ttl,
             "token_ttl": token_ttl,
             "token_max_ttl": token_max_ttl,
+            "period": token_period,
         }
 
     def read_approle_role_id(self, role_name: str, *, mount: str) -> str:
@@ -1091,6 +1095,12 @@ def test_reconcile_leaves_current_role_and_policy_untouched(monkeypatch):
     control.roles[role_name] = {
         "token_policies": [policy_name],
         "token_no_default_policy": True,
+        "bind_secret_id": True,
+        "secret_id_num_uses": 1,
+        # Vault returns durations in seconds while config accepts duration strings.
+        "secret_id_ttl": 600,
+        "token_ttl": 600,
+        "token_max_ttl": 1800,
     }
 
     identity = reconcile_tenant_identity(tenant_id, control=control)
@@ -1098,6 +1108,68 @@ def test_reconcile_leaves_current_role_and_policy_untouched(monkeypatch):
     assert identity.role_id == f"role-id-for-{role_name}"
     assert control.policy_writes == []
     assert control.role_writes == []
+    assert control.secret_id_calls == []
+
+
+@pytest.mark.parametrize(
+    ("setting", "drifted_value"),
+    [
+        ("bind_secret_id", False),
+        ("secret_id_num_uses", 0),
+        ("secret_id_ttl", 0),
+        ("token_ttl", 0),
+        ("token_max_ttl", 0),
+        ("period", 3600),
+    ],
+)
+def test_reconcile_repairs_drifted_role_credential_limits(
+    monkeypatch, setting, drifted_value
+):
+    from m8flow_backend.secrets.provisioning import (
+        _tenant_policy,
+        reconcile_tenant_identity,
+        tenant_policy_name,
+        tenant_role_name,
+    )
+
+    monkeypatch.setenv("M8FLOW_VAULT_MOUNT_POINT", "kv")
+    monkeypatch.setenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow")
+    monkeypatch.setenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_NUM_USES", "1")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_SECRET_ID_TTL", "10m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_TTL", "10m")
+    monkeypatch.setenv("M8FLOW_VAULT_TENANT_TOKEN_MAX_TTL", "30m")
+    tenant_id = "org-uuid-123"
+    policy_name = tenant_policy_name(tenant_id)
+    role_name = tenant_role_name(tenant_id)
+    control = MemoryControlPlane()
+    control.policies[policy_name] = _tenant_policy(tenant_id)
+    control.roles[role_name] = {
+        "token_policies": [policy_name],
+        "token_no_default_policy": True,
+        "bind_secret_id": True,
+        "secret_id_num_uses": 1,
+        "secret_id_ttl": 600,
+        "token_ttl": 600,
+        "token_max_ttl": 1800,
+        "period": 0,
+    }
+    control.roles[role_name][setting] = drifted_value
+
+    reconcile_tenant_identity(tenant_id, control=control)
+
+    repaired_role = control.roles[role_name]
+    assert repaired_role["bind_secret_id"] is True
+    assert repaired_role["secret_id_num_uses"] == 1
+    assert repaired_role["secret_id_ttl"] == "10m"
+    assert repaired_role["token_ttl"] == "10m"
+    assert repaired_role["token_max_ttl"] == "30m"
+    assert repaired_role["period"] == 0
+    assert control.role_writes == [role_name]
+    # Provisioning rewrites the policy idempotently along with the role.
+    assert control.policy_writes == [policy_name]
     assert control.secret_id_calls == []
 
 
@@ -1117,8 +1189,8 @@ def test_provision_sanitizes_names_and_encodes_tenant_path(monkeypatch):
     spaced = provision_tenant_identity("tenant / blue", control=control)
     assert spaced.policy_name == tenant_policy_name("tenant / blue")
     assert spaced.role_name == tenant_role_name("tenant / blue")
-    assert spaced.policy_name.startswith("tenant-policy-tenant-blue-")
-    assert spaced.role_name.startswith("tenant-role-tenant-blue-")
+    assert spaced.policy_name.startswith("tenant-policy-tenant-blue~")
+    assert spaced.role_name.startswith("tenant-role-tenant-blue~")
     assert control.roles[spaced.role_name]["mount"] == "approle-custom"
 
     encoded = MemoryControlPlane()
@@ -1135,17 +1207,28 @@ def test_tenant_identity_names_do_not_collide_after_sanitization(monkeypatch):
 
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
     monkeypatch.setenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
-    tenant_ids = ["tenant/a", "tenant?a", "tenant-a"]
+    # The last ID is the literal safe-looking form that previously collided
+    # with tenant/a's sanitized name plus its truncated hash suffix.
+    tenant_ids = [
+        "tenant/a",
+        "tenant?a",
+        "tenant-a",
+        "tenant-a-584a11c77f870c59",
+    ]
 
     policy_names = [tenant_policy_name(tenant_id) for tenant_id in tenant_ids]
     role_names = [tenant_role_name(tenant_id) for tenant_id in tenant_ids]
 
     assert len(set(policy_names)) == len(tenant_ids)
     assert len(set(role_names)) == len(tenant_ids)
-    assert policy_names[0].startswith("m8flow-tenant-policy-tenant-a-")
-    assert policy_names[1].startswith("m8flow-tenant-policy-tenant-a-")
-    assert role_names[0].startswith("m8flow-tenant-role-tenant-a-")
-    assert role_names[1].startswith("m8flow-tenant-role-tenant-a-")
+    assert policy_names[0].startswith("m8flow-tenant-policy-tenant-a~")
+    assert policy_names[1].startswith("m8flow-tenant-policy-tenant-a~")
+    assert role_names[0].startswith("m8flow-tenant-role-tenant-a~")
+    assert role_names[1].startswith("m8flow-tenant-role-tenant-a~")
+    # An ID that was safe before encoding remains stable for existing Vault
+    # roles and cannot collide with either encoded ID.
+    assert policy_names[2] == "m8flow-tenant-policy-tenant-a"
+    assert role_names[2] == "m8flow-tenant-role-tenant-a"
     assert policy_names[2] == "m8flow-tenant-policy-tenant-a"
     assert role_names[2] == "m8flow-tenant-role-tenant-a"
 

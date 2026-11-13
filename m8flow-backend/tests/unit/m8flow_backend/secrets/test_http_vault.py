@@ -69,6 +69,36 @@ def test_versioned_document_read_and_cas_write(monkeypatch):
     }
 
 
+def test_write_approle_requires_secret_id_binding(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.requests.request",
+        lambda method, url, **kwargs: calls.append((method, url, kwargs))
+        or _response(payload={}),
+    )
+    vault = HttpVault(addr="http://vault:8200", token="admin-token")
+
+    vault.write_approle(
+        "tenant-role",
+        mount="approle",
+        token_policies=["tenant-policy"],
+        bind_secret_id=True,
+        secret_id_num_uses=1,
+        secret_id_ttl="10m",
+        token_ttl="10m",
+        token_max_ttl="30m",
+        token_period=0,
+    )
+
+    assert calls[0][0:2] == (
+        "POST",
+        "http://vault:8200/v1/auth/approle/role/tenant-role",
+    )
+    assert calls[0][2]["json"]["bind_secret_id"] is True
+    assert calls[0][2]["json"]["secret_id_num_uses"] == 1
+    assert calls[0][2]["json"]["token_period"] == 0
+
+
 def test_token_cached_after_approle_login(monkeypatch):
     tokens: list[str | None] = []
 

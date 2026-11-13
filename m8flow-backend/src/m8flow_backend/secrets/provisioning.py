@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
+import base64
 import re
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import urljoin
 
@@ -29,6 +30,16 @@ from m8flow_backend.secrets.paths import secret_root
 from m8flow_backend.secrets.provider import resolved_secret_backend_kind
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
+_VAULT_DURATION_PART = re.compile(r"(?P<amount>\d+(?:\.\d+)?)(?P<unit>ns|us|µs|ms|s|m|h)")
+_DURATION_UNIT_SECONDS = {
+    "ns": Decimal("0.000000001"),
+    "us": Decimal("0.000001"),
+    "µs": Decimal("0.000001"),
+    "ms": Decimal("0.001"),
+    "s": Decimal(1),
+    "m": Decimal(60),
+    "h": Decimal(3600),
+}
 
 
 @dataclass(frozen=True)
@@ -66,10 +77,12 @@ def _tenant_component(tenant_id: str) -> str:
     sanitized = _safe_component(normalized, "tenant_id")
     if sanitized == normalized:
         return sanitized
-    # Keep Vault-safe names readable while ensuring lossy sanitization cannot
-    # alias two distinct tenant IDs to the same AppRole or policy.
-    suffix = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
-    return f"{sanitized}-{suffix}"
+    # Keep the readable sanitized form, but append a reversible encoding of
+    # the original ID. The '~' delimiter is excluded from _SAFE_NAME, so an
+    # already-safe tenant ID can never alias an encoded one. Unlike a hash
+    # suffix, the full encoding also avoids truncation collisions.
+    encoded = base64.urlsafe_b64encode(normalized.encode("utf-8")).decode("ascii")
+    return f"{sanitized}~{encoded.rstrip('=')}"
 
 
 def tenant_policy_name(tenant_id: str) -> str:
@@ -108,11 +121,15 @@ def provision_tenant_identity(tenant_id: str, *, control: Any | None = None) -> 
             role_name,
             mount=mount,
             token_policies=[policy_name],
+            bind_secret_id=True,
             token_no_default_policy=True,
             secret_id_num_uses=vault_tenant_secret_id_num_uses(),
             secret_id_ttl=vault_tenant_secret_id_ttl(),
             token_ttl=vault_tenant_token_ttl(),
             token_max_ttl=vault_tenant_token_max_ttl(),
+            # Tenant tokens must expire at token_max_ttl and cannot be
+            # indefinitely renewed as periodic tokens.
+            token_period=0,
         )
         role_id = admin.read_approle_role_id(role_name, mount=mount)
     except TenantVaultProvisioningError:
@@ -138,14 +155,62 @@ def _normalized_policy(policy: str | None) -> str | None:
     return "\n".join(line.strip() for line in policy.splitlines() if line.strip())
 
 
+def _duration_seconds(value: object) -> Decimal | None:
+    """Normalize Vault's duration input and read-back forms to seconds."""
+    if isinstance(value, bool) or value is None:
+        return None
+    raw = str(value).strip()
+    try:
+        return Decimal(raw)
+    except InvalidOperation:
+        pass
+
+    parts = list(_VAULT_DURATION_PART.finditer(raw))
+    if not parts or "".join(part.group(0) for part in parts) != raw:
+        return None
+    return sum(
+        (
+            Decimal(part.group("amount"))
+            * _DURATION_UNIT_SECONDS[part.group("unit")]
+            for part in parts
+        ),
+        Decimal(0),
+    )
+
+
+def _role_security_settings_are_current(role_data: dict[str, Any]) -> bool:
+    """Reject role drift that weakens the configured credential lifetime/use limits."""
+    expected_durations = (
+        _duration_seconds(vault_tenant_secret_id_ttl()),
+        _duration_seconds(vault_tenant_token_ttl()),
+        _duration_seconds(vault_tenant_token_max_ttl()),
+    )
+    actual_durations = (
+        _duration_seconds(role_data.get("secret_id_ttl")),
+        _duration_seconds(role_data.get("token_ttl")),
+        _duration_seconds(role_data.get("token_max_ttl")),
+    )
+    return (
+        role_data.get("bind_secret_id") is True
+        and type(role_data.get("secret_id_num_uses")) is int
+        and role_data.get("secret_id_num_uses") == vault_tenant_secret_id_num_uses()
+        and all(duration is not None for duration in expected_durations)
+        and actual_durations == expected_durations
+        # Vault's AppRole read response calls this field "period"; accept the
+        # write-side "token_period" name too for adapters and test doubles.
+        and _duration_seconds(role_data.get("token_period", role_data.get("period", 0)))
+        == Decimal(0)
+    )
+
+
 def reconcile_tenant_identity(
     tenant_id: str, *, control: Any | None = None
 ) -> TenantVaultIdentity:
     """Ensure a tenant role and its policy match the current isolation contract.
 
     Tenant rows may predate Vault or may retain roles after an interrupted or
-    manually edited provisioning operation. Check both the policy document and
-    the role's policy binding before allowing the caller to mint a tenant token.
+    manually edited provisioning operation. Check the policy document, role
+    binding, and credential lifetime/use limits before allowing a tenant login.
     Repair is idempotent and does not rotate SecretIDs for an existing role.
     """
     normalized = _require(tenant_id, "tenant_id")
@@ -172,6 +237,7 @@ def reconcile_tenant_identity(
         role_is_current = (
             set(str(policy) for policy in bound_policies) == {policy_name}
             and role_data.get("token_no_default_policy") is True
+            and _role_security_settings_are_current(role_data)
         )
         if not policy_is_current or not role_is_current:
             return provision_tenant_identity(normalized, control=admin)

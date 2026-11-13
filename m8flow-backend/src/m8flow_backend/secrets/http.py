@@ -213,22 +213,26 @@ class HttpVault:
         *,
         mount: str,
         token_policies: list[str],
+        bind_secret_id: bool = True,
         token_no_default_policy: bool = True,
         secret_id_num_uses: int | None = None,
         secret_id_ttl: str | int | None = None,
         token_ttl: str | int | None = None,
         token_max_ttl: str | int | None = None,
+        token_period: str | int = 0,
     ) -> None:
         self._json(
             "POST",
             f"{self._addr}/v1/auth/{mount}/role/{role_name}",
             payload={
                 "token_policies": token_policies,
+                "bind_secret_id": bind_secret_id,
                 "token_no_default_policy": token_no_default_policy,
                 "secret_id_num_uses": secret_id_num_uses,
                 "secret_id_ttl": secret_id_ttl,
                 "token_ttl": token_ttl,
                 "token_max_ttl": token_max_ttl,
+                "token_period": token_period,
             },
         )
 
