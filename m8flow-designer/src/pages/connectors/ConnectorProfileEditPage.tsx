@@ -232,20 +232,27 @@ function FormField({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const Label = staticLabel ? 'span' : 'label';
+  const labelClassName = 'text-sm font-medium text-foreground';
+  const labelContent = (
+    <>
+      {label}
+      {required ? (
+        <span className="ml-0.5 text-destructive" aria-hidden>
+          *
+        </span>
+      ) : (
+        <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
+      )}
+    </>
+  );
   return (
     <div className="mt-4 first:mt-0">
       <div className="flex items-center gap-2">
-        <Label htmlFor={staticLabel ? undefined : id} className="text-sm font-medium text-foreground">
-          {label}
-          {required ? (
-            <span className="ml-0.5 text-destructive" aria-hidden>
-              *
-            </span>
-          ) : (
-            <span className="ml-1 font-normal text-muted-foreground">{t('connectors.edit.optional')}</span>
-          )}
-        </Label>
+        {staticLabel ? (
+          <span className={labelClassName}>{labelContent}</span>
+        ) : (
+          <label htmlFor={id} className={labelClassName}>{labelContent}</label>
+        )}
         {status ? (
           <Badge
             variant={status === 'configured' ? 'success' : 'outline'}
