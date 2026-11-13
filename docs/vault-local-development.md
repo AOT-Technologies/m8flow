@@ -1,10 +1,10 @@
 # Local Vault development
 
-The main Compose stack can run a local, single-node HashiCorp Vault for development and demos. It is disabled unless the `vault` and `vault-demo` profiles are selected. This setup uses HTTP, a persisted local root token and unseal key, and a development-only broker AppRole. Do not use these settings or volumes in production. Production Vault address, TLS, authentication, policies, and secret delivery must be configured by the deployment environment.
+The main Compose stack can run a local, single-node HashiCorp Vault for development and demos. It is disabled unless the `vault` and `vault-demo` profiles are selected. This setup uses HTTP, a persisted local root token and unseal key, and separate development-only runtime and provisioner AppRoles. Do not use these settings or volumes in production. Production Vault address, TLS, authentication, policies, and secret delivery must be configured by the deployment environment.
 
 ## Start the local Vault demo
 
-The base Compose stack forces `M8FLOW_VAULT_ENABLED=false`, so a Vault address or enable flag in the ignored root `.env` alone does not select Vault. To enable local Vault, include `docker/m8flow-docker-compose.vault.yml` with the `vault` profile. This override selects Vault for backend worker processes and points them at the local service. An explicit `M8FLOW_SECRET_BACKEND_KIND=vault` remains an intentional opt-in for externally managed Vault. The local Vault broker credentials are generated in a named volume and loaded by backend and worker containers.
+The base Compose stack forces `M8FLOW_VAULT_ENABLED=false`, so a Vault address or enable flag in the ignored root `.env` alone does not select Vault. To enable local Vault, include `docker/m8flow-docker-compose.vault.yml` with the `vault` profile. This override selects Vault for backend worker processes and points them at the local service. An explicit `M8FLOW_SECRET_BACKEND_KIND=vault` remains an intentional opt-in for externally managed Vault. Local runtime credentials are generated in `vault-runtime` and loaded by backend and worker containers. The separate policy/role management credentials are held only by `vault-provisioner` in `vault-provisioner`.
 
 Optionally create a local seed file. It is ignored by Git:
 
@@ -20,9 +20,10 @@ docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8
 
 Compose keeps backend startup independent from the one-shot Vault bootstrap:
 
-1. `vault` starts the local Vault server, then `vault-demo` initializes/unseals it as needed, enables KV v2 and AppRole, and creates the broker policy and role. It stores Vault root/unseal state in `vault-admin-state`, which only this bootstrap service mounts. It also creates a non-renewable 15-minute seed token scoped to `kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*`; that token is stored in the separate `vault-seed-state` volume. Broker credentials remain in `vault-runtime`.
-2. `m8flow-backend` starts independently and runs its normal database migrations before serving requests. Backend and worker entrypoints load the local broker credential paths from the state volume when Vault operations are used.
-3. `vault-seed` starts only after `vault-demo` has completed and the backend container has started. It polls `/v1.0/healthy` for up to 10 minutes; this endpoint becomes healthy after migrations finish. If the backend does not become healthy, the seed job exits with the last HTTP/network check and points to the backend healthcheck and logs. It then writes named configuration variables for the default `m8flow` tenant. Existing values are preserved unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
+1. `vault` starts the local Vault server, then `vault-demo` initializes/unseals it as needed, enables KV v2 and AppRole, and creates separate runtime and provisioner policies/AppRoles. It stores Vault root/unseal state in `vault-admin-state`, which only this bootstrap service mounts. It also creates a non-renewable 15-minute seed token scoped to `kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*`; that token is stored in the separate `vault-seed-state` volume. Runtime credentials go in `vault-runtime`; provisioner credentials go in `vault-provisioner`.
+2. `m8flow-backend` starts independently and runs its normal database migrations before serving requests. Backend and worker entrypoints load only runtime credentials. They call `vault-provisioner` over the private Compose network to ensure a tenant role/policy exists; the provisioner does not receive KV secret read access.
+3. `vault-provisioner` starts after `vault-demo` has completed, mounting only its own Vault credentials. Backend/worker processes receive the provisioner URL and a separate internal API token, but cannot write Vault policies or AppRoles directly.
+4. `vault-seed` starts only after `vault-demo` has completed and the backend container has started. It polls `/v1.0/healthy` for up to 10 minutes; this endpoint becomes healthy after migrations finish. If the backend does not become healthy, the seed job exits with the last HTTP/network check and points to the backend healthcheck and logs. It then writes named configuration variables for the default `m8flow` tenant. Existing values are preserved unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
 
 The seed script still accepts the previous `secrets:` format for local files that have not been updated: `SMTP_HOST` and `SMTP_PORT` become ordinary values, while other legacy entries default to sensitive. If an existing variable should adopt the new sensitivity declared in the seed file, set `M8FLOW_VAULT_DEMO_OVERWRITE=true` for that local seed run. If `secrets.yml` is absent, Vault still starts and the seed step exits successfully without writing demo values. Verify service order and result with:
 
@@ -41,7 +42,7 @@ For a manually managed local Vault, start only the base service:
 docker compose --env-file .env --profile vault -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml up -d vault
 ```
 
-Use `docker/vault/scripts/configure-m8flow-vault.ps1` or `.sh` to configure an already initialized Vault with the tenant policy and KV v2 mount. The scripts require an operator token and do not alter deployment configuration.
+Use `docker/vault/scripts/configure-m8flow-vault.ps1` or `.sh` to configure an already initialized Vault with the tenant, runtime, and provisioner policies plus the KV v2 mount. The scripts require an operator token and do not alter deployment configuration. A manual or production Vault deployment must also run an isolated provisioner service and provide its URL and API token to backend/worker services; do not give their runtime AppRole policy/role write access. Re-run the setup script on an existing Vault when upgrading to a version that changes policy paths. Runtime processes request one-use AppRole SecretIDs: Vault removes the SecretID and accessor on successful login, while failed logins trigger explicit accessor cleanup.
 
 ## Files
 

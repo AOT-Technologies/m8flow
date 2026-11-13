@@ -183,10 +183,12 @@ def test_vault_uses_tenant_scoped_stores():
 
 
 def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
-    from m8flow_backend.secrets.provisioning import tenant_role_name
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity, tenant_role_name
     from m8flow_backend.secrets.vault import VaultSecretProvider
 
     class Broker:
+        cache_identity = ("http://vault.test:8200", None, "kv", "approle", True)
+
         def __init__(self):
             self.roles = set()
             self.store = MemoryKv()
@@ -194,24 +196,29 @@ def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
         def read_approle(self, role_name, *, mount):
             return {"data": {}} if role_name in self.roles else None
 
-        def store_for_tenant(self, tenant_id, *, role_name):
+        def store_for_tenant(self, tenant_id, *, role_name, role_id=None):
             assert role_name in self.roles
             return self.store
 
     broker = Broker()
     provisioned = []
 
-    def provision(tenant_id, *, control):
-        assert control is broker
+    def provision(tenant_id):
         role_name = tenant_role_name(tenant_id)
         if role_name not in broker.roles:
             broker.roles.add(role_name)
             provisioned.append(tenant_id)
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="policy",
+            role_name=role_name,
+            role_id="role-id",
+        )
 
     monkeypatch.setattr(
         "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
     )
-    monkeypatch.setattr("m8flow_backend.secrets.vault.reconcile_tenant_identity", provision)
+    monkeypatch.setattr("m8flow_backend.secrets.vault.request_tenant_identity", provision)
 
     provider = VaultSecretProvider()
     assert provider._kv("existing-tenant") is broker.store
@@ -220,6 +227,601 @@ def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
     # Once provisioned, ordinary secret operations do not rewrite the role.
     provider._kv("existing-tenant")
     assert provisioned == ["existing-tenant"]
+
+
+def test_vault_tenant_store_is_cached_across_provider_instances_until_token_expiry(monkeypatch):
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+
+    tenant_id = "cached-tenant-test"
+    now = [1000.0]
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: now[0])
+
+    class TenantStore:
+        def __init__(self, deadline):
+            self.token_cache_deadline = deadline
+            self.forbidden_callback = None
+
+        def set_auth_failure_callback(self, callback):
+            self.forbidden_callback = callback
+
+        def report_forbidden(self):
+            return self.forbidden_callback(self)
+
+    class Broker:
+        cache_identity = ("http://vault.test:8200", None, "kv", "approle", True)
+
+        def __init__(self):
+            self.login_count = 0
+
+        def store_for_tenant(self, requested_tenant_id, *, role_name, role_id=None):
+            assert requested_tenant_id == tenant_id
+            assert role_name == "tenant-role"
+            assert role_id == "tenant-role-id"
+            self.login_count += 1
+            return TenantStore(now[0] + 100)
+
+    broker = Broker()
+    reconcile_calls = []
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.request_tenant_identity",
+        lambda requested_tenant_id: (
+            reconcile_calls.append(requested_tenant_id)
+            or TenantVaultIdentity(
+                tenant_id=requested_tenant_id,
+                policy_name="tenant-policy",
+                role_name="tenant-role",
+                role_id="tenant-role-id",
+            )
+        ),
+    )
+    invalidate_tenant_store_cache(tenant_id)
+
+    first = VaultSecretProvider()._kv(tenant_id)
+    second = VaultSecretProvider()._kv(tenant_id)
+    assert first is second
+    assert broker.login_count == 1
+    assert len(reconcile_calls) == 1
+
+    first.report_forbidden()
+    recovered = VaultSecretProvider()._kv(tenant_id)
+    assert recovered is not first
+    assert broker.login_count == 2
+    assert len(reconcile_calls) == 2
+
+    # A late 403 from the old client must not evict its replacement.
+    first.report_forbidden()
+    assert VaultSecretProvider()._kv(tenant_id) is recovered
+    assert broker.login_count == 2
+
+    invalidate_tenant_store_cache(tenant_id)
+    invalidated = VaultSecretProvider()._kv(tenant_id)
+    assert invalidated is not recovered
+    assert broker.login_count == 3
+    assert len(reconcile_calls) == 3
+
+    now[0] += 101
+    refreshed = VaultSecretProvider()._kv(tenant_id)
+    assert refreshed is not invalidated
+    assert broker.login_count == 4
+    assert len(reconcile_calls) == 4
+    invalidate_tenant_store_cache(tenant_id)
+
+
+def test_concurrent_vault_cache_miss_creates_one_tenant_login(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Event, Lock
+
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+
+    tenant_id = "concurrent-cache-tenant-test"
+    worker_count = 5
+    start = Barrier(worker_count + 1)
+    reconcile_entered = Event()
+    allow_reconcile_to_finish = Event()
+    count_lock = Lock()
+    counts = {"reconcile": 0, "login": 0}
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault._monotonic", lambda: 1000.0
+    )
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+    class Broker:
+        cache_identity = ("http://vault.concurrent.test:8200", None, "kv", "approle", True)
+
+        def store_for_tenant(self, requested_tenant_id, *, role_name, role_id=None):
+            assert requested_tenant_id == tenant_id
+            assert role_name == "tenant-role"
+            assert role_id == "tenant-role-id"
+            with count_lock:
+                counts["login"] += 1
+            return TenantStore()
+
+    broker = Broker()
+
+    def reconcile(requested_tenant_id):
+        assert requested_tenant_id == tenant_id
+        with count_lock:
+            counts["reconcile"] += 1
+        reconcile_entered.set()
+        if not allow_reconcile_to_finish.wait(timeout=5):
+            raise TimeoutError("test did not release tenant reconciliation")
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="tenant-policy",
+            role_name="tenant-role",
+            role_id="tenant-role-id",
+        )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.vault.request_tenant_identity", reconcile)
+    invalidate_tenant_store_cache(tenant_id)
+
+    def get_store():
+        start.wait(timeout=5)
+        return VaultSecretProvider()._kv(tenant_id)
+
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        results = [pool.submit(get_store) for _ in range(worker_count)]
+        start.wait(timeout=5)
+        assert reconcile_entered.wait(timeout=5)
+        allow_reconcile_to_finish.set()
+        stores = [result.result(timeout=5) for result in results]
+
+    assert all(store is stores[0] for store in stores)
+    assert counts == {"reconcile": 1, "login": 1}
+    invalidate_tenant_store_cache(tenant_id)
+
+
+def test_vault_tenant_store_cache_isolated_by_tenant(monkeypatch):
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+
+    tenant_ids = ("cache-tenant-a", "cache-tenant-b")
+
+    class TenantStore:
+        token_cache_deadline = 10**12
+
+        def __init__(self, tenant_id):
+            self.tenant_id = tenant_id
+
+    class Broker:
+        cache_identity = ("http://vault.isolated.test:8200", None, "kv", "approle", True)
+
+        def __init__(self):
+            self.stores = {}
+
+        def store_for_tenant(self, tenant_id, *, role_name, role_id=None):
+            assert role_name == f"role-{tenant_id}"
+            assert role_id == f"role-id-{tenant_id}"
+            store = TenantStore(tenant_id)
+            self.stores[tenant_id] = store
+            return store
+
+    broker = Broker()
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.request_tenant_identity",
+        lambda tenant_id: TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name=f"policy-{tenant_id}",
+            role_name=f"role-{tenant_id}",
+            role_id=f"role-id-{tenant_id}",
+        ),
+    )
+    for tenant_id in tenant_ids:
+        invalidate_tenant_store_cache(tenant_id)
+
+    provider = VaultSecretProvider()
+    tenant_a = provider._kv(tenant_ids[0])
+    tenant_b = provider._kv(tenant_ids[1])
+
+    assert tenant_a is not tenant_b
+    assert tenant_a.tenant_id == tenant_ids[0]
+    assert tenant_b.tenant_id == tenant_ids[1]
+    assert provider._kv(tenant_ids[0]) is tenant_a
+    for tenant_id in tenant_ids:
+        invalidate_tenant_store_cache(tenant_id)
+
+
+def test_tenant_store_cache_isolated_by_vault_connection_identity(monkeypatch):
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+
+    tenant_id = "same-tenant-different-vault-config-test"
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+        def __init__(self, identity):
+            self.identity = identity
+
+    class Broker:
+        def __init__(self, identity):
+            self.cache_identity = identity
+            self.store = TenantStore(identity)
+
+        def store_for_tenant(self, requested_tenant_id, *, role_name, role_id=None):
+            assert requested_tenant_id == tenant_id
+            return self.store
+
+    primary = Broker(("http://vault.primary.test:8200", None, "kv", "approle", True))
+    alternate = Broker(("http://vault.alternate.test:8200", None, "kv", "approle", True))
+    active_broker = [primary]
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env",
+        staticmethod(lambda: active_broker[0]),
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.request_tenant_identity",
+        lambda requested_tenant_id: TenantVaultIdentity(
+            tenant_id=requested_tenant_id,
+            policy_name="policy",
+            role_name="role",
+            role_id="role-id",
+        ),
+    )
+    invalidate_tenant_store_cache(tenant_id)
+
+    provider = VaultSecretProvider()
+    primary_store = provider._kv(tenant_id)
+    active_broker[0] = alternate
+    alternate_store = provider._kv(tenant_id)
+    active_broker[0] = primary
+
+    assert primary_store is primary.store
+    assert alternate_store is alternate.store
+    assert alternate_store is not primary_store
+    assert provider._kv(tenant_id) is primary_store
+    invalidate_tenant_store_cache(tenant_id)
+
+
+def test_failed_cache_initialization_releases_waiters_for_retry(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+
+    from m8flow_backend.secrets.provisioning import (
+        TenantVaultIdentity,
+        TenantVaultProvisioningError,
+    )
+    from m8flow_backend.secrets.vault import (
+        VaultSecretProvider,
+        _TENANT_STORE_CACHE_CONDITION,
+        invalidate_tenant_store_cache,
+    )
+
+    tenant_id = "cache-init-retry-test"
+    cache_key = (("http://vault.init-retry.test:8200", None, "kv", "approle", True), tenant_id)
+    entered_first_reconcile = Event()
+    release_first_reconcile = Event()
+    waiter_is_blocked = Event()
+    count_lock = Lock()
+    calls = {"reconcile": 0, "wait": 0}
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
+
+    original_wait = _TENANT_STORE_CACHE_CONDITION.wait
+
+    def observed_wait(timeout=None):
+        with count_lock:
+            calls["wait"] += 1
+            waiter_is_blocked.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(_TENANT_STORE_CACHE_CONDITION, "wait", observed_wait)
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+    class Broker:
+        cache_identity = cache_key[0]
+
+        def store_for_tenant(self, requested_tenant_id, *, role_name, role_id=None):
+            assert requested_tenant_id == tenant_id
+            return TenantStore()
+
+    broker = Broker()
+
+    def reconcile(_tenant_id):
+        with count_lock:
+            calls["reconcile"] += 1
+            attempt = calls["reconcile"]
+        if attempt == 1:
+            entered_first_reconcile.set()
+            assert release_first_reconcile.wait(timeout=5)
+            raise TenantVaultProvisioningError("temporary provisioning failure")
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="policy",
+            role_name="role",
+            role_id="role-id",
+        )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.vault.request_tenant_identity", reconcile)
+    invalidate_tenant_store_cache(tenant_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(VaultSecretProvider()._kv, tenant_id)
+        assert entered_first_reconcile.wait(timeout=5)
+        second = pool.submit(VaultSecretProvider()._kv, tenant_id)
+        assert waiter_is_blocked.wait(timeout=5)
+        release_first_reconcile.set()
+
+        with pytest.raises(ApiError, match="Vault is down"):
+            first.result(timeout=5)
+        recovered_store = second.result(timeout=5)
+
+    assert calls == {"reconcile": 2, "wait": 1}
+    assert VaultSecretProvider()._kv(tenant_id) is recovered_store
+    invalidate_tenant_store_cache(tenant_id)
+
+
+def test_concurrent_rejected_token_refreshes_share_one_tenant_login(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier, Event, Lock
+
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import (
+        VaultSecretProvider,
+        _TENANT_STORE_CACHE_CONDITION,
+        invalidate_tenant_store_cache,
+    )
+
+    tenant_id = "parallel-auth-refresh-test"
+    worker_count = 5
+    identity_key = ("http://vault.refresh-race.test:8200", None, "kv", "approle", True)
+    ready = Barrier(worker_count + 1)
+    refresh_started = Event()
+    allow_refresh = Event()
+    all_waiters_blocked = Event()
+    lock = Lock()
+    counts = {"reconcile": 0, "login": 0, "waiters": 0}
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
+
+    original_wait = _TENANT_STORE_CACHE_CONDITION.wait
+
+    def observed_wait(timeout=None):
+        with lock:
+            counts["waiters"] += 1
+            if counts["waiters"] >= worker_count - 1:
+                all_waiters_blocked.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(_TENANT_STORE_CACHE_CONDITION, "wait", observed_wait)
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+        def __init__(self, generation):
+            self.generation = generation
+            self.auth_failure_callback = None
+
+        def set_auth_failure_callback(self, callback):
+            self.auth_failure_callback = callback
+
+        def report_rejected_token(self):
+            return self.auth_failure_callback(self)
+
+    class Broker:
+        cache_identity = identity_key
+
+        def store_for_tenant(self, requested_tenant_id, *, role_name, role_id=None):
+            assert requested_tenant_id == tenant_id
+            with lock:
+                counts["login"] += 1
+                generation = counts["login"]
+            refresh_started.set()
+            if generation > 1:
+                assert allow_refresh.wait(timeout=5)
+            return TenantStore(generation)
+
+    broker = Broker()
+
+    def reconcile(requested_tenant_id):
+        assert requested_tenant_id == tenant_id
+        with lock:
+            counts["reconcile"] += 1
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="policy",
+            role_name="role",
+            role_id="role-id",
+        )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.vault.request_tenant_identity", reconcile)
+    invalidate_tenant_store_cache(tenant_id)
+    old_store = VaultSecretProvider()._kv(tenant_id)
+    assert old_store.generation == 1
+
+    def reject_together():
+        ready.wait(timeout=5)
+        return old_store.report_rejected_token()
+
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        refreshes = [pool.submit(reject_together) for _ in range(worker_count)]
+        ready.wait(timeout=5)
+        assert refresh_started.wait(timeout=5)
+        assert all_waiters_blocked.wait(timeout=5)
+        allow_refresh.set()
+        refreshed_stores = [future.result(timeout=5) for future in refreshes]
+
+    assert all(store is refreshed_stores[0] for store in refreshed_stores)
+    assert refreshed_stores[0].generation == 2
+    assert counts == {"reconcile": 2, "login": 2, "waiters": worker_count - 1}
+    assert VaultSecretProvider()._kv(tenant_id) is refreshed_stores[0]
+    invalidate_tenant_store_cache(tenant_id)
+
+
+def test_tenant_cache_invalidation_waits_for_initialization_and_is_tenant_scoped(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import (
+        VaultSecretProvider,
+        _TENANT_STORE_CACHE_CONDITION,
+        invalidate_tenant_store_cache,
+    )
+
+    tenant_a = "invalidate-race-tenant-a"
+    tenant_b = "invalidate-race-tenant-b"
+    identity_key = ("http://vault.invalidate-race.test:8200", None, "kv", "approle", True)
+    entering_a = Event()
+    release_a = Event()
+    invalidation_waiting = Event()
+    lock = Lock()
+    login_counts = {tenant_a: 0, tenant_b: 0}
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
+
+    original_wait = _TENANT_STORE_CACHE_CONDITION.wait
+
+    def observed_wait(timeout=None):
+        invalidation_waiting.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(_TENANT_STORE_CACHE_CONDITION, "wait", observed_wait)
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+        def __init__(self, tenant_id, generation):
+            self.tenant_id = tenant_id
+            self.generation = generation
+
+    class Broker:
+        cache_identity = identity_key
+
+        def store_for_tenant(self, tenant_id, *, role_name, role_id=None):
+            with lock:
+                login_counts[tenant_id] += 1
+                generation = login_counts[tenant_id]
+            if tenant_id == tenant_a and generation == 1:
+                entering_a.set()
+                assert release_a.wait(timeout=5)
+            return TenantStore(tenant_id, generation)
+
+    broker = Broker()
+
+    def reconcile(tenant_id):
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name=f"policy-{tenant_id}",
+            role_name=f"role-{tenant_id}",
+            role_id=f"role-id-{tenant_id}",
+        )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.vault.request_tenant_identity", reconcile)
+    invalidate_tenant_store_cache(tenant_a)
+    invalidate_tenant_store_cache(tenant_b)
+    provider = VaultSecretProvider()
+    store_b = provider._kv(tenant_b)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        in_flight_a = pool.submit(provider._kv, tenant_a)
+        assert entering_a.wait(timeout=5)
+        invalidation = pool.submit(invalidate_tenant_store_cache, tenant_a)
+        assert invalidation_waiting.wait(timeout=5)
+        assert not invalidation.done()
+        release_a.set()
+        original_a = in_flight_a.result(timeout=5)
+        invalidation.result(timeout=5)
+
+    replacement_a = provider._kv(tenant_a)
+    assert replacement_a is not original_a
+    assert replacement_a.generation == 2
+    assert provider._kv(tenant_b) is store_b
+    assert login_counts == {tenant_a: 2, tenant_b: 1}
+    invalidate_tenant_store_cache(tenant_a)
+    invalidate_tenant_store_cache(tenant_b)
+
+
+def test_tenant_store_lru_refreshes_only_the_least_recently_used_entry(monkeypatch):
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+
+    tenant_ids = ("lru-tenant-a-test", "lru-tenant-b-test", "lru-tenant-c-test")
+    identity_key = ("http://vault.lru-test:8200", None, "kv", "approle", True)
+    monkeypatch.setattr("m8flow_backend.secrets.vault._TENANT_STORE_CACHE_MAX_SIZE", 2)
+    monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
+
+    class TenantStore:
+        token_cache_deadline = 2000.0
+
+        def __init__(self, tenant_id, generation):
+            self.tenant_id = tenant_id
+            self.generation = generation
+
+    class Broker:
+        cache_identity = identity_key
+
+        def __init__(self):
+            self.logins = {tenant_id: 0 for tenant_id in tenant_ids}
+
+        def store_for_tenant(self, tenant_id, *, role_name, role_id=None):
+            self.logins[tenant_id] += 1
+            return TenantStore(tenant_id, self.logins[tenant_id])
+
+    broker = Broker()
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.HttpVault.from_env", staticmethod(lambda: broker)
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.vault.request_tenant_identity",
+        lambda tenant_id: TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name=f"policy-{tenant_id}",
+            role_name=f"role-{tenant_id}",
+            role_id=f"role-id-{tenant_id}",
+        ),
+    )
+    for tenant_id in tenant_ids:
+        invalidate_tenant_store_cache(tenant_id)
+
+    provider = VaultSecretProvider()
+    a_first = provider._kv(tenant_ids[0])
+    provider._kv(tenant_ids[1])
+    assert provider._kv(tenant_ids[0]) is a_first  # Make A more recent than B.
+    provider._kv(tenant_ids[2])  # Evict B.
+    b_again = provider._kv(tenant_ids[1])
+
+    assert b_again.generation == 2
+    assert broker.logins == {
+        tenant_ids[0]: 1,
+        tenant_ids[1]: 2,
+        tenant_ids[2]: 1,
+    }
+    for tenant_id in tenant_ids:
+        invalidate_tenant_store_cache(tenant_id)
+
+    provider = VaultSecretProvider()
+    tenant_a = provider._kv(tenant_ids[0])
+    tenant_b = provider._kv(tenant_ids[1])
+
+    assert tenant_a is not tenant_b
+    assert tenant_a.tenant_id == tenant_ids[0]
+    assert tenant_b.tenant_id == tenant_ids[1]
+    assert provider._kv(tenant_ids[0]) is tenant_a
+    for tenant_id in tenant_ids:
+        invalidate_tenant_store_cache(tenant_id)
 
 
 def test_named_configuration_values_use_id_paths_and_stay_out_of_legacy_listing():
@@ -346,9 +948,6 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch):
         policy_name="m8flow-tenant-policy-org-uuid-123",
         role_name="m8flow-tenant-role-org-uuid-123",
         role_id="role-id-for-m8flow-tenant-role-org-uuid-123",
-        secret_id="secret-id-for-m8flow-tenant-role-org-uuid-123",
-        secret_id_accessor="accessor-for-m8flow-tenant-role-org-uuid-123",
-        created_new_secret_id=True,
     )
     assert control.policies["m8flow-tenant-policy-org-uuid-123"] == (
         'path "kv/data/m8flow/tenants/org-uuid-123/secrets/*" {\n'
@@ -365,7 +964,9 @@ def test_provision_tenant_identity_creates_policy_and_approle(monkeypatch):
         "m8flow-tenant-policy-org-uuid-123"
     ]
     assert control.roles["m8flow-tenant-role-org-uuid-123"]["secret_id_num_uses"] == 1
-    assert control.secret_id_calls == ["m8flow-tenant-role-org-uuid-123"]
+    # Provisioning configures the role only. Login code mints a one-use ID only
+    # when it can immediately consume it.
+    assert control.secret_id_calls == []
 
 
 def test_provision_does_not_rotate_secret_for_existing_role(monkeypatch):
@@ -380,9 +981,7 @@ def test_provision_does_not_rotate_secret_for_existing_role(monkeypatch):
     control.roles["m8flow-tenant-role-org-uuid-123"] = {
         "token_policies": ["m8flow-tenant-policy-org-uuid-123"]
     }
-    result = provision_tenant_identity("org-uuid-123", control=control)
-    assert result.secret_id is None
-    assert result.created_new_secret_id is False
+    provision_tenant_identity("org-uuid-123", control=control)
     assert control.secret_id_calls == []
 
 
@@ -418,7 +1017,7 @@ def test_reconcile_repairs_missing_policy_and_stale_role_binding_without_rotatin
     assert control.policy_writes == [policy_name]
     assert control.role_writes == [role_name]
     assert control.secret_id_calls == []
-    assert identity.secret_id is None
+    assert identity.role_id == f"role-id-for-{role_name}"
 
 
 def test_reconcile_repairs_missing_role_and_policy(monkeypatch):
@@ -433,10 +1032,10 @@ def test_reconcile_repairs_missing_role_and_policy(monkeypatch):
 
     identity = reconcile_tenant_identity("org-uuid-123", control=control)
 
-    assert identity.created_new_secret_id is True
+    assert identity.role_id == f"role-id-for-{identity.role_name}"
     assert control.policy_writes == [identity.policy_name]
     assert control.role_writes == [identity.role_name]
-    assert control.secret_id_calls == [identity.role_name]
+    assert control.secret_id_calls == []
 
 
 def test_reconcile_replaces_stale_policy_for_an_existing_role(monkeypatch):
@@ -559,6 +1158,105 @@ def test_provision_rejects_empty_tenant_id(monkeypatch):
         provision_tenant_identity("   ", control=MemoryControlPlane())
 
 
+def test_request_tenant_identity_uses_internal_service_and_verified_transport(monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_backend.secrets.provisioning import request_tenant_identity
+
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "tenant_id": "tenant-a",
+                "role_name": "m8flow-tenant-role-tenant-a",
+                "role_id": "tenant-role-id",
+            },
+        )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_url",
+        lambda: "https://provisioner.internal/",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_api_token",
+        lambda: "internal-api-token",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_timeout_seconds", lambda: 7.5
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_verify", lambda: "/etc/ssl/private-ca.pem"
+    )
+    monkeypatch.setattr("m8flow_backend.secrets.provisioning.requests.post", post)
+
+    identity = request_tenant_identity("tenant-a")
+
+    assert identity.role_id == "tenant-role-id"
+    assert calls == [
+        (
+            "https://provisioner.internal/v1/tenant-identities/ensure",
+            {
+                "json": {"tenant_id": "tenant-a"},
+                "headers": {"Authorization": "Bearer internal-api-token"},
+                "timeout": 7.5,
+                "verify": "/etc/ssl/private-ca.pem",
+            },
+        )
+    ]
+
+
+def test_request_tenant_identity_fails_closed_without_service_configuration(monkeypatch):
+    from m8flow_backend.secrets.provisioning import (
+        TenantVaultProvisioningError,
+        request_tenant_identity,
+    )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_url", lambda: None
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_api_token", lambda: None
+    )
+
+    with pytest.raises(TenantVaultProvisioningError, match="not configured"):
+        request_tenant_identity("tenant-a")
+
+
+def test_request_tenant_identity_rejects_another_tenants_role(monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_backend.secrets.provisioning import (
+        TenantVaultProvisioningError,
+        request_tenant_identity,
+    )
+
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_url",
+        lambda: "https://provisioner.internal",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.vault_provisioner_api_token",
+        lambda: "internal-api-token",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.requests.post",
+        lambda *_a, **_k: SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "tenant_id": "tenant-a",
+                "role_name": "m8flow-tenant-role-tenant-b",
+                "role_id": "tenant-b-role-id",
+            },
+        ),
+    )
+
+    with pytest.raises(TenantVaultProvisioningError, match="invalid identity"):
+        request_tenant_identity("tenant-a")
+
+
 def test_tenant_vault_data_cleanup_uses_only_that_tenants_role(monkeypatch):
     from m8flow_backend.secrets import provisioning
 
@@ -624,7 +1322,9 @@ def test_new_tenant_is_removed_when_vault_provisioning_fails(app, db_session, mo
     def boom(_tenant_id: str, control=None):
         raise TenantVaultProvisioningError("policy write failed")
 
-    monkeypatch.setattr("m8flow_backend.secrets.provisioning.provision_tenant_identity", boom)
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.provisioning.provision_vault_identity_if_enabled", boom
+    )
     with app.test_request_context("/"):
         from flask import g
 
@@ -640,7 +1340,7 @@ def test_vault_disabled_does_not_provision_on_tenant_create(app, db_session, mon
     monkeypatch.setenv("M8FLOW_VAULT_ENABLED", "false")
     monkeypatch.delenv("M8FLOW_SECRET_BACKEND_KIND", raising=False)
     monkeypatch.setattr(
-        "m8flow_backend.secrets.provisioning.provision_tenant_identity",
+        "m8flow_backend.secrets.provisioning.request_tenant_identity",
         lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("should not provision")),
     )
     with app.test_request_context("/"):
@@ -676,7 +1376,7 @@ def test_create_realm_cleans_up_when_vault_provisioning_fails(app, db_session, m
         lambda *_a, **_k: True,
     )
     monkeypatch.setattr(
-        "m8flow_backend.secrets.provisioning.provision_tenant_identity",
+        "m8flow_backend.secrets.provisioning.provision_vault_identity_if_enabled",
         lambda *_a, **_k: (_ for _ in ()).throw(TenantVaultProvisioningError("policy write failed")),
     )
     with app.test_request_context("/tenant-realms", method="POST", json={"slug": "acme"}):

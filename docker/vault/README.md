@@ -1,74 +1,93 @@
-# Vault tenant cleanup
+﻿# Vault tenant cleanup and identity separation
+
+## Tenant deletion
 
 Deleting a tenant removes its Keycloak organization and PostgreSQL tenant row
 first. If the database delete fails, the backend preserves Vault data and
-returns an error so the data can be repaired and deletion retried.
+returns an error so the deletion can be repaired and retried.
 
-After a successful database delete, the backend attempts to erase all KV v2
-documents under that tenant's secret root using a token issued by that tenant's
-AppRole. It does not use the shared broker to delete tenant identities: the
-broker intentionally has no cross-tenant delete permission. The API returns
-`202` and `vault_cleanup_pending: true` to make the remaining AppRole and policy
-cleanup visible.
+After the database deletion commits, the backend uses a tenant-scoped token to
+delete KV v2 documents under that tenant's secret root. It does not delete the
+AppRole or policy. The API reports `vault_cleanup_pending: true`; an operator
+must then run `docker/vault/scripts/delete_tenant_vault.py <tenant-id>` with an
+operator credential restricted to the tenant role/policy prefixes and KV path.
+The local Docker Vault root token is for development only.
 
-An operator must then run the controlled cleanup script with the deleted
-tenant's stable ID. The operator token is supplied through the environment and
-is never written by the script:
+## Workload identities
+
+M8Flow uses separate Vault identities for the runtime and the tenant identity
+provisioner:
+
+- **Runtime AppRole** is used by the backend, Celery worker, notification
+  worker, and NATS consumer. Its policy can read tenant RoleIDs and create,
+  use, and destroy one-use SecretIDs. It cannot create or modify policies or
+  AppRoles. Tenant-scoped tokens it obtains can access only that tenant's KV
+  subtree.
+- **Provisioner AppRole** is mounted only into the isolated
+  `vault-provisioner` service. Its policy can create/update policies and
+  AppRoles under the configured M8Flow tenant prefixes and read their RoleIDs.
+  It cannot read KV secret values or mint tenant SecretIDs.
+- **Provisioner API token** authenticates backend requests to the provisioner.
+  The endpoint accepts only a tenant ID and applies the fixed policy and role
+  settings in M8Flow code; callers cannot supply policy text or role settings.
+
+This removes Vault policy/role write credentials from application and worker
+processes. The runtime remains a trusted cross-tenant service: because it
+serves requests for multiple tenants, it can ask Vault for tenant-scoped
+credentials for any tenant ID. The internal API token also authorizes requests
+for any tenant ID, so protect it like a high-impact service credential. A
+future deployment can narrow this further by authenticating the caller's
+active tenant and enforcing that binding at the provisioner boundary.
+
+## Production deployment requirements
+
+The local Compose stack runs `vault-provisioner` only with the `vault-demo`
+profile. Production deployments must provide an equivalent isolated service;
+operations needing tenant identity reconciliation fail closed if the
+provisioner URL or API token is absent.
+
+- Give the provisioner its own AppRole RoleID/SecretID and mount them only in
+  that service. Do not mount its credentials into backend, workers, designer,
+  or monitoring services.
+- Give runtime processes a separate runtime AppRole. Its policy must not grant
+  policy or role management capabilities.
+- Configure backend/worker processes with `M8FLOW_VAULT_PROVISIONER_URL` and
+  `M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE` (or the direct token setting from a
+  platform secret manager). The provisioner reads the same API token from its
+  own secret file. Rotate the shared API token on suspected exposure.
+- Keep the provisioner on a private network and require TLS with certificate
+  verification for traffic that leaves a trusted pod/container network. Set
+  `M8FLOW_VAULT_CACERT` when a private CA is used. Do not expose its port to
+  browsers or the public internet.
+- Use a dedicated AppRole mount, KV mount, and tenant role/policy prefixes.
+  Enable Vault audit logging and alert on policy/AppRole writes.
+- Never use the Vault root token as either workload credential.
+
+The `configure-m8flow-vault.*` scripts write the provisioner and runtime
+policies, but do not create production workloads or distribute their
+credentials. The operator must create separate AppRoles with the appropriate
+policies and deliver each credential through the deployment platform's secret
+manager. The scripts' local `.env` and named-volume setup is development-only.
+
+## Local Compose flow
+
+`docker/m8flow-docker-compose.vault.yml` selects Vault for local runtime
+services. The `vault-demo` bootstrap creates the KV/AppRole mounts, both
+policies, and two workload identities. It stores runtime credentials in
+`vault-runtime` and provisioner credentials in `vault-provisioner`. Only the
+backend/worker containers mount `vault-runtime`; only `vault-provisioner`
+mounts the provisioner identity. The backend receives only the internal API
+token, while the provisioner receives its own Vault credential and the same
+API token. The service has no published host port.
+
+Start the demo with:
 
 ```powershell
-$env:M8FLOW_VAULT_ADDR = "https://vault.example"
-$env:M8FLOW_VAULT_OPERATOR_TOKEN = "<operator-token>"
-python docker/vault/scripts/delete_tenant_vault.py <tenant-id>
+docker compose --env-file .env --profile vault --profile vault-demo `
+  -f docker/m8flow-docker-compose.yml `
+  -f docker/m8flow-docker-compose.vault.yml up -d --build
 ```
 
-The script deletes data, the tenant AppRole, and its policy only for the
-specified tenant ID. Use an operator token whose Vault ACL is scoped to the
-configured tenant role/policy prefixes and KV path where possible. The local
-Docker Vault root token is for development only.
-
-## Production broker trust boundary
-
-The policy rendered from `policies/m8flow-policy.hcl.tpl` is a **privileged
-control-plane broker policy**. It lets the M8Flow service create and update
-policies and AppRoles matching the configured tenant prefixes, read those
-roles' IDs, and mint their SecretIDs. M8Flow uses these permissions to create
-tenant identities dynamically and to obtain short-lived tenant-scoped tokens.
-
-This broker credential is not tenant-scoped. A compromise of any process that
-can read it can alter the identity or policy for any tenant and mint credentials
-that reach tenant secrets. Tenant AppRole policies limit the resulting data
-tokens, but they do not limit the broker itself. Treat `M8FLOW_VAULT_TOKEN` and
-the broker AppRole's RoleID/SecretID as production control-plane credentials;
-neither is a normal application token. Never use the Vault root token as the
-broker credential.
-
-For production deployments:
-
-- Keep the broker credential in the platform secret manager and mount it only
-  into trusted M8Flow processes that need Vault access. Do not put it in the
-  repository, image, ordinary `.env` files, logs, or support bundles.
-- The backend API, Celery worker, notification worker, and NATS consumer need
-  the broker to resolve or manage tenant secrets. Keep it away from the
-  designer/frontend and monitoring-only services. Compose no longer mounts
-  `vault-runtime` into Celery Flower and explicitly clears Vault credential
-  variables inherited from the shared `.env` there.
-- Use a dedicated AppRole mount, KV mount, and tenant role/policy prefixes for
-  M8Flow. Restrict the broker ACL to those prefixes; avoid wildcard grants over
-  unrelated Vault roles, policies, or mounts.
-- Require TLS verification, restrict network access to Vault, enable Vault
-  audit logging, and rotate the broker AppRole SecretID after suspected
-  exposure or staff/deployment changes.
-- Monitor writes to `sys/policy` and the configured tenant AppRole prefix.
-  These are high-impact control-plane actions.
-
-The current design still gives the runtime broker control-plane access because
-tenant identities are provisioned dynamically by M8Flow. Removing those
-permissions from the runtime would require moving tenant identity creation and
-repair into a separately authenticated provisioning service or operator flow;
-that architectural change is not part of this repository change.
-
-The `configure-m8flow-vault.*` scripts show a local Compose setup that places a
-broker token in `.env`. Treat that as development-only. In production, inject
-the broker token with the deployment platform's secret manager (for example,
-through `M8FLOW_VAULT_TOKEN_FILE`) and grant access only to the service
-containers that need it.
+The Compose setup uses HTTP only on its local Docker network and is not a
+production template. See [Local Vault development](../../docs/vault-local-development.md)
+for startup, seeding, and reset steps.

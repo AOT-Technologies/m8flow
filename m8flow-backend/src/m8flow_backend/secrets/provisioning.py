@@ -6,16 +6,23 @@ import hashlib
 import re
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urljoin
+
+import requests
 
 from m8flow_backend.config import (
     vault_approle_mount_point,
     vault_mount_point,
+    vault_provisioner_api_token,
+    vault_provisioner_url,
     vault_tenant_policy_prefix,
     vault_tenant_role_prefix,
     vault_tenant_secret_id_num_uses,
     vault_tenant_secret_id_ttl,
     vault_tenant_token_max_ttl,
     vault_tenant_token_ttl,
+    vault_timeout_seconds,
+    vault_verify,
 )
 from m8flow_backend.secrets.http import HttpVault, VaultTransportError
 from m8flow_backend.secrets.paths import secret_root
@@ -30,9 +37,6 @@ class TenantVaultIdentity:
     policy_name: str
     role_name: str
     role_id: str
-    secret_id: str | None = None
-    secret_id_accessor: str | None = None
-    created_new_secret_id: bool = False
 
 
 class TenantVaultProvisioningError(RuntimeError):
@@ -99,7 +103,6 @@ def provision_tenant_identity(tenant_id: str, *, control: Any | None = None) -> 
     mount = _require(vault_approle_mount_point(), "vault_approle_mount_point")
     admin = control if control is not None else HttpVault.from_env()
     try:
-        existing = admin.read_approle(role_name, mount=mount)
         admin.write_policy(policy_name, _tenant_policy(normalized))
         admin.write_approle(
             role_name,
@@ -112,14 +115,6 @@ def provision_tenant_identity(tenant_id: str, *, control: Any | None = None) -> 
             token_max_ttl=vault_tenant_token_max_ttl(),
         )
         role_id = admin.read_approle_role_id(role_name, mount=mount)
-        secret_id = None
-        accessor = None
-        created_new = False
-        if existing is None:
-            minted = admin.mint_approle_secret_id(role_name, mount=mount)
-            secret_id = minted.secret_id
-            accessor = minted.secret_id_accessor
-            created_new = True
     except TenantVaultProvisioningError:
         raise
     except ValueError:
@@ -134,9 +129,6 @@ def provision_tenant_identity(tenant_id: str, *, control: Any | None = None) -> 
         policy_name=policy_name,
         role_name=role_name,
         role_id=role_id,
-        secret_id=secret_id,
-        secret_id_accessor=accessor,
-        created_new_secret_id=created_new,
     )
 
 
@@ -204,9 +196,55 @@ def provision_vault_identity_if_enabled(tenant_id: str) -> TenantVaultIdentity |
     if resolved_secret_backend_kind() != "vault":
         return None
     try:
-        return provision_tenant_identity(tenant_id)
-    except VaultTransportError as exc:
+        return request_tenant_identity(tenant_id)
+    except (VaultTransportError, TenantVaultProvisioningError) as exc:
         raise TenantVaultProvisioningError("Could not provision Vault identity.") from exc
+
+
+def request_tenant_identity(tenant_id: str) -> TenantVaultIdentity:
+    """Ask the isolated Vault provisioner to ensure this tenant's identity."""
+    normalized = _require(tenant_id, "tenant_id")
+    base_url = vault_provisioner_url()
+    api_token = vault_provisioner_api_token()
+    if not base_url or not api_token:
+        raise TenantVaultProvisioningError(
+            "Vault tenant identity provisioner is not configured."
+        )
+    url = urljoin(base_url.rstrip("/") + "/", "v1/tenant-identities/ensure")
+    try:
+        response = requests.post(
+            url,
+            json={"tenant_id": normalized},
+            headers={"Authorization": f"Bearer {api_token}"},
+            timeout=vault_timeout_seconds(),
+            verify=vault_verify(),
+        )
+        response.raise_for_status()
+        result = response.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise TenantVaultProvisioningError(
+            "Vault tenant identity provisioner request failed."
+        ) from exc
+    if not isinstance(result, dict) or result.get("tenant_id") != normalized:
+        raise TenantVaultProvisioningError(
+            "Vault tenant identity provisioner returned an invalid response."
+        )
+    role_name, role_id = result.get("role_name"), result.get("role_id")
+    if (
+        not isinstance(role_name, str)
+        or role_name != tenant_role_name(normalized)
+        or not isinstance(role_id, str)
+        or not role_id
+    ):
+        raise TenantVaultProvisioningError(
+            "Vault tenant identity provisioner returned an invalid identity."
+        )
+    return TenantVaultIdentity(
+        tenant_id=normalized,
+        policy_name=tenant_policy_name(normalized),
+        role_name=role_name,
+        role_id=role_id,
+    )
 
 
 def delete_tenant_vault_data(tenant_id: str, *, control: Any | None = None) -> None:
@@ -219,6 +257,11 @@ def delete_tenant_vault_data(tenant_id: str, *, control: Any | None = None) -> N
     if resolved_secret_backend_kind() != "vault":
         return
     normalized = _require(tenant_id, "tenant_id")
+    # A tenant-scoped token must not remain available in this process after
+    # its tenant's Vault subtree has been deleted.
+    from m8flow_backend.secrets.vault import invalidate_tenant_store_cache
+
+    invalidate_tenant_store_cache(normalized)
     role_name = tenant_role_name(normalized)
     broker = control if control is not None else HttpVault.from_env()
     try:

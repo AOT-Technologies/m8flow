@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
-from datetime import datetime, timezone
+from collections import OrderedDict
 from collections.abc import Callable
+from datetime import datetime, timezone
+from threading import Condition, RLock
 from typing import Any
 
 from m8flow_backend.errors import ApiError
@@ -19,13 +22,96 @@ from m8flow_backend.secrets.paths import (
 from m8flow_backend.secrets.provider import SecretListPage, SecretRecord
 from m8flow_backend.secrets.provisioning import (
     TenantVaultProvisioningError,
-    reconcile_tenant_identity,
-    tenant_role_name,
+    request_tenant_identity,
 )
 
 LOGGER = logging.getLogger(__name__)
 
 VaultStore = Any
+
+_TENANT_STORE_CACHE_MAX_SIZE = 256
+_TENANT_STORE_CACHE: OrderedDict[
+    tuple[tuple[str, str | None, str, str, bool | str], str], tuple[VaultStore, float]
+] = OrderedDict()
+_TENANT_STORE_CACHE_LOCK = RLock()
+_TENANT_STORE_CACHE_CONDITION = Condition(_TENANT_STORE_CACHE_LOCK)
+_TENANT_STORES_INITIALIZING: set[tuple[tuple[str, str | None, str, str, bool | str], str]] = set()
+
+
+def _monotonic() -> float:
+    return time.monotonic()
+
+
+def invalidate_tenant_store_cache(tenant_id: str) -> None:
+    """Forget cached tenant tokens after tenant cleanup or identity retirement."""
+    with _TENANT_STORE_CACHE_CONDITION:
+        while any(key[1] == tenant_id for key in _TENANT_STORES_INITIALIZING):
+            _TENANT_STORE_CACHE_CONDITION.wait()
+        for cache_key in tuple(_TENANT_STORE_CACHE):
+            if cache_key[1] == tenant_id:
+                _TENANT_STORE_CACHE.pop(cache_key, None)
+
+
+def _evict_rejected_tenant_store(tenant_id: str, rejected_store: VaultStore) -> None:
+    """Evict only the rejected client, never a newer replacement."""
+    with _TENANT_STORE_CACHE_CONDITION:
+        for cache_key, (store, _deadline) in tuple(_TENANT_STORE_CACHE.items()):
+            if cache_key[1] == tenant_id and store is rejected_store:
+                _TENANT_STORE_CACHE.pop(cache_key, None)
+                return
+
+
+def _refresh_rejected_tenant_store(tenant_id: str, rejected_store: VaultStore) -> VaultStore:
+    _evict_rejected_tenant_store(tenant_id, rejected_store)
+    return _tenant_store(HttpVault.from_env(), tenant_id)
+
+
+def _tenant_store(broker: HttpVault, tenant_id: str) -> VaultStore:
+    cache_key = (broker.cache_identity, tenant_id)
+    with _TENANT_STORE_CACHE_CONDITION:
+        while True:
+            cached = _TENANT_STORE_CACHE.get(cache_key)
+            if cached is not None:
+                store, deadline = cached
+                if deadline > _monotonic():
+                    _TENANT_STORE_CACHE.move_to_end(cache_key)
+                    return store
+                _TENANT_STORE_CACHE.pop(cache_key, None)
+            if cache_key not in _TENANT_STORES_INITIALIZING:
+                _TENANT_STORES_INITIALIZING.add(cache_key)
+                break
+            _TENANT_STORE_CACHE_CONDITION.wait()
+
+    try:
+        # Concurrent misses for this tenant share one login, while misses for
+        # other tenants proceed independently.
+        identity = request_tenant_identity(tenant_id)
+        store = broker.store_for_tenant(
+            tenant_id, role_name=identity.role_name, role_id=identity.role_id
+        )
+        set_auth_failure_callback = getattr(store, "set_auth_failure_callback", None)
+        if callable(set_auth_failure_callback):
+            set_auth_failure_callback(
+                lambda rejected_store: _refresh_rejected_tenant_store(
+                    tenant_id, rejected_store
+                )
+            )
+        deadline = getattr(store, "token_cache_deadline", None)
+    except BaseException:
+        with _TENANT_STORE_CACHE_CONDITION:
+            _TENANT_STORES_INITIALIZING.discard(cache_key)
+            _TENANT_STORE_CACHE_CONDITION.notify_all()
+        raise
+
+    with _TENANT_STORE_CACHE_CONDITION:
+        if isinstance(deadline, (int, float)) and deadline > _monotonic():
+            _TENANT_STORE_CACHE[cache_key] = (store, float(deadline))
+            _TENANT_STORE_CACHE.move_to_end(cache_key)
+            while len(_TENANT_STORE_CACHE) > _TENANT_STORE_CACHE_MAX_SIZE:
+                _TENANT_STORE_CACHE.popitem(last=False)
+        _TENANT_STORES_INITIALIZING.discard(cache_key)
+        _TENANT_STORE_CACHE_CONDITION.notify_all()
+        return store
 
 
 def _not_found(key: str) -> ApiError:
@@ -78,11 +164,10 @@ class VaultSecretProvider:
             return self._store
         try:
             broker = HttpVault.from_env()
-            role_name = tenant_role_name(tenant_id)
-            # Reconcile both the role and the tenant policy. A role can exist
-            # while its policy is missing, stale, or no longer bound to it.
-            reconcile_tenant_identity(tenant_id, control=broker)
-            return broker.store_for_tenant(tenant_id, role_name=role_name)
+            # Reconcile and mint a tenant token only on cache miss/expiry.
+            # Secret operations then use the cached, tenant-scoped token and
+            # do not require broker control-plane access on every request.
+            return _tenant_store(broker, tenant_id)
         except (VaultTransportError, TenantVaultProvisioningError) as exc:
             raise _wrap(
                 exc,

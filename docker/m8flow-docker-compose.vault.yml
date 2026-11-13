@@ -6,21 +6,71 @@ services:
       M8FLOW_VAULT_ENABLED: "true"
       M8FLOW_SECRET_BACKEND_KIND: "vault"
       M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+      # Ignore legacy/root broker tokens from ../.env; authenticate with the
+      # restricted runtime AppRole files below.
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/runtime/runtime-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/runtime/runtime-secret-id
+      M8FLOW_VAULT_PROVISIONER_URL: "${M8FLOW_VAULT_PROVISIONER_URL:-http://vault-provisioner:8098}"
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/runtime/provisioner-api-token
 
   m8flow-celery-worker:
     environment:
       M8FLOW_VAULT_ENABLED: "true"
       M8FLOW_SECRET_BACKEND_KIND: "vault"
       M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/runtime/runtime-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/runtime/runtime-secret-id
+      M8FLOW_VAULT_PROVISIONER_URL: "${M8FLOW_VAULT_PROVISIONER_URL:-http://vault-provisioner:8098}"
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/runtime/provisioner-api-token
 
   m8flow-notification-worker:
     environment:
       M8FLOW_VAULT_ENABLED: "true"
       M8FLOW_SECRET_BACKEND_KIND: "vault"
       M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/runtime/runtime-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/runtime/runtime-secret-id
+      M8FLOW_VAULT_PROVISIONER_URL: "${M8FLOW_VAULT_PROVISIONER_URL:-http://vault-provisioner:8098}"
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/runtime/provisioner-api-token
 
   m8flow-nats-consumer:
     environment:
       M8FLOW_VAULT_ENABLED: "true"
       M8FLOW_SECRET_BACKEND_KIND: "vault"
       M8FLOW_VAULT_ADDR: "${M8FLOW_VAULT_ADDR:-http://vault:8200}"
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/runtime/runtime-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/runtime/runtime-secret-id
+      M8FLOW_VAULT_PROVISIONER_URL: "${M8FLOW_VAULT_PROVISIONER_URL:-http://vault-provisioner:8098}"
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/runtime/provisioner-api-token

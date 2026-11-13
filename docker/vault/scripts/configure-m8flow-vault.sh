@@ -5,6 +5,7 @@ script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/../../.." && pwd)
 compose_file="$repo_root/docker/m8flow-docker-compose.yml"
 policy_template="$repo_root/docker/vault/policies/m8flow-policy.hcl.tpl"
+runtime_policy_template="$repo_root/docker/vault/policies/m8flow-runtime-policy.hcl.tpl"
 
 vault_service="${M8FLOW_VAULT_SERVICE_NAME:-vault}"
 vault_addr="${M8FLOW_VAULT_INTERNAL_ADDR:-http://127.0.0.1:8200}"
@@ -14,6 +15,7 @@ approle_mount_point="${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
 tenant_policy_prefix="${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
 tenant_role_prefix="${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
 policy_name="${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
+runtime_policy_name="${M8FLOW_VAULT_RUNTIME_POLICY_NAME:-m8flow-runtime}"
 operator_token="${M8FLOW_VAULT_OPERATOR_TOKEN:-${VAULT_TOKEN:-}}"
 
 fail() {
@@ -39,7 +41,8 @@ require_command grep
 require_command mktemp
 
 [ -f "$compose_file" ] || fail "Compose file not found at $compose_file."
-[ -f "$policy_template" ] || fail "Policy template not found at $policy_template."
+[ -f "$policy_template" ] || fail "Provisioner policy template not found at $policy_template."
+[ -f "$runtime_policy_template" ] || fail "Runtime policy template not found at $runtime_policy_template."
 [ -n "$operator_token" ] || fail "Set M8FLOW_VAULT_OPERATOR_TOKEN (or VAULT_TOKEN) to an authorized operator token."
 
 set +e
@@ -64,6 +67,7 @@ export VAULT_ADDR="$vault_addr"
 export VAULT_TOKEN="$operator_token"
 export MOUNT_POINT="$mount_point"
 export POLICY_NAME="$policy_name"
+export RUNTIME_POLICY_NAME="$runtime_policy_name"
 
 compose exec -T -e VAULT_ADDR -e VAULT_TOKEN "$vault_service" sh -lc 'vault token lookup >/dev/null' \
   || fail "The supplied operator token is missing or not authorized for Vault administration."
@@ -78,7 +82,8 @@ else
 fi
 
 tmp_policy="$(mktemp)"
-trap 'rm -f "$tmp_policy"' EXIT HUP INT TERM
+tmp_runtime_policy="$(mktemp)"
+trap 'rm -f "$tmp_policy" "$tmp_runtime_policy"' EXIT HUP INT TERM
 
 rendered_approle_mount_point="$(escape_sed_replacement "$(printf '%s' "$approle_mount_point" | sed 's#^/*##; s#/*$##')")"
 rendered_tenant_policy_prefix="$(escape_sed_replacement "$(printf '%s' "$tenant_policy_prefix" | sed 's#^/*##; s#/*$##')")"
@@ -90,26 +95,35 @@ sed \
   -e "s|__TENANT_ROLE_PREFIX__|$rendered_tenant_role_prefix|g" \
   "$policy_template" > "$tmp_policy"
 
+sed \
+  -e "s|__APPROLE_MOUNT_POINT__|$rendered_approle_mount_point|g" \
+  -e "s|__TENANT_ROLE_PREFIX__|$rendered_tenant_role_prefix|g" \
+  "$runtime_policy_template" > "$tmp_runtime_policy"
+
 compose exec -T -e VAULT_ADDR -e VAULT_TOKEN -e POLICY_NAME "$vault_service" \
   sh -lc 'vault policy write "$POLICY_NAME" -' < "$tmp_policy" >/dev/null
+compose exec -T -e VAULT_ADDR -e VAULT_TOKEN -e RUNTIME_POLICY_NAME "$vault_service" \
+  sh -lc 'vault policy write "$RUNTIME_POLICY_NAME" -' < "$tmp_runtime_policy" >/dev/null
 
 cat <<EOF
-configure-m8flow-vault: wrote control-plane policy '$policy_name' for AppRole mount '$approle_mount_point' and tenant identity prefixes.
+configure-m8flow-vault: wrote provisioner policy '$policy_name' and runtime policy '$runtime_policy_name'.
 
 Next steps:
 1. For the development-only AppRole + demo-seeding flow, run:
    docker compose -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml --profile vault --profile vault-demo up -d --build
-2. Or create a non-root broker/control-plane token with that policy manually, for example:
-   docker compose -f docker/m8flow-docker-compose.yml exec vault \\
-     sh -lc 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=\$M8FLOW_VAULT_OPERATOR_TOKEN vault token create -policy=$policy_name -display-name=m8flow-local -ttl=24h -renewable=true'
-3. Save the returned token outside source control and add it to your local .env:
-   M8FLOW_VAULT_TOKEN=<broker token>
-   The Vault override file selects the Vault backend and sets its local address.
+2. Create separate workload AppRoles: the provisioner role receives '$policy_name';
+   the backend/worker runtime role receives '$runtime_policy_name'. Never mount
+   the provisioner credential in backend or worker containers.
+3. Configure the runtime container with its RoleID/SecretID. Configure the
+   separate provisioner service with its own RoleID/SecretID and an internal
+   request token shared with the backend. Do not expose the provisioner service
+   outside a private network.
+4. The Vault override file selects the Vault backend and sets its local address.
    M8FLOW_VAULT_MOUNT_POINT=$mount_point
    M8FLOW_VAULT_SECRET_PATH_PREFIX=$path_prefix
    M8FLOW_VAULT_APPROLE_MOUNT_POINT=$approle_mount_point
    M8FLOW_VAULT_TENANT_POLICY_PREFIX=$tenant_policy_prefix
    M8FLOW_VAULT_TENANT_ROLE_PREFIX=$tenant_role_prefix
-4. Restart the backend and Celery services after Vault is unsealed and the broker token is configured.
-5. That broker identity manages per-tenant Vault roles and policies, but it should not read tenant KV secret values directly.
+5. Restart the backend, workers, and provisioner after Vault credentials are configured.
+6. The runtime identity can mint tenant tokens but cannot edit their policies or roles.
 EOF

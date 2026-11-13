@@ -69,6 +69,18 @@ to a UUID is not required for this contract.
 - Vault paths include the tenant ID and are protected by that tenant's AppRole
   policy. Provisioning credentials may create tenant identities but must not be
   used to read tenant secret values.
+- Each backend process reuses tenant-scoped clients only until shortly before
+  the Vault token lease expires, with a bounded cache. The isolated
+  `vault-provisioner` service reconciles the fixed tenant role and policy when
+  a cache miss or token refresh needs it. The runtime AppRole can read RoleIDs
+  and mint one-use SecretIDs, but cannot write policies or AppRoles. Tenant
+  provisioning does not mint a SecretID.
+  Successful login consumes the one-use SecretID and its accessor. If login
+  fails, the backend destroys the SecretID by accessor; the role's SecretID TTL
+  also bounds its lifetime. A Vault `401` or `403` evicts the rejected client,
+  reconciles the tenant identity,
+  and retries the operation once with a fresh token; repeated authorization
+  failures are returned as Vault errors.
 - Runtime resolution is tenant-scoped and fail-closed: a missing provider value
   or invalid profile must stop execution before a connector request is sent.
 - The existing database secret provider remains the default until an

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import sys
 import time
 from urllib import error, parse, request
@@ -15,10 +16,13 @@ ADMIN_STATE = Path(os.getenv("M8FLOW_VAULT_ADMIN_STATE_DIR", "/vault/admin"))
 LEGACY_STATE = Path(os.getenv("M8FLOW_VAULT_LEGACY_STATE_DIR", "/vault/legacy-demo"))
 SEED_STATE = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR", "/vault/demo"))
 RUNTIME = Path(os.getenv("M8FLOW_VAULT_RUNTIME_DIR", "/vault/runtime"))
+PROVISIONER = Path(os.getenv("M8FLOW_VAULT_PROVISIONER_DIR", "/vault/provisioner"))
 MOUNT = os.getenv("M8FLOW_VAULT_MOUNT_POINT", "kv").strip("/")
 APPROLE = os.getenv("M8FLOW_VAULT_APPROLE_MOUNT_POINT", "approle").strip("/")
 POLICY = os.getenv("M8FLOW_VAULT_POLICY_NAME", "m8flow")
 ROLE = os.getenv("M8FLOW_VAULT_APPROLE_NAME", "m8flow")
+RUNTIME_POLICY = os.getenv("M8FLOW_VAULT_RUNTIME_POLICY_NAME", "m8flow-runtime")
+RUNTIME_ROLE = os.getenv("M8FLOW_VAULT_RUNTIME_APPROLE_NAME", "m8flow-runtime")
 POLICY_PREFIX = os.getenv("M8FLOW_VAULT_TENANT_POLICY_PREFIX", "m8flow-tenant-policy")
 ROLE_PREFIX = os.getenv("M8FLOW_VAULT_TENANT_ROLE_PREFIX", "m8flow-tenant-role")
 PATH_PREFIX = os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow").strip("/")
@@ -49,6 +53,8 @@ def _validate_policy_identifiers() -> str:
     for label, value in (
         ("policy name", POLICY),
         ("AppRole name", ROLE),
+        ("runtime policy name", RUNTIME_POLICY),
+        ("runtime AppRole name", RUNTIME_ROLE),
         ("tenant policy prefix", POLICY_PREFIX),
         ("tenant role prefix", ROLE_PREFIX),
     ):
@@ -173,22 +179,97 @@ def main() -> int:
         call("POST", f"sys/auth/{parse.quote(APPROLE, safe='')}", token=root_token,
              payload={"type": "approle"}, expected=(200, 204))
 
-    broker_policy = f'''path "sys/policies/acl/{POLICY_PREFIX}-*" {{ capabilities = ["create", "read", "update"] }}
+    provisioner_policy = f'''path "sys/policies/acl/{POLICY_PREFIX}-*" {{ capabilities = ["create", "read", "update"] }}
 path "sys/policy/{POLICY_PREFIX}-*" {{ capabilities = ["create", "read", "update"] }}
 path "auth/{APPROLE}/role/{ROLE_PREFIX}-*" {{ capabilities = ["create", "read", "update"] }}
 path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/role-id" {{ capabilities = ["read"] }}
+'''
+    runtime_policy = f'''path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/role-id" {{ capabilities = ["read"] }}
 path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create", "update"] }}
+path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id/destroy" {{ capabilities = ["update"] }}
+path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id-accessor/destroy" {{ capabilities = ["update"] }}
 '''
     call("PUT", f"sys/policies/acl/{parse.quote(POLICY, safe='')}", token=root_token,
-         payload={"policy": broker_policy}, expected=(200, 204))
-    call("POST", f"auth/{APPROLE}/role/{parse.quote(ROLE, safe='')}", token=root_token,
-         payload={"token_policies": [POLICY], "token_no_default_policy": True}, expected=(200, 204))
-    _code, role_payload = call("GET", f"auth/{APPROLE}/role/{parse.quote(ROLE, safe='')}/role-id", token=root_token)
-    role_id = role_payload.get("data", {}).get("role_id")
-    _code, secret_payload = call("POST", f"auth/{APPROLE}/role/{parse.quote(ROLE, safe='')}/secret-id", token=root_token, payload={})
-    secret_id = secret_payload.get("data", {}).get("secret_id")
-    if not role_id or not secret_id:
-        raise RuntimeError("Vault did not return broker AppRole credentials.")
+         payload={"policy": provisioner_policy}, expected=(200, 204))
+    call("PUT", f"sys/policies/acl/{parse.quote(RUNTIME_POLICY, safe='')}", token=root_token,
+         payload={"policy": runtime_policy}, expected=(200, 204))
+
+    RUNTIME.mkdir(parents=True, exist_ok=True)
+    PROVISIONER.mkdir(parents=True, exist_ok=True)
+    runtime_role_file = RUNTIME / "runtime-role-id"
+    runtime_secret_file = RUNTIME / "runtime-secret-id"
+    provisioner_api_file = RUNTIME / "provisioner-api-token"
+    provisioner_role_file = PROVISIONER / "provisioner-role-id"
+    provisioner_secret_file = PROVISIONER / "provisioner-secret-id"
+    provisioner_service_api_file = PROVISIONER / "provisioner-api-token"
+
+    def ensure_workload_approle(
+        role_name: str,
+        policy_name: str,
+        secret_id_files: tuple[Path, ...],
+    ) -> tuple[str, str]:
+        call(
+            "POST",
+            f"auth/{APPROLE}/role/{parse.quote(role_name, safe='')}",
+            token=root_token,
+            payload={
+                "token_policies": [policy_name],
+                "token_no_default_policy": True,
+                "secret_id_num_uses": 0,
+                "secret_id_ttl": 0,
+                "token_ttl": "15m",
+                "token_max_ttl": "1h",
+            },
+            expected=(200, 204),
+        )
+        _code, role_payload = call(
+            "GET",
+            f"auth/{APPROLE}/role/{parse.quote(role_name, safe='')}/role-id",
+            token=root_token,
+        )
+        role_id = role_payload.get("data", {}).get("role_id")
+        secret_id = None
+        for secret_id_file in secret_id_files:
+            try:
+                candidate = secret_id_file.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if not candidate:
+                continue
+            lookup_code, _lookup_payload = call(
+                "POST",
+                f"auth/{APPROLE}/role/{parse.quote(role_name, safe='')}/secret-id/lookup",
+                token=root_token,
+                payload={"secret_id": candidate},
+                expected=(200, 400, 404),
+            )
+            if lookup_code == 200:
+                secret_id = candidate
+                break
+        if secret_id is None:
+            _code, secret_payload = call(
+                "POST",
+                f"auth/{APPROLE}/role/{parse.quote(role_name, safe='')}/secret-id",
+                token=root_token,
+                payload={},
+            )
+            secret_id = secret_payload.get("data", {}).get("secret_id")
+        if not role_id or not secret_id:
+            raise RuntimeError(f"Vault did not return credentials for AppRole {role_name}.")
+        return role_id, secret_id
+
+    runtime_role_id, runtime_secret_id = ensure_workload_approle(
+        RUNTIME_ROLE, RUNTIME_POLICY, (runtime_secret_file,)
+    )
+    provisioner_secret_candidates = [provisioner_secret_file]
+    if ROLE == "m8flow":
+        # The previous local broker role used this credential path. Reuse it
+        # as the provisioner credential during upgrade instead of orphaning it.
+        provisioner_secret_candidates.append(RUNTIME / "m8flow-secret-id")
+    provisioner_role_id, provisioner_secret_id = ensure_workload_approle(
+        ROLE, POLICY, tuple(provisioner_secret_candidates)
+    )
+    provisioner_api_token = secrets.token_urlsafe(48)
 
     # The seed job receives only this short-lived, path-scoped token. Keep the
     # root token and init keys in ADMIN_STATE, which is mounted only by this
@@ -219,31 +300,33 @@ path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create"
     seed_token_file.write_text(seed_token + "\n", encoding="utf-8")
     os.chmod(seed_token_file, 0o600)
 
-    RUNTIME.mkdir(parents=True, exist_ok=True)
-    role_file, secret_file = RUNTIME / "m8flow-role-id", RUNTIME / "m8flow-secret-id"
-    for file, value in ((role_file, role_id), (secret_file, secret_id)):
+    # Remove the broad broker env file written by older local bootstrap runs.
+    # The new runtime volume uses explicit runtime-only credential files.
+    legacy_runtime_env = RUNTIME / "runtime.env"
+    if legacy_runtime_env.exists():
+        legacy_runtime_env.unlink()
+    for file, value in (
+        (runtime_role_file, runtime_role_id),
+        (runtime_secret_file, runtime_secret_id),
+        (provisioner_api_file, provisioner_api_token),
+        (provisioner_role_file, provisioner_role_id),
+        (provisioner_secret_file, provisioner_secret_id),
+        (provisioner_service_api_file, provisioner_api_token),
+    ):
         file.write_text(value + "\n", encoding="utf-8")
         os.chmod(file, 0o600)
         # The backend drops to UID 1000 before reading these configured files.
         _set_runtime_file_owner(file)
-    runtime = RUNTIME / "runtime.env"
-    runtime.write_text(
-        f"M8FLOW_VAULT_ADDR={ADDR}\n"
-        f"M8FLOW_VAULT_MOUNT_POINT={MOUNT}\n"
-        f"M8FLOW_VAULT_SECRET_PATH_PREFIX={PATH_PREFIX}\n"
-        f"M8FLOW_VAULT_APPROLE_MOUNT_POINT={APPROLE}\n"
-        f"M8FLOW_VAULT_TENANT_POLICY_PREFIX={POLICY_PREFIX}\n"
-        f"M8FLOW_VAULT_TENANT_ROLE_PREFIX={ROLE_PREFIX}\n"
-        f"M8FLOW_VAULT_ROLE_ID_FILE={role_file}\n"
-        f"M8FLOW_VAULT_SECRET_ID_FILE={secret_file}\n", encoding="utf-8")
-    os.chmod(runtime, 0o600)
+    for legacy_file in (RUNTIME / "m8flow-role-id", RUNTIME / "m8flow-secret-id"):
+        if legacy_file.exists():
+            legacy_file.unlink()
     # Older Compose versions put init.json in the shared demo-state volume.
     # Once migrated, remove that root credential from the volume used only as
     # a legacy bootstrap source. vault-seed never mounts this volume.
     if legacy_init_file.exists():
         legacy_init_file.unlink()
     print(
-        "vault-demo: local Vault is initialized; broker credentials and a scoped "
+        "vault-demo: local Vault is initialized; runtime and provisioner credentials plus a scoped "
         "demo-seed token are ready. Demo seeding waits for backend health.",
         flush=True,
     )

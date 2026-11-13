@@ -230,6 +230,7 @@ services:
       M8FLOW_VAULT_LEGACY_STATE_DIR: /vault/legacy-demo
       M8FLOW_VAULT_DEMO_STATE_DIR: /vault/demo
       M8FLOW_VAULT_RUNTIME_DIR: /vault/runtime
+      M8FLOW_VAULT_PROVISIONER_DIR: /vault/provisioner
       M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
       M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
       M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
@@ -239,16 +240,52 @@ services:
       M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
       M8FLOW_VAULT_POLICY_NAME: "${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
       M8FLOW_VAULT_APPROLE_NAME: "${M8FLOW_VAULT_APPROLE_NAME:-m8flow}"
+      M8FLOW_VAULT_RUNTIME_POLICY_NAME: "${M8FLOW_VAULT_RUNTIME_POLICY_NAME:-m8flow-runtime}"
+      M8FLOW_VAULT_RUNTIME_APPROLE_NAME: "${M8FLOW_VAULT_RUNTIME_APPROLE_NAME:-m8flow-runtime}"
     volumes:
       - vault-admin-state:/vault/admin
       - vault-demo-state:/vault/legacy-demo
       - vault-seed-state:/vault/demo
+      # Bootstrap writes runtime RoleID, SecretID, and provisioner request-token
+      # files here. Application services mount this volume read-only below.
       - vault-runtime:/vault/runtime
+      - vault-provisioner:/vault/provisioner
       - ../docker/vault/demo:/app/docker/vault/demo:ro
     depends_on:
       vault:
         condition: service_healthy
     restart: "no"
+
+  # The API/worker processes receive only a request token. This isolated
+  # service holds the Vault policy/role management AppRole credential.
+  vault-provisioner:
+    profiles: ["vault-demo"]
+    image: m8flow-backend
+    pull_policy: never
+    user: "1000:1000"
+    command: ["python", "-m", "m8flow_backend.vault_provisioner_service"]
+    environment:
+      M8FLOW_VAULT_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
+      M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
+      M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
+      M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/provisioner/provisioner-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/provisioner/provisioner-secret-id
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/provisioner/provisioner-api-token
+      M8FLOW_VAULT_PROVISIONER_PORT: "8098"
+    volumes:
+      - vault-provisioner:/vault/provisioner:ro
+    depends_on:
+      vault-demo:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8098/healthz', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
 
   vault-seed:
     profiles: ["vault-demo"]
@@ -742,4 +779,6 @@ volumes:
   vault-seed-state:
     driver: local
   vault-runtime:
+    driver: local
+  vault-provisioner:
     driver: local
