@@ -452,6 +452,29 @@ def test_authorization_retry_preserves_request_and_namespace(monkeypatch):
     assert retry_kwargs["headers"]["X-Vault-Token"] == "new-token"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://vault:8200/v1/kv/data/../sys/seal",
+        "http://vault:8200/v1/kv/data/%2e%2e/sys/seal",
+        "http://attacker.example/v1/kv/data/path",
+        "http://vault:8200/v1/kv/data/path?redirect=https://attacker.example",
+    ],
+)
+def test_json_rejects_urls_outside_safe_vault_api_path(monkeypatch, url):
+    requests_made = []
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.requests.request",
+        lambda *args, **kwargs: requests_made.append((args, kwargs)),
+    )
+    vault = HttpVault(addr="http://vault:8200", token="vault-token")
+
+    with pytest.raises(VaultTransportError, match="Vault request URL is invalid"):
+        vault._json("GET", url)
+
+    assert requests_made == []
+
+
 def test_missing_ok_returns_none_on_404(monkeypatch):
     def fake_request(method, url, **kwargs):
         return _response(status_code=404, payload={})

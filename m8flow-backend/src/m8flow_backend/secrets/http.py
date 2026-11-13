@@ -7,10 +7,12 @@ adapter, so the provider never needs a live Vault process.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import requests
 
@@ -32,6 +34,8 @@ class VaultTransportError(RuntimeError):
 
 
 LOGGER = logging.getLogger(__name__)
+_SAFE_VAULT_API_PATH = re.compile(r"^[A-Za-z0-9._~%/-]+$")
+_PERCENT_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
 
 
 @dataclass(frozen=True)
@@ -374,6 +378,7 @@ class HttpVault:
         authenticated: bool = True,
         _auth_retry: bool = False,
     ) -> dict[str, Any] | None:
+        url = self._validated_request_url(url)
         headers: dict[str, str] = {}
         if authenticated:
             headers["X-Vault-Token"] = self._ensure_token()
@@ -420,3 +425,42 @@ class HttpVault:
             return {}
         body = response.json()
         return body if isinstance(body, dict) else {}
+
+    def _validated_request_url(self, url: str) -> str:
+        """Constrain Vault requests to this server's API path.
+
+        Dynamic tenant and secret identifiers are encoded/validated by the
+        path helpers, but validate again at the HTTP boundary so a malformed
+        or unexpected path cannot escape the Vault API prefix via traversal,
+        query injection, or a changed origin.
+        """
+        base = urlsplit(self._addr)
+        target = urlsplit(url)
+        base_path = base.path.rstrip("/")
+        api_prefix = f"{base_path}/v1/"
+        if (
+            base.scheme not in {"http", "https"}
+            or not base.netloc
+            or target.scheme.lower() != base.scheme.lower()
+            or target.netloc.casefold() != base.netloc.casefold()
+            or not target.path.startswith(api_prefix)
+            or target.query
+            or target.fragment
+        ):
+            raise VaultTransportError("Vault request URL is invalid.")
+
+        api_path = target.path[len(api_prefix) :]
+        if not api_path or not _SAFE_VAULT_API_PATH.fullmatch(api_path):
+            raise VaultTransportError("Vault request URL is invalid.")
+        # Percent escapes are permitted for encoded path components, but must
+        # be valid. Reject dot segments after decoding so encoded traversal is
+        # blocked as well as literal ../ paths.
+        if _PERCENT_ESCAPE.sub("", api_path).find("%") >= 0:
+            raise VaultTransportError("Vault request URL is invalid.")
+        decoded_segments = unquote(api_path).replace("\\", "/").split("/")
+        if any(segment in {".", ".."} for segment in decoded_segments):
+            raise VaultTransportError("Vault request URL is invalid.")
+
+        # Rebuild from the configured origin and checked path, discarding URL
+        # components that are never part of a Vault API request.
+        return urlunsplit((base.scheme, base.netloc, target.path, "", ""))
