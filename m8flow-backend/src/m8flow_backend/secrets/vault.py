@@ -26,7 +26,6 @@ from m8flow_backend.secrets.tenant_store_cache import (
     TENANT_STORES_INITIALIZING as _TENANT_STORES_INITIALIZING,
     TENANT_STORE_CACHE as _TENANT_STORE_CACHE,
     TENANT_STORE_CACHE_CONDITION as _TENANT_STORE_CACHE_CONDITION,
-    invalidate_tenant_store_cache,  # noqa: F401 - re-exported for compatibility
 )
 
 LOGGER = logging.getLogger(__name__)

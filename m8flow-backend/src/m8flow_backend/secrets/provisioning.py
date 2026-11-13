@@ -31,7 +31,7 @@ from m8flow_backend.secrets.provider import resolved_secret_backend_kind
 from m8flow_backend.secrets.tenant_store_cache import invalidate_tenant_store_cache
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
-_VAULT_DURATION_PART = re.compile(r"(?P<amount>\d+(?:\.\d+)?)(?P<unit>ns|us|µs|ms|s|m|h)")
+_MAX_VAULT_DURATION_LENGTH = 128
 _DURATION_UNIT_SECONDS = {
     "ns": Decimal("0.000000001"),
     "us": Decimal("0.000001"),
@@ -161,22 +161,41 @@ def _duration_seconds(value: object) -> Decimal | None:
     if isinstance(value, bool) or value is None:
         return None
     raw = str(value).strip()
+    if not raw or len(raw) > _MAX_VAULT_DURATION_LENGTH:
+        return None
     try:
         return Decimal(raw)
     except InvalidOperation:
         pass
 
-    parts = list(_VAULT_DURATION_PART.finditer(raw))
-    if not parts or "".join(part.group(0) for part in parts) != raw:
-        return None
-    return sum(
-        (
-            Decimal(part.group("amount"))
-            * _DURATION_UNIT_SECONDS[part.group("unit")]
-            for part in parts
-        ),
-        Decimal(0),
-    )
+    total = Decimal(0)
+    position = 0
+    while position < len(raw):
+        amount_start = position
+        while position < len(raw) and raw[position] in "0123456789":
+            position += 1
+        if position == amount_start:
+            return None
+
+        if position < len(raw) and raw[position] == ".":
+            position += 1
+            fraction_start = position
+            while position < len(raw) and raw[position] in "0123456789":
+                position += 1
+            if position == fraction_start:
+                return None
+
+        amount = Decimal(raw[amount_start:position])
+        unit = next(
+            (candidate for candidate in _DURATION_UNIT_SECONDS if raw.startswith(candidate, position)),
+            None,
+        )
+        if unit is None:
+            return None
+        position += len(unit)
+        total += amount * _DURATION_UNIT_SECONDS[unit]
+
+    return total
 
 
 def _role_security_settings_are_current(role_data: dict[str, Any]) -> bool:

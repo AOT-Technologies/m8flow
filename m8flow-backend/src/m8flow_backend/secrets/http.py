@@ -321,9 +321,9 @@ class HttpVault:
             try:
                 self._destroy_minted_secret_id(role_name, mount=mount, minted=minted)
             except Exception:
+                # Do not include role identifiers or credential material in logs.
                 LOGGER.warning(
-                    "Could not clean up the AppRole SecretID after login failed for role %s.",
-                    role_name,
+                    "Could not clean up the temporary Vault credential after authentication failed."
                 )
             raise
         return tenant_store

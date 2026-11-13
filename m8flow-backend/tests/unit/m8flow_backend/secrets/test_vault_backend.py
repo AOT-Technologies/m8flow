@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -11,7 +12,40 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.identity import ensure_user
 from m8flow_backend.models.native import SecretModel
 from m8flow_backend.secrets.provider import register_secret_provider
+from m8flow_backend.secrets.tenant_store_cache import invalidate_tenant_store_cache
 from m8flow_backend.identity import create_tenant_if_not_exists
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (600, Decimal("600")),
+        ("10m", Decimal("600")),
+        ("1h30m", Decimal("5400")),
+        ("1.5s", Decimal("1.5")),
+        ("1500ms", Decimal("1.5")),
+        ("3us", Decimal("0.000003")),
+        ("2µs", Decimal("0.000002")),
+        (0, Decimal("0")),
+    ],
+)
+def test_duration_parser_accepts_vault_duration_forms(value, expected):
+    from m8flow_backend.secrets.provisioning import _duration_seconds
+
+    assert _duration_seconds(value) == expected
+
+
+@pytest.mark.parametrize("value", ["1hgarbage", "1..5s"])
+def test_duration_parser_rejects_invalid_or_unbounded_values(value):
+    from m8flow_backend.secrets.provisioning import _duration_seconds
+
+    assert _duration_seconds(value) is None
+
+
+def test_duration_parser_rejects_long_numeric_input_before_parsing():
+    from m8flow_backend.secrets.provisioning import _duration_seconds
+
+    assert _duration_seconds("9" * 100_000 + "s") is None
 
 
 class MemoryKv:
@@ -235,7 +269,7 @@ def test_vault_lazily_provisions_preexisting_tenant_role(monkeypatch):
 
 def test_vault_tenant_store_is_cached_across_provider_instances_until_token_expiry(monkeypatch):
     from m8flow_backend.secrets.provisioning import TenantVaultIdentity
-    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+    from m8flow_backend.secrets.vault import VaultSecretProvider
 
     tenant_id = "cached-tenant-test"
     now = [1000.0]
@@ -320,7 +354,7 @@ def test_concurrent_vault_cache_miss_creates_one_tenant_login(monkeypatch):
     from threading import Barrier, Event, Lock
 
     from m8flow_backend.secrets.provisioning import TenantVaultIdentity
-    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+    from m8flow_backend.secrets.vault import VaultSecretProvider
 
     tenant_id = "concurrent-cache-tenant-test"
     worker_count = 5
@@ -387,7 +421,7 @@ def test_concurrent_vault_cache_miss_creates_one_tenant_login(monkeypatch):
 
 def test_vault_tenant_store_cache_isolated_by_tenant(monkeypatch):
     from m8flow_backend.secrets.provisioning import TenantVaultIdentity
-    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+    from m8flow_backend.secrets.vault import VaultSecretProvider
 
     tenant_ids = ("cache-tenant-a", "cache-tenant-b")
 
@@ -440,7 +474,7 @@ def test_vault_tenant_store_cache_isolated_by_tenant(monkeypatch):
 
 def test_tenant_store_cache_isolated_by_vault_connection_identity(monkeypatch):
     from m8flow_backend.secrets.provisioning import TenantVaultIdentity
-    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+    from m8flow_backend.secrets.vault import VaultSecretProvider
 
     tenant_id = "same-tenant-different-vault-config-test"
     monkeypatch.setattr("m8flow_backend.secrets.vault._monotonic", lambda: 1000.0)
@@ -502,7 +536,6 @@ def test_failed_cache_initialization_releases_waiters_for_retry(monkeypatch):
     from m8flow_backend.secrets.vault import (
         VaultSecretProvider,
         _TENANT_STORE_CACHE_CONDITION,
-        invalidate_tenant_store_cache,
     )
 
     tenant_id = "cache-init-retry-test"
@@ -581,7 +614,6 @@ def test_concurrent_rejected_token_refreshes_share_one_tenant_login(monkeypatch)
     from m8flow_backend.secrets.vault import (
         VaultSecretProvider,
         _TENANT_STORE_CACHE_CONDITION,
-        invalidate_tenant_store_cache,
     )
 
     tenant_id = "parallel-auth-refresh-test"
@@ -680,7 +712,6 @@ def test_tenant_cache_invalidation_waits_for_initialization_and_is_tenant_scoped
     from m8flow_backend.secrets.vault import (
         VaultSecretProvider,
         _TENANT_STORE_CACHE_CONDITION,
-        invalidate_tenant_store_cache,
     )
 
     tenant_a = "invalidate-race-tenant-a"
@@ -760,7 +791,7 @@ def test_tenant_cache_invalidation_waits_for_initialization_and_is_tenant_scoped
 
 def test_tenant_store_lru_refreshes_only_the_least_recently_used_entry(monkeypatch):
     from m8flow_backend.secrets.provisioning import TenantVaultIdentity
-    from m8flow_backend.secrets.vault import VaultSecretProvider, invalidate_tenant_store_cache
+    from m8flow_backend.secrets.vault import VaultSecretProvider
 
     tenant_ids = ("lru-tenant-a-test", "lru-tenant-b-test", "lru-tenant-c-test")
     identity_key = ("http://vault.lru-test:8200", None, "kv", "approle", True)

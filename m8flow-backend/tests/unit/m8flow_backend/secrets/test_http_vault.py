@@ -305,7 +305,7 @@ def test_store_for_tenant_destroys_secret_id_without_accessor_after_login_failur
     )
 
 
-def test_store_for_tenant_preserves_login_error_if_secret_id_cleanup_fails(monkeypatch):
+def test_store_for_tenant_preserves_login_error_if_secret_id_cleanup_fails(monkeypatch, caplog):
     calls = []
 
     def fake_request(method, url, **kwargs):
@@ -336,6 +336,10 @@ def test_store_for_tenant_preserves_login_error_if_secret_id_cleanup_fails(monke
         "login",
         "destroy",
     ]
+    assert "Could not clean up the temporary Vault credential" in caplog.text
+    assert "role-a" not in caplog.text
+    assert "one-use-secret" not in caplog.text
+    assert "one-use-accessor" not in caplog.text
 
 
 def test_http_error_wrapped(monkeypatch):
