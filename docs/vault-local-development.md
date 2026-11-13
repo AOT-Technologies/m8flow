@@ -15,21 +15,20 @@ Copy-Item docker/vault/demo/secrets.yml.sample docker/vault/demo/secrets.yml
 Edit `docker/vault/demo/secrets.yml` to add development configuration variables. Each entry has a value and an explicit sensitivity flag. Ordinary values are stored in `m8flow_named_value.value`; only sensitive values are written to Vault at the UUID-based `configuration-variable/<id>` path. Then start the stack:
 
 ```powershell
-docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml -f docker/m8flow-docker-compose.vault-demo.yml up -d --build
+docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml up -d --build
 ```
 
-Compose runs these steps in order:
+Compose keeps backend startup independent from the one-shot Vault bootstrap:
 
-1. `vault` starts the local Vault server.
-2. `vault-demo` initializes/unseals Vault as needed, enables KV v2 and AppRole, creates the broker policy and role, and stores Vault root/unseal state in `vault-admin-state`, which only this bootstrap service mounts. It also creates a non-renewable 15-minute seed token scoped to `kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*`; that token is stored in the separate `vault-seed-state` volume. Broker credentials remain in `vault-runtime`.
-3. `m8flow-backend` starts and runs its normal database migrations before serving requests. Backend and worker entrypoints load the local broker credential paths from the state volume.
-4. `vault-seed` starts after the backend container starts, then polls `/v1.0/healthy` for up to 10 minutes. This endpoint becomes healthy after migrations finish. If the backend does not become healthy, the seed job exits with the last HTTP/network check and points to the backend healthcheck and logs. It then writes named configuration variables for the default `m8flow` tenant. Existing values are preserved unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
+1. `vault` starts the local Vault server, then `vault-demo` initializes/unseals it as needed, enables KV v2 and AppRole, and creates the broker policy and role. It stores Vault root/unseal state in `vault-admin-state`, which only this bootstrap service mounts. It also creates a non-renewable 15-minute seed token scoped to `kv/data/m8flow/tenants/m8flow/secrets/configuration-variable/*`; that token is stored in the separate `vault-seed-state` volume. Broker credentials remain in `vault-runtime`.
+2. `m8flow-backend` starts independently and runs its normal database migrations before serving requests. Backend and worker entrypoints load the local broker credential paths from the state volume when Vault operations are used.
+3. `vault-seed` starts only after `vault-demo` has completed and the backend container has started. It polls `/v1.0/healthy` for up to 10 minutes; this endpoint becomes healthy after migrations finish. If the backend does not become healthy, the seed job exits with the last HTTP/network check and points to the backend healthcheck and logs. It then writes named configuration variables for the default `m8flow` tenant. Existing values are preserved unless `M8FLOW_VAULT_DEMO_OVERWRITE=true`.
 
 The seed script still accepts the previous `secrets:` format for local files that have not been updated: `SMTP_HOST` and `SMTP_PORT` become ordinary values, while other legacy entries default to sensitive. If an existing variable should adopt the new sensitivity declared in the seed file, set `M8FLOW_VAULT_DEMO_OVERWRITE=true` for that local seed run. If `secrets.yml` is absent, Vault still starts and the seed step exits successfully without writing demo values. Verify service order and result with:
 
 ```powershell
-docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml -f docker/m8flow-docker-compose.vault-demo.yml ps
-docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml -f docker/m8flow-docker-compose.vault-demo.yml logs vault-demo vault-seed m8flow-backend
+docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml ps
+docker compose --env-file .env --profile vault --profile vault-demo -f docker/m8flow-docker-compose.yml -f docker/m8flow-docker-compose.vault.yml logs vault-demo vault-seed m8flow-backend
 ```
 
 Open the local Vault UI at `http://127.0.0.1:8200/ui/`. The local root token and unseal key are in the private `vault-admin-state` Docker volume. The seeder cannot mount that volume; it receives only the short-lived seed token from `vault-seed-state`, and that token cannot access connector secrets or other tenants. The bootstrap service migrates and removes `init.json` from the legacy `vault-demo-state` volume when upgrading an existing local setup. Backend and worker containers mount only broker credentials from `vault-runtime`. Treat these volumes as development credentials. They are persistent; removing them resets local bootstrap state. Removing the Vault data volume deletes local Vault data. The seed token is regenerated each time `vault-demo` runs and expires after 15 minutes, covering the bounded backend health wait and seed operation.

@@ -515,6 +515,40 @@ def test_alembic_root_downgrade_preserves_tables_added_by_newer_models(
     assert "m8flow_tenant" not in set(sa.inspect(engine).get_table_names())
 
 
+def test_root_upgrade_fails_clearly_when_baseline_table_is_missing(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-upgrade-missing-model.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    monkeypatch.setattr(backend_db, "combined_model_metadata", sa.MetaData)
+
+    with pytest.raises(RuntimeError, match="1518b05122bc migration baseline") as exc_info:
+        command.upgrade(cfg, "1518b05122bc")
+
+    assert "api_log" in str(exc_info.value)
+    engine = sa.create_engine(database_uri)
+    assert "m8flow_tenant" not in set(sa.inspect(engine).get_table_names())
+
+
+def test_root_downgrade_validates_baseline_before_dropping_any_tables(
+    tmp_path, monkeypatch
+):
+    db_path = tmp_path / "root-downgrade-missing-model.db"
+    database_uri = f"sqlite:///{db_path}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+    monkeypatch.setattr(backend_db, "combined_model_metadata", sa.MetaData)
+
+    with pytest.raises(RuntimeError, match="1518b05122bc migration baseline"):
+        command.downgrade(cfg, "base")
+
+    engine = sa.create_engine(database_uri)
+    remaining = set(sa.inspect(engine).get_table_names())
+    assert "m8flow_tenant" in remaining
+    assert "m8flow_core_alembic_version" in remaining
+
+
 def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     """A database stamped at a now-deleted revision must recover automatically.
 

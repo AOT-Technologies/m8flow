@@ -18,9 +18,6 @@ _SEED_SCRIPT = (
     / "seed_vault_demo.py"
 )
 _COMPOSE_FILE = _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.yml"
-_VAULT_DEMO_COMPOSE_FILE = (
-    _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.vault-demo.yml"
-)
 _VAULT_COMPOSE_FILE = _SEED_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.vault.yml"
 
 
@@ -425,11 +422,8 @@ def test_backend_health_wait_times_out_with_actionable_diagnostics(monkeypatch):
     assert "Check the m8flow-backend healthcheck and container logs" in str(exc_info.value)
 
 
-def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
+def test_compose_keeps_backend_independent_and_seeds_after_health():
     compose = yaml.safe_load(_COMPOSE_FILE.read_text(encoding="utf-8"))
-    vault_demo_compose = yaml.safe_load(
-        _VAULT_DEMO_COMPOSE_FILE.read_text(encoding="utf-8")
-    )
     services = compose["services"]
     vault_demo = services["vault-demo"]
     vault_seed = services["vault-seed"]
@@ -449,12 +443,6 @@ def test_compose_waits_for_vault_bootstrap_and_backend_before_seeding():
     assert backend["healthcheck"]["start_period"] == "300s"
     assert backend["healthcheck"]["retries"] == 12
     assert "vault-demo" not in backend["depends_on"]
-    assert (
-        vault_demo_compose["services"]["m8flow-backend"]["depends_on"]["vault-demo"][
-            "condition"
-        ]
-        == "service_completed_successfully"
-    )
     assert vault_seed["entrypoint"][-1].endswith("/seed_vault_demo.py")
     demo_mounts = set(vault_demo["volumes"])
     seed_mounts = set(vault_seed["volumes"])

@@ -122,9 +122,21 @@ def _is_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+def _validate_baseline_tables(metadata: sa.MetaData) -> None:
+    missing = sorted(BASELINE_TABLE_NAMES - set(metadata.tables))
+    if missing:
+        missing_names = ", ".join(missing)
+        raise RuntimeError(
+            "The 1518b05122bc migration baseline does not match the current ORM "
+            f"metadata; expected baseline table(s) are missing: {missing_names}. "
+            "Update BASELINE_TABLE_NAMES only after verifying the historical schema."
+        )
+
+
 def _create_all_tables() -> None:
     bind = op.get_bind()
     current_metadata = combined_model_metadata()
+    _validate_baseline_tables(current_metadata)
     baseline = sa.MetaData()
 
     # This root migration is the historical schema baseline. The connector
@@ -303,12 +315,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    current_metadata = combined_model_metadata()
+    _validate_baseline_tables(current_metadata)
     if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
         op.drop_table(CORE_VERSION_TABLE)
     # Keep the root revision's historical table scope even as the live ORM
     # metadata grows. Copying only these tables retains dependency ordering
     # without allowing a later model to expand the downgrade's destructive set.
-    current_metadata = combined_model_metadata()
     baseline = sa.MetaData()
     for table_name in sorted(BASELINE_TABLE_NAMES):
         table = current_metadata.tables.get(table_name)

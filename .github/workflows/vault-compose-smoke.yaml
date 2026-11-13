@@ -50,8 +50,9 @@ jobs:
           asset=docker-compose-linux-x86_64
           release_url="https://github.com/docker/compose/releases/download/${version}"
           curl -fsSL "${release_url}/${asset}" -o "$RUNNER_TEMP/$asset"
-          curl -fsSL "${release_url}/checksums.txt" -o "$RUNNER_TEMP/compose-checksums.txt"
-          (cd "$RUNNER_TEMP" && grep -E " ${asset}$" compose-checksums.txt | sha256sum --check --status)
+          # Pin the published binary digest; the release checksums.txt does not
+          # include a sha256sum-compatible entry for this asset name.
+          echo "d037bd4937bf18fba67cff4366e084ee125a3e15c25657ee1aeceff8db3672b4  $RUNNER_TEMP/$asset" | sha256sum --check --status
           chmod +x "$RUNNER_TEMP/$asset"
           "$RUNNER_TEMP/$asset" --version
           "$RUNNER_TEMP/$asset" \
