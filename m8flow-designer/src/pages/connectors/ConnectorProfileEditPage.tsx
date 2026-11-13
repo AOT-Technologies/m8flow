@@ -364,6 +364,7 @@ function ConnectorProfileEditBody() {
   const leaveDialog = useUnsavedChangesGuard(dirty, saving, saved);
 
   useEffect(() => {
+    saved.current = false;
     if (!canWriteProfile) {
       setLoading(false);
       return undefined;
@@ -548,7 +549,12 @@ function ConnectorProfileEditBody() {
   }
 
   function setClear(fieldId: string, on: boolean) {
-    setCleared((prev) => on ? [...prev, fieldId] : prev.filter((id) => id !== fieldId));
+    setCleared((prev) => {
+      if (!on) {
+        return prev.filter((id) => id !== fieldId);
+      }
+      return prev.includes(fieldId) ? prev : [...prev, fieldId];
+    });
     if (on) {
       setValues((prev) => withoutKeys(prev, fieldId));
       setFieldErrors((prev) => withoutKeys(prev, fieldId));
