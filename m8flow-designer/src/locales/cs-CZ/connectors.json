@@ -63,7 +63,30 @@
     "notAllowedBody": "Vaše role může otevřít Konektory, ale nemůže vytvářet ani upravovat profily.",
     "backToProfiles": "Zpět na profily",
     "subtitleAdd": "Tajné hodnoty se při uložení zašifrují a už se nikdy znovu nezobrazí.",
-    "subtitleEdit": "Uložené tajné hodnoty se nikdy nezobrazují. Pokud tajnou hodnotu ponecháte prázdnou, zůstane zachována její aktuální hodnota.",
+    "subtitleEdit": "Hesla a tokeny se po uložení nikdy nezobrazují. Chcete-li je změnit, zvolte Nahradit.",
+    "status": {
+      "configured": "Nastaveno",
+      "notSet": "Nenastaveno"
+    },
+    "notSetOff": "Nenastaveno (výchozí: vypnuto)",
+    "starttlsHelp": "Zabezpečí připojení pomocí STARTTLS.",
+    "keepSavedSetting": "Ponechte pole prázdné, chcete-li zachovat uloženou hodnotu. K jejímu vymazání použijte ×.",
+    "willClear": "Při uložení bude vymazáno",
+    "actions": {
+      "clear": "Vymazat: {{label}}",
+      "replace": "Nahradit: {{label}}",
+      "replaceLabel": "Nahradit",
+      "cancel": "Zrušit nahrazení: {{label}}",
+      "cancelLabel": "Zrušit",
+      "remove": "Odebrat: {{label}}",
+      "removeLabel": "Odebrat",
+      "undo": "Vrátit odebrání: {{label}}",
+      "undoLabel": "Zpět"
+    },
+    "removeSecret": {
+      "title": "Odebrat: {{label}}?",
+      "description": "Tento uložený přihlašovací údaj bude po uložení změn odebrán."
+    },
     "loading": "Načítání profilu…",
     "requiredNote": "Pole označená <req>*</req> jsou povinná.",
     "optional": "(nepovinné)",
@@ -75,7 +98,6 @@
     "identifierPlaceholder": "Generuje se ze zobrazovaného názvu",
     "descriptionPlaceholder": "K čemu tento profil slouží, např. na jaké prostředí cílí.",
     "valueSaved": "Hodnota je uložena. Ponechte pole prázdné, chcete-li ji zachovat.",
-    "keepCurrentSetting": "Zachovat aktuální nastavení",
     "offDefault": "Vypnuto (výchozí)",
     "on": "Zapnuto",
     "off": "Vypnuto",
@@ -85,6 +107,7 @@
     "saveChanges": "Uložit změny",
     "saveProfile": "Uložit profil",
     "unsaved": {
+      "saving": "Před odchodem počkejte na dokončení ukládání.",
       "title": "Zahodit neuložené změny?",
       "description": "V tomto profilu máte změny, které nebyly uloženy.",
       "keepEditing": "Pokračovat v úpravách",
