@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError } from '@/lib/api';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import {
+  templateErrorMessage,
   TEMPLATE_VISIBILITY_OPTIONS,
   updateTemplateMetadata,
   type Template,
@@ -69,8 +69,7 @@ export function TemplateDetailsPanel({
       onTemplateChange(updated);
       setNotice(t('templates.details.visibilityUpdated'));
     } catch (err) {
-      const fromServer = err instanceof ApiError ? err.serverMessage : undefined;
-      setError(fromServer || (err instanceof Error ? err.message : t('templates.errors.updateVisibility')));
+      setError(templateErrorMessage(err, t('templates.errors.updateVisibility')));
     } finally {
       setSavingVisibility(false);
     }
@@ -85,8 +84,7 @@ export function TemplateDetailsPanel({
       onTemplateChange(updated);
       setNotice(t('templates.details.templatePublished'));
     } catch (err) {
-      const fromServer = err instanceof ApiError ? err.serverMessage : undefined;
-      setError(fromServer || (err instanceof Error ? err.message : t('templates.errors.publishTemplate')));
+      setError(templateErrorMessage(err, t('templates.errors.publishTemplate')));
     } finally {
       setPublishing(false);
     }

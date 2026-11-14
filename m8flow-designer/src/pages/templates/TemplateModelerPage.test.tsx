@@ -169,7 +169,7 @@ describe('TemplateModelerPage', () => {
     renderAt('7');
 
     await waitFor(() => {
-      expect(screen.getByRole('alert')).toHaveTextContent('GET');
+      expect(screen.getByRole('alert')).toHaveTextContent('Failed to load template');
     });
   });
 

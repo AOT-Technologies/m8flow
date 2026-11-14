@@ -1,6 +1,12 @@
 import i18n from '@/i18n';
 
-import { apiFetch, API_BASE_URL } from './api';
+import { apiFetch, API_BASE_URL, ApiError } from './api';
+
+/** The backend's reason when it sent one, else `fallback` — never
+ * `ApiError.message` ("POST /v1.0/… failed: 400"), which is for logs (M8F-685). */
+export function templateErrorMessage(err: unknown, fallback: string): string {
+  return (err instanceof ApiError && err.serverMessage) || fallback;
+}
 
 /**
  * Client for m8flow-backend's already-live `/v1.0/m8flow/templates*`
