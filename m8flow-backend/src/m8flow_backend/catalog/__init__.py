@@ -652,11 +652,12 @@ def validate_process_model_leaf(leaf_id: str) -> str:
 def process_model_identifier_from_path_param(modified: str | None) -> str:
     """Decode colon-encoded model paths consistently for routing and RBAC."""
     value = modified or ""
-    previous = None
-    while previous != value:
-        previous = value
-        value = unquote(value)
-    return value.replace(":", "/")
+    for _ in range(4):
+        decoded = unquote(value)
+        if decoded == value:
+            return value.replace(":", "/")
+        value = decoded
+    raise ApiError("invalid_process_model", "Process model path is encoded too deeply.", 400)
 
 
 def slugify_process_model_leaf(display_name: str) -> str:

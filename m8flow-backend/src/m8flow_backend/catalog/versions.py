@@ -79,13 +79,22 @@ def encode_file(body: bytes) -> str:
     return b64encode(body).decode("ascii")
 
 
+def _decode_file(body: object) -> bytes:
+    if not isinstance(body, str):
+        raise ApiError("invalid_file_content", "The saved process model file has invalid content.", 400)
+    try:
+        return b64decode(body, validate=True)
+    except ValueError as exc:
+        raise ApiError("invalid_file_content", "The saved process model file has invalid content.", 400) from exc
+
+
 def read_file(contents: dict[str, Any], name: str) -> bytes | None:
-    body = contents["files"].get(name)
-    return b64decode(body) if body is not None else None
+    files = contents["files"]
+    return _decode_file(files[name]) if name in files else None
 
 
 def file_bytes(contents: dict[str, Any]) -> dict[str, bytes]:
-    return {name: b64decode(body) for name, body in contents["files"].items()}
+    return {name: _decode_file(body) for name, body in contents["files"].items()}
 
 
 def bpmn_names(contents: dict[str, Any]) -> list[str]:

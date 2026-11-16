@@ -136,6 +136,8 @@ def _validate_file(name: str, content: bytes) -> None:
 
 def file_row(model: ProcessModelState, name: str) -> dict[str, Any]:
     raw = versions.read_file(model.working, name)
+    if raw is None:
+        raise ApiError("not_found", f"File not found: {name}", 404)
     row = {
         "name": name,
         "size_bytes": len(raw),
@@ -265,6 +267,7 @@ def delete_model(session: Session, model: ProcessModelState) -> None:
     workflow.disable_model_timers(session, tenant_id=model.m8f_tenant_id, model_id=model.model_id)
     model.deleted = True
     model.working = versions.snapshot({})
+    versions.touch(model)
 
 
 def identity(session: Session, model: ProcessModelState) -> dict[str, Any]:

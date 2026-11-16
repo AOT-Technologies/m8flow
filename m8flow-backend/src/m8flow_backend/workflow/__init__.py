@@ -765,12 +765,11 @@ def start(
     """Start an instance from the current published release.
 
     Transaction contract: Start is not atomic with the caller's transaction.
-    Core creates the instance in its own session and commits it there. When the
-    on-disk BPMN is not yet imported for this model, Start first imports it and
-    COMMITS `session` (see `_definition_id_for_start`), so anything the caller
-    staged before calling is committed too. Commit or discard your own writes
-    before calling Start if they must roll back with a failed Start. The route
-    callers stage nothing: auth commits its own user/group sync.
+    Core creates the instance in its own session and commits it there. When an
+    on-disk BPMN or imported baseline release has no runtime definition, Start
+    deploys it and commits `session` before Core can see it. That commit also
+    persists any caller writes staged in the same session. Route callers
+    stage no writes before calling Start.
     """
     from m8flow_backend.catalog import versioned, versions
 
@@ -854,6 +853,7 @@ def start(
 
 
 def _published_definition_id(session: Session, entry: ProcessModelRelease, *, user_id: int) -> int:
+    """Deploy an imported baseline if needed and make it visible to Core's session."""
     from m8flow_backend.catalog import versions
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 

@@ -944,6 +944,26 @@ def test_editor_reads_process_model_file_content(client, db_session, tmp_path, m
     assert schema.data == b"{}"
 
 
+@pytest.mark.parametrize("encoded", [None, "not base64!"], ids=["null", "invalid-base64"])
+def test_reading_corrupt_versioned_file_returns_an_api_error(client, db_session, tmp_path, monkeypatch, encoded):
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="editor-file-read", groups=["t1:editor"], tenant_id="t1",
+    )
+    contents = versions.snapshot({"corrupt.bpmn": default_bpmn_xml(process_id="corrupt").encode()})
+    contents["files"]["broken.json"] = encoded
+    versions.initialize(db_session, "t1", "finance/corrupt", contents, display_name="Corrupt file")
+    db_session.commit()
+
+    base = "/v1.0/m8flow/process-models/finance:corrupt"
+    for path in (base, f"{base}/files/broken.json"):
+        response = client.get(path, headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 400, response.json
+        assert response.json["error_code"] == "invalid_file_content"
+
+
 def test_read_file_missing_file_or_model_is_404(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
@@ -1315,6 +1335,30 @@ def test_editor_deletes_process_model(client, db_session, tmp_path, monkeypatch)
     assert client.get(
         "/v1.0/m8flow/process-models/finance:invoice-approval", headers={"Authorization": f"Bearer {token}"}
     ).status_code == 404
+
+
+def test_deleting_versioned_process_model_updates_tombstone_revision(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend.catalog import versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="versioned-model-deleter", groups=["t1:editor"], tenant_id="t1",
+    )
+    model_id = "finance/invoice-approval"
+    model = versions.import_legacy(db_session, "t1", model_id)
+    model.updated_at = previous_update = datetime(2020, 1, 1, tzinfo=UTC)
+    previous_revision = model.working_revision
+    db_session.commit()
+
+    path = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    headers = {"Authorization": f"Bearer {token}", "If-Match": f'"{previous_revision}"'}
+    response = client.delete(path, headers=headers)
+    assert response.status_code == 200, response.json
+    tombstone = _stored_model(db_session, "t1", model_id)
+    assert tombstone.deleted
+    assert tombstone.working_revision != previous_revision
+    assert tombstone.updated_at.replace(tzinfo=UTC) > previous_update
+    assert client.put(f"{path}/working-version", headers=headers, json={"operation": "discard"}).status_code == 404
 
 
 def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monkeypatch):

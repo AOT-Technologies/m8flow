@@ -845,7 +845,7 @@ def start_process_instance(modified_process_model_identifier: str):
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):
-    """Delete a process model's on-disk BPMN spec (git-committed removal).
+    """Tombstone the model and clear its working copy.
     Blocked (409) while any process instance still references the model, so
     its run history/audit rows are never orphaned — callers must remove or
     let those complete first. Write op: denied → 403.

@@ -274,7 +274,10 @@ def _process_model_version_permission(action: str, path: str) -> tuple[str, str]
     from m8flow_backend.catalog import process_model_identifier_from_path_param
 
     encoded_model_id, operation = match.groups()
-    model_id = process_model_identifier_from_path_param(encoded_model_id)
+    try:
+        model_id = process_model_identifier_from_path_param(encoded_model_id)
+    except ApiError:
+        return action, path
     if any(segment in {"", ".", ".."} for segment in model_id.split("/")):
         return action, path
     if action == "read" and operation == "versions":
