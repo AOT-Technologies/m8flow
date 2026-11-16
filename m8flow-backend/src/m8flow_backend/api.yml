@@ -6033,7 +6033,9 @@ components:
       required: true
       schema:
         type: string
-      description: Process model path with slashes replaced by colons
+      description: >-
+        Process model path with slashes replaced by colons. The server accepts
+        up to three layers of percent encoding and returns 400 for deeper encoding.
     WorkingRevision:
       name: If-Match
       in: header

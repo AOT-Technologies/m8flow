@@ -237,7 +237,10 @@ def test_start_rejects_stale_model_state_during_release_bootstrap(
 def test_model_start_permission_requires_instance_and_model_grants(
     client, db_session, monkeypatch, tmp_path, instance_create, model_start,
 ):
+    from sqlalchemy import select
+
     from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.services.authorization import grant_permission_to_user
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
@@ -282,10 +285,18 @@ def test_model_start_permission_requires_instance_and_model_grants(
     assert result.json["results"]["/v1.0/process-instances"]["POST"] is instance_create
     response = client.post(f"{base}/finance:review/start", headers=headers)
     assert response.status_code == (201 if can_start else 403), response.json
+    thin_start = client.post(
+        "/v1.0/process-instances", headers=headers, json={"process_model_identifier": "finance/review"},
+    )
+    assert thin_start.status_code == (201 if can_start else 403), thin_start.json
     if can_start:
         for name, status in (("other", 404), ("draft", 409), ("paused", 409)):
             response = client.post(f"{base}/finance:{name}/start", headers=headers)
             assert response.status_code == status, response.json
+    else:
+        assert db_session.scalar(select(BpmnProcessDefinitionModel.id).where(
+            BpmnProcessDefinitionModel.m8f_tenant_id == tenant.id,
+        )) is None
 
 
 def test_working_version_restore_rolls_back_if_response_preparation_fails(

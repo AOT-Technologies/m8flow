@@ -36,6 +36,7 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
     tables = (ProcessInstanceCalledReleases.__table__, ProcessModelRelease.__table__, ProcessModelState.__table__)
     stamp = sa.text("SELECT version_num FROM alembic_version_m8flow")
     set_tenant = sa.text("SELECT set_config('app.current_tenant', :tenant, true)")
+    current_tenant = sa.text("SELECT current_setting('app.current_tenant', true)")
 
     try:
         command.upgrade(cfg, previous)
@@ -57,11 +58,25 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
         import_legacy = versions.import_legacy
 
         def fail_second_import(session, tenant_id, identifier):
+            assert session.scalar(current_tenant) == tenant_id
             model = import_legacy(session, tenant_id, identifier)
             if tenant_id == tenants[-1]:
                 assert model is not None
                 raise ValueError("injected second tenant failure")
             return model
+
+        def clear_tenant_at_session_start(_session, _transaction, connection):
+            assert connection.scalar(current_tenant) == tenants[0]
+            connection.execute(set_tenant, {"tenant": ""})
+
+        sa.event.listen(Session, "after_begin", clear_tenant_at_session_start)
+        try:
+            with pytest.raises(RuntimeError, match="while preparing the tenant import") as exc:
+                command.upgrade(cfg, "head")
+            assert isinstance(exc.value.__cause__, RuntimeError)
+            assert "PostgreSQL tenant context does not match" in str(exc.value.__cause__)
+        finally:
+            sa.event.remove(Session, "after_begin", clear_tenant_at_session_start)
 
         with monkeypatch.context() as patch:
             patch.setattr(versions, "import_legacy", fail_second_import)

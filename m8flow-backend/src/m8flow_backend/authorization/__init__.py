@@ -316,9 +316,14 @@ def check_uri_permission(user: UserModel, method: str, path: str, *, session: Se
         tenant_id = require_tenant_id(user)
     except ApiError:
         return False
+    return can_start_process_model(session, tenant_id=tenant_id, user_id=user.id, model_id=model_id)
+
+
+def can_start_process_model(session: Session, *, tenant_id: str, user_id: int, model_id: str) -> bool:
+    """Evaluate the concrete process.start grant used by the Core dispatcher."""
     return HostAuthorizationPolicy().authorize(session, api.AuthorizationRequest(
         tenant_id=tenant_id,
-        actor_user_id=user.id,
+        actor_user_id=user_id,
         command_key=_PROCESS_START_COMMAND,
         permission="start",
         resource_type="process_model",

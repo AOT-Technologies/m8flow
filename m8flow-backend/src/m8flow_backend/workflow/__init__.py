@@ -771,23 +771,32 @@ def start(
     persists any caller writes staged in the same session. Route callers
     stage no writes before calling Start.
     """
+    from m8flow_backend.authorization import can_start_process_model
     from m8flow_backend.catalog import versioned, versions
 
     if session.get_bind().dialect.name == "postgresql":
         versions.lock_tenant(session, tenant_id)
     model = versions.state(session, tenant_id, process_model_identifier)
-    process_id = None
-    release_number = 1
     if model is None:
         _require_startable_status(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
-        definition_id = _definition_id_for_start(
-            session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=process_model_identifier,
-        )
     else:
         if model.deleted:
             raise ApiError("not_found", "Process model not found", 404)
         if model.status != "published":
             raise ApiError("process_model_not_startable", f"Process model is {model.status} and cannot be started. Publish it first.", 409)
+
+    # A baseline definition may be deployed and committed before Core starts
+    # the instance. Check the same grant as the permission probe before that write.
+    if not can_start_process_model(session, tenant_id=tenant_id, user_id=user_id, model_id=process_model_identifier):
+        raise ApiError("permission_denied", "Not permitted to start this process model", 403)
+
+    process_id = None
+    release_number = 1
+    if model is None:
+        definition_id = _definition_id_for_start(
+            session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=process_model_identifier,
+        )
+    else:
         entry = versions.release(session, model, model.latest_version)
         if entry is None:
             raise ApiError("stale_working_revision", "The published version changed. Try starting again.", 409)
@@ -1549,11 +1558,27 @@ def called_release_file(
     from m8flow_backend.catalog import versions
 
     recorded = session.get(ProcessInstanceCalledReleases, (tenant_id, instance_id))
-    selected = recorded.releases.get(process_id) if recorded is not None else None
-    if selected is None:
+    if recorded is None:
         return None
-    entry = versions.release_by_reference(session, tenant_id, selected["model_id"], selected["reference"])
-    return (entry, selected["file_name"]) if entry is not None else None
+
+    unavailable = ApiError("called_release_unavailable", "The recorded called process release is unavailable.", 409)
+    if not isinstance(recorded.releases, dict):
+        raise unavailable
+    if process_id not in recorded.releases:
+        return None
+
+    selected = recorded.releases.get(process_id)
+    if not isinstance(selected, dict):
+        raise unavailable
+    model_id = selected.get("model_id")
+    reference = selected.get("reference")
+    file_name = selected.get("file_name")
+    if not all(isinstance(value, str) and value for value in (model_id, reference, file_name)):
+        raise unavailable
+    entry = versions.release_by_reference(session, tenant_id, model_id, reference)
+    if entry is None or file_name not in versions.bpmn_names(entry.contents):
+        raise unavailable
+    return entry, file_name
 
 
 def list_instances(

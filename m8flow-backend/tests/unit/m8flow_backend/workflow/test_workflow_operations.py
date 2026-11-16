@@ -9,12 +9,12 @@ from types import SimpleNamespace
 import pytest
 
 from m8flow_backend import catalog, identity, workflow
+from m8flow_backend.errors import ApiError
 
 BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
 
 
 def test_complete_maps_core_errors_before_inspecting_task_wrapper(db_session, monkeypatch):
-    from m8flow_backend.errors import ApiError
     from m8flow_core.errors import InvalidStateError
 
     core_error = InvalidStateError("task is already complete")
@@ -1056,6 +1056,7 @@ def test_versioned_concurrent_publishes_create_one_release(db_session, tmp_path,
 def test_versioned_instances_keep_their_form_and_called_process(db_session, tmp_path, monkeypatch):
     from m8flow_backend import human_task
     from m8flow_backend.catalog import versioned
+    from m8flow_backend.models.process_model_version import ProcessInstanceCalledReleases
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
@@ -1104,6 +1105,39 @@ def test_versioned_instances_keep_their_form_and_called_process(db_session, tmp_
     db_session.commit()
     assert form(start())["title"] == "Second"
     assert form(original)["title"] == "First"
+
+    recorded = db_session.get(ProcessInstanceCalledReleases, (tenant.id, original.id))
+    process_id, = recorded.releases
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=original.id, bpmn_process_identifier=process_id,
+    )
+    assert "child-schema.json" in detail["bpmn_xml"]
+    recorded.releases = {process_id: {"file_name": "child.bpmn"}}
+    db_session.commit()
+    with pytest.raises(ApiError) as bad_form:
+        form(original)
+    assert (bad_form.value.status_code, bad_form.value.error_code) == (409, "called_release_unavailable")
+    with pytest.raises(ApiError) as bad_diagram:
+        workflow.get_instance_detail_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=original.id, bpmn_process_identifier=process_id,
+        )
+    assert (bad_diagram.value.status_code, bad_diagram.value.error_code) == (409, "called_release_unavailable")
+
+
+@pytest.mark.parametrize("invalid_releases", [
+    [],
+    {"child": None},
+    {"child": {"model_id": "examples/child", "reference": 1, "file_name": "child.bpmn"}},
+    {"child": {"model_id": "examples/child", "reference": f"{'f' * 32}:9999999999", "file_name": "child.bpmn"}},
+])
+def test_called_release_lookup_rejects_malformed_persisted_pins(db_session, invalid_releases):
+    from m8flow_backend.models.process_model_version import ProcessInstanceCalledReleases
+
+    db_session.add(ProcessInstanceCalledReleases(m8f_tenant_id="t1", process_instance_id=42, releases=invalid_releases))
+    db_session.commit()
+    with pytest.raises(ApiError) as unavailable:
+        workflow.called_release_file(db_session, tenant_id="t1", instance_id=42, process_id="child")
+    assert (unavailable.value.status_code, unavailable.value.error_code) == (409, "called_release_unavailable")
 
 
 def test_start_runs_the_dmn_the_business_rule_task_calls(db_session, tmp_path, monkeypatch):

@@ -108,6 +108,7 @@ def create(
     name: str, description: str = "", primary: str | None = None, process_id: str | None = None,
 ) -> ProcessModelState:
     versions.lock_tenant(session, tenant_id)
+    # Validate that the destination resolves inside this tenant before checking collisions.
     catalog._resolved_inside_tenant(tenant_id, model_id, **catalog._MODEL_PATH_ERROR)
     existing = versions.write_state(session, tenant_id, model_id)
     if (existing is not None and not existing.deleted) or (

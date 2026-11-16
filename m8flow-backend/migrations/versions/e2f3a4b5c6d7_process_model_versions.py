@@ -88,13 +88,22 @@ def _import_existing_catalog(bind: sa.Connection) -> None:
         return
     has_scheduler = inspector.has_table("scheduler_job")
     tenants = bind.execute(sa.text("SELECT id FROM m8flow_tenant ORDER BY id")).scalars().all()
+    is_postgres = bind.dialect.name == "postgresql"
     for tenant_id in tenants:
+        if is_postgres:
+            with _import_step(tenant_id, "setting the tenant context"):
+                bind.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
+                    "tenant_id": tenant_id,
+                })
         with Session(bind=bind, autoflush=False, join_transaction_mode="create_savepoint") as session:
             with _import_step(tenant_id, "preparing the tenant import"):
-                if bind.dialect.name == "postgresql":
-                    session.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
-                        "tenant_id": tenant_id,
-                    })
+                if is_postgres:
+                    # Check after the session's transaction hooks have run.
+                    active_tenant = session.connection().scalar(
+                        sa.text("SELECT current_setting('app.current_tenant', true)")
+                    )
+                    if active_tenant != tenant_id:
+                        raise RuntimeError("PostgreSQL tenant context does not match the tenant being imported")
                 model_ids = legacy_model_ids(tenant_id=tenant_id)
             for model_id in model_ids:
                 with _import_step(tenant_id, f"importing model {model_id!r}"):

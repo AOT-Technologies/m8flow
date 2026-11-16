@@ -35,7 +35,8 @@ def lock_tenant(session: Session, tenant_id: str) -> None:
             "key": int.from_bytes(key[:8], "big", signed=True),
         })
     elif dialect == "sqlite":
-        # Obtain SQLite's write reservation before reading the current revision.
+        # Take SQLite's write reservation before reading the revision. The
+        # predicate matches zero rows.
         session.execute(update(ProcessModelState).where(False).values(deleted=True))
 
 
@@ -252,6 +253,9 @@ def release_by_reference(
     session: Session, tenant_id: str, model_id: str, reference: str | None,
 ) -> ProcessModelRelease | None:
     generation, _, number = (reference or "").partition(":")
-    if len(generation) != 32 or not number.isdecimal():
+    if len(generation) != 32 or len(number) > 10 or not number.isascii() or not number.isdecimal():
         return None
-    return session.get(ProcessModelRelease, (tenant_id, model_id, generation, int(number)))
+    version = int(number)
+    if not 0 < version <= 2_147_483_647:
+        return None
+    return session.get(ProcessModelRelease, (tenant_id, model_id, generation, version))
