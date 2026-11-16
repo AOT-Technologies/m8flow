@@ -111,7 +111,8 @@ def test_upgrade_preserves_legacy_rows_and_backfills_safe_metadata():
         )
         connection.exec_driver_sql(
             "INSERT INTO secret (id, key, value, m8f_tenant_id, created_by_user_id) "
-            "VALUES (1, 'API_TOKEN', 'encrypted-payload', 'tenant-a', 7)"
+            "VALUES (1, 'API_TOKEN', 'encrypted-payload', 'tenant-a', 7), "
+            "(2, 'cnx_3_password', 'encrypted-connector-password', 'tenant-a', 7)"
         )
 
         _upgrade(connection)
@@ -123,6 +124,9 @@ def test_upgrade_preserves_legacy_rows_and_backfills_safe_metadata():
             )
         ).one()
         assert tuple(named_value) == ("API_TOKEN", 1, None, 1, "API_TOKEN")
+        assert connection.execute(
+            sa.text("SELECT count(*) FROM m8flow_named_value")
+        ).scalar_one() == 1
 
         variables = {
             row.field_name: row
@@ -149,6 +153,9 @@ def test_upgrade_preserves_legacy_rows_and_backfills_safe_metadata():
         assert connection.execute(sa.text("SELECT value FROM secret WHERE id = 1")).scalar_one() == (
             "encrypted-payload"
         )
+        assert connection.execute(
+            sa.text("SELECT value FROM secret WHERE id = 2")
+        ).scalar_one() == "encrypted-connector-password"
 
 
 def test_upgrade_rejects_case_insensitive_legacy_name_collision_before_schema_changes():
