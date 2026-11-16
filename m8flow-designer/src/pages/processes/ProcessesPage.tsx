@@ -271,7 +271,7 @@ export default function ProcessesPage() {
   }
 
   return (
-    <main className="flex-1 px-11 py-10">
+    <main className="min-w-0 flex-1 px-11 py-10">
       <ProcessesModelsList
         models={models}
         loading={loading}
