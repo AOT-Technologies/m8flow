@@ -1,5 +1,8 @@
 """Store process-model working copies and published releases."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.orm import Session
@@ -12,6 +15,7 @@ depends_on = None
 STATE = "m8flow_process_model_state"
 RELEASE = "m8flow_process_model_release"
 CALLED_RELEASES = "m8flow_process_instance_called_releases"
+VERSION_TABLES = (STATE, RELEASE, CALLED_RELEASES)
 
 
 def upgrade() -> None:
@@ -53,7 +57,7 @@ def upgrade() -> None:
         if_not_exists=True,
     )
     if bind.dialect.name == "postgresql":
-        for table in (STATE, RELEASE, CALLED_RELEASES):
+        for table in VERSION_TABLES:
             predicate = "m8f_tenant_id = current_setting('app.current_tenant', true)"
             op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
             op.execute(sa.DDL(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
@@ -67,7 +71,15 @@ def upgrade() -> None:
     _import_existing_catalog(bind)
 
 
-def _import_existing_catalog(bind) -> None:
+@contextmanager
+def _import_step(tenant_id: str, operation: str) -> Iterator[None]:
+    try:
+        yield
+    except Exception as exc:
+        raise RuntimeError(f"Process model migration failed for tenant {tenant_id!r} while {operation}") from exc
+
+
+def _import_existing_catalog(bind: sa.Connection) -> None:
     from m8flow_backend.catalog import legacy_model_ids, versions
     from m8flow_backend.workflow import _retire_stale_timer_starts
 
@@ -77,29 +89,30 @@ def _import_existing_catalog(bind) -> None:
     has_scheduler = inspector.has_table("scheduler_job")
     tenants = bind.execute(sa.text("SELECT id FROM m8flow_tenant ORDER BY id")).scalars().all()
     for tenant_id in tenants:
-        phase = "setting up the tenant import"
-        try:
-            # Releasing the savepoint leaves the revision under Alembic's outer transaction.
-            with Session(bind=bind, autoflush=False, join_transaction_mode="create_savepoint") as session:
-                with session.begin():
-                    if bind.dialect.name == "postgresql":
-                        session.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
-                            "tenant_id": tenant_id,
-                        })
-                    phase = "listing legacy process models"
-                    for model_id in legacy_model_ids(tenant_id=tenant_id):
-                        phase = f"importing model {model_id!r}"
-                        versions.import_legacy(session, tenant_id, model_id)
-                        session.flush()
-                    if has_scheduler:
-                        phase = "retiring stale timer starts"
-                        _retire_stale_timer_starts(session, tenant_id)
-                    phase = "releasing the tenant savepoint"
-        except Exception as exc:
-            raise RuntimeError(f"Process model migration failed for tenant {tenant_id!r} while {phase}") from exc
+        with Session(bind=bind, autoflush=False, join_transaction_mode="create_savepoint") as session:
+            with _import_step(tenant_id, "preparing the tenant import"):
+                if bind.dialect.name == "postgresql":
+                    session.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
+                        "tenant_id": tenant_id,
+                    })
+                model_ids = legacy_model_ids(tenant_id=tenant_id)
+            for model_id in model_ids:
+                with _import_step(tenant_id, f"importing model {model_id!r}"):
+                    versions.import_legacy(session, tenant_id, model_id)
+                    session.flush()
+            if has_scheduler:
+                with _import_step(tenant_id, "retiring stale timer starts"):
+                    _retire_stale_timer_starts(session, tenant_id)
+            with _import_step(tenant_id, "releasing the tenant savepoint"):
+                # This commits the session's savepoint within Alembic's outer transaction.
+                session.commit()
 
 
 def downgrade() -> None:
-    op.drop_table(CALLED_RELEASES)
-    op.drop_table(RELEASE)
-    op.drop_table(STATE)
+    is_postgres = op.get_bind().dialect.name == "postgresql"
+    for table in reversed(VERSION_TABLES):
+        if is_postgres:
+            op.execute(sa.DDL(f"DROP POLICY IF EXISTS tenant_read_all ON {table}"))
+            op.execute(sa.DDL(f"DROP POLICY IF EXISTS tenant_scope ON {table}"))
+            op.execute(sa.DDL(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
+        op.drop_table(table)

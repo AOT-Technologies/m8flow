@@ -3049,7 +3049,7 @@ paths:
                   process_model_identifier:
                     type: string
         "400":
-          description: Missing concrete tenant
+          description: Missing concrete tenant or primary BPMN file
           content:
             application/json:
               schema:
@@ -3064,6 +3064,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Process model not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Process model is not startable or its published version changed
           content:
             application/json:
               schema:

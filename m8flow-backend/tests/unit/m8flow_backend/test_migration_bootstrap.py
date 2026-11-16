@@ -564,6 +564,53 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
     not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
     reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
 )
+def test_process_model_version_downgrade_removes_postgres_rls_tables(monkeypatch, tmp_path):
+    from m8flow_backend.models.process_model_version import (
+        ProcessInstanceCalledReleases,
+        ProcessModelRelease,
+        ProcessModelState,
+    )
+
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    table_names = {
+        ProcessModelState.__tablename__,
+        ProcessModelRelease.__tablename__,
+        ProcessInstanceCalledReleases.__tablename__,
+    }
+    policies = sa.text(
+        "SELECT policyname FROM pg_policies WHERE schemaname = current_schema() AND tablename = :table_name"
+    )
+
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(database_uri)
+    with engine.connect() as connection:
+        for table_name in table_names:
+            assert {"tenant_scope", "tenant_read_all"} <= set(
+                connection.scalars(policies, {"table_name": table_name})
+            )
+            assert connection.scalar(sa.text(
+                "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = to_regclass(:table_name)"
+            ), {"table_name": table_name}) is True
+
+    try:
+        previous_revision = "d1e2f3a4b5c6"
+        command.downgrade(cfg, previous_revision)
+        with engine.connect() as connection:
+            assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == previous_revision
+            assert table_names.isdisjoint(sa.inspect(connection).get_table_names())
+            for table_name in table_names:
+                assert connection.scalars(policies, {"table_name": table_name}).all() == []
+    finally:
+        command.upgrade(cfg, "head")
+        engine.dispose()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
+)
 def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypatch):
     """A database stamped at f4254352d453 gets this table from b7e1c2d3f4a5,
     not from the root revision's create_all + RLS pass, so that revision must

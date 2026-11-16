@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 from flask import Response, g, request
 from sqlalchemy import select
 
 from m8flow_backend import catalog, workflow
 from m8flow_backend.identity import super_admin_tenant_membership
-from m8flow_backend.catalog import versioned, versions
+from m8flow_backend.catalog import process_model_identifier_from_path_param, versioned, versions
 from m8flow_backend.auth import (
     require_catalog_write_tenant_id,
     require_current_user,
@@ -31,16 +31,6 @@ def _safe_content_disposition(filename: str) -> dict[str, str]:
     """Build Content-Disposition header safe from injection (RFC 5987)."""
     safe = quote(filename, safe="")
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{safe}"}
-
-
-def process_model_identifier_from_path_param(modified: str | None) -> str:
-    """Colon-encoded nested ids, including a percent-encoded colon from fetch/Vite."""
-    value = modified or ""
-    previous = None
-    while previous != value:
-        previous = value
-        value = unquote(value)
-    return value.replace(":", "/")
 
 
 def _process_group_permission_uri(*, modified_process_group_identifier: str, **_kwargs) -> str:
@@ -401,19 +391,23 @@ def change_working_version(modified_process_model_identifier: str, body: dict | 
     tenant_id = require_catalog_write_tenant_id(user)
     session = g.db_session
     payload = _group_write_payload(body)
-    model = versioned.for_write(
-        session, tenant_id, process_model_identifier_from_path_param(modified_process_model_identifier),
-        expected=_working_revision(required=True),
-    )
-    operation, number = payload.get("operation"), payload.get("version")
-    if operation == "restore" and type(number) is int and number > 0:
-        versioned.restore(session, model, number)
-    elif operation == "discard" and number is None:
-        versioned.restore(session, model, None)
-    else:
-        raise ApiError("invalid_version_operation", "Specify a version to restore or discard the draft.", 400)
-    identity = versioned.identity(session, model)
-    session.commit()
+    try:
+        model = versioned.for_write(
+            session, tenant_id, process_model_identifier_from_path_param(modified_process_model_identifier),
+            expected=_working_revision(required=True),
+        )
+        operation, number = payload.get("operation"), payload.get("version")
+        if operation == "restore" and type(number) is int and number > 0:
+            versioned.restore(session, model, number)
+        elif operation == "discard" and number is None:
+            versioned.restore(session, model, None)
+        else:
+            raise ApiError("invalid_version_operation", "Specify a version to restore or discard the draft.", 400)
+        identity = versioned.identity(session, model)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     return success_response(identity, 200)
 
 

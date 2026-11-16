@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from urllib.parse import unquote
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -41,6 +40,9 @@ _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # trailing slash so versioned and unversioned checks normalize identically.
 _LIFECYCLE_ROUTE = re.compile(
     r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate)/?"
+)
+_PROCESS_MODEL_VERSION_ROUTE = re.compile(
+    r"/m8flow/process-models/([^/]+)/(versions|publish|working-version|start)"
 )
 LOGGER = logging.getLogger(__name__)
 
@@ -265,12 +267,18 @@ def _normalize_authorization_path(path: str) -> str:
 
 
 def _process_model_version_permission(action: str, path: str) -> tuple[str, str]:
-    prefix = "/m8flow/process-models/"
-    if not path.startswith(prefix):
+    match = _PROCESS_MODEL_VERSION_ROUTE.fullmatch(path)
+    if match is None:
         return action, path
-    model_id, _, operation = path[len(prefix):].rpartition("/")
+
+    from m8flow_backend.catalog import process_model_identifier_from_path_param
+
+    encoded_model_id, operation = match.groups()
+    model_id = process_model_identifier_from_path_param(encoded_model_id)
+    if any(segment in {"", ".", ".."} for segment in model_id.split("/")):
+        return action, path
     if action == "read" and operation == "versions":
-        return action, f"/process-model-files/{unquote(model_id).replace(':', '/')}"
+        return action, f"/process-model-files/{model_id}"
     if (action, operation) in {("create", "publish"), ("update", "working-version")}:
         return "update", "/process-models"
     if action == "create" and operation == "start":

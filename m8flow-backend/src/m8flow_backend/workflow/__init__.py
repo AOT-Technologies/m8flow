@@ -790,6 +790,8 @@ def start(
         if model.status != "published":
             raise ApiError("process_model_not_startable", f"Process model is {model.status} and cannot be started. Publish it first.", 409)
         entry = versions.release(session, model, model.latest_version)
+        if entry is None:
+            raise ApiError("stale_working_revision", "The published version changed. Try starting again.", 409)
         with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
             definition_id = _published_definition_id(session, entry, user_id=user_id)
         process_id = versioned.selected_process_id(entry.contents, entry.model_id)
@@ -851,11 +853,13 @@ def start(
     return instance
 
 
-def _published_definition_id(session: Session, entry, *, user_id: int) -> int:
+def _published_definition_id(session: Session, entry: ProcessModelRelease, *, user_id: int) -> int:
     from m8flow_backend.catalog import versions
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
     name = versions.primary_bpmn(entry.contents, entry.model_id)
+    if name is None:
+        raise ApiError("invalid_process_model", "Select a primary BPMN file.", 400)
     digest = versions.definition_digest(entry, name)
     query = select(BpmnProcessDefinitionModel.id).where(
         BpmnProcessDefinitionModel.m8f_tenant_id == entry.m8f_tenant_id,
@@ -864,9 +868,14 @@ def _published_definition_id(session: Session, entry, *, user_id: int) -> int:
     definition_id = session.scalar(query)
     if definition_id is None:
         versions.lock_tenant(session, entry.m8f_tenant_id)
-        model = versions.state(session, entry.m8f_tenant_id, entry.model_id)
-        session.refresh(model)
-        if model.deleted or model.status != "published" or model.latest_version != entry.version:
+        model = versions.write_state(session, entry.m8f_tenant_id, entry.model_id)
+        if (
+            model is None
+            or model.deleted
+            or model.status != "published"
+            or model.generation != entry.generation
+            or model.latest_version != entry.version
+        ):
             raise ApiError("stale_working_revision", "The published version changed. Try starting again.", 409)
         try:
             deploy_release(session, entry=entry, user_id=user_id, bootstrap=True)

@@ -5,6 +5,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
 from m8flow_backend.routes.processes_controller import process_model_identifier_from_path_param
@@ -173,6 +175,95 @@ def test_version_history_permissions_and_tenant_scope(client, db_session, tmp_pa
     assert client.get(f"{path}/versions?tenantId=t1", headers=headers).status_code == 404
     assert client.put(f"{path}/working-version?tenantId=t1", headers=headers,
                       json={"operation": "discard"}).status_code == 404
+
+
+@pytest.mark.parametrize("replacement_generation", [None, "f" * 32], ids=["removed", "recreated"])
+def test_start_rejects_stale_model_state_during_release_bootstrap(
+    client, db_session, tmp_path, monkeypatch, replacement_generation,
+):
+    from sqlalchemy import delete, update
+
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_backend.models.process_model_version import ProcessModelState
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="start-editor", groups=["t1:editor"], tenant_id="t1", seed_permissions=True,
+    )
+    model_id = "finance/bootstrap"
+    versions.initialize(
+        db_session, "t1", model_id,
+        versions.snapshot({"bootstrap.bpmn": default_bpmn_xml(process_id="bootstrap").encode()}),
+        display_name="Bootstrap", status="published",
+    )
+    db_session.commit()
+
+    lock_tenant = versions.lock_tenant
+
+    def change_state_after_lock(session, tenant_id):
+        lock_tenant(session, tenant_id)
+        if replacement_generation is None:
+            change = delete(ProcessModelState)
+        else:
+            change = update(ProcessModelState).values(generation=replacement_generation)
+        session.execute(change.where(
+            ProcessModelState.m8f_tenant_id == tenant_id,
+            ProcessModelState.model_id == model_id,
+        ).execution_options(synchronize_session=False))
+
+    monkeypatch.setattr(versions, "lock_tenant", change_state_after_lock)
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:bootstrap/start",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 409, response.json
+    assert response.json["error_code"] == "stale_working_revision"
+
+
+def test_working_version_restore_rolls_back_if_response_preparation_fails(
+    client, db_session, tmp_path, monkeypatch,
+):
+    from m8flow_backend.catalog import default_bpmn_xml, versioned, versions
+    from m8flow_backend.helpers import response_helper
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="restore-editor", groups=["t1:editor"], tenant_id="t1", seed_permissions=True,
+    )
+    model_id = "finance/restore"
+    original_xml = default_bpmn_xml(process_id="restore")
+    published = versions.snapshot({"restore.bpmn": original_xml.encode()})
+    draft = versions.snapshot({"restore.bpmn": original_xml.replace('name="Task"', 'name="Draft task"').encode()})
+    model = versions.initialize(db_session, "t1", model_id, published, display_name="Restore", status="published")
+    versions.replace_working(model, draft)
+    revision = model.working_revision
+    db_session.commit()
+
+    def fail_response_preparation(session, model):
+        assert model.working == published
+        session.flush()
+        raise RuntimeError("injected failure after restoring the published version")
+
+    original_error_response = response_helper.error_response
+
+    def check_rollback(error_code, message, status_code):
+        from flask import g
+
+        assert not g.db_session.in_transaction()
+        return original_error_response(error_code, message, status_code)
+
+    monkeypatch.setattr(versioned, "identity", fail_response_preparation)
+    monkeypatch.setattr(response_helper, "error_response", check_rollback)
+    response = client.put(
+        "/v1.0/m8flow/process-models/finance:restore/working-version",
+        headers={"Authorization": f"Bearer {token}", "If-Match": f'"{revision}"'},
+        json={"operation": "restore", "version": 1},
+    )
+    assert response.status_code == 500, response.json
+    assert response.json["error_code"] == "internal_server_error"
+    model = _stored_model(db_session, "t1", model_id)
+    assert model.working == draft
+    assert model.working_revision == revision
 
 
 def _seed_catalog(tmp_path, monkeypatch, *, tenant_id: str) -> None:
