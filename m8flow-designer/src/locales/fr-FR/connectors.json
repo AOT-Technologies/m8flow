@@ -62,7 +62,30 @@
     "notAllowedBody": "Votre rôle permet d’ouvrir les connecteurs, mais pas de créer ni de modifier un profil.",
     "backToProfiles": "Retour aux profils",
     "subtitleAdd": "Les valeurs secrètes sont chiffrées lors de l’enregistrement et ne sont plus jamais affichées.",
-    "subtitleEdit": "Les valeurs secrètes stockées ne sont jamais affichées. Laissez un secret vide pour conserver sa valeur actuelle.",
+    "subtitleEdit": "Les mots de passe et les jetons ne sont jamais affichés après leur enregistrement. Utilisez Remplacer pour les modifier.",
+    "status": {
+      "configured": "Configuré",
+      "notSet": "Non défini"
+    },
+    "notSetOff": "Non défini (par défaut : désactivé)",
+    "starttlsHelp": "Sécurise la connexion avec STARTTLS.",
+    "keepSavedSetting": "Laissez le champ vide pour conserver la valeur enregistrée. Utilisez × pour l’effacer.",
+    "willClear": "Sera effacé lors de l’enregistrement",
+    "actions": {
+      "clear": "Effacer : {{label}}",
+      "replace": "Remplacer : {{label}}",
+      "replaceLabel": "Remplacer",
+      "cancel": "Annuler le remplacement de {{label}}",
+      "cancelLabel": "Annuler",
+      "remove": "Supprimer : {{label}}",
+      "removeLabel": "Supprimer",
+      "undo": "Annuler la suppression de {{label}}",
+      "undoLabel": "Annuler"
+    },
+    "removeSecret": {
+      "title": "Supprimer {{label}} ?",
+      "description": "Cet identifiant enregistré sera supprimé lors de l’enregistrement des modifications."
+    },
     "loading": "Chargement du profil…",
     "requiredNote": "Les champs marqués d’un <req>*</req> sont obligatoires.",
     "optional": "(facultatif)",
@@ -74,7 +97,6 @@
     "identifierPlaceholder": "Généré à partir du nom d’affichage",
     "descriptionPlaceholder": "À quoi sert ce profil, p. ex. l’environnement qu’il cible.",
     "valueSaved": "Une valeur est enregistrée. Laissez vide pour la conserver.",
-    "keepCurrentSetting": "Conserver le paramètre actuel",
     "offDefault": "Désactivé (par défaut)",
     "on": "Activé",
     "off": "Désactivé",
@@ -84,6 +106,7 @@
     "saveChanges": "Enregistrer les modifications",
     "saveProfile": "Enregistrer le profil",
     "unsaved": {
+      "saving": "Attendez la fin de l’enregistrement avant de quitter la page.",
       "title": "Abandonner les modifications non enregistrées ?",
       "description": "Ce profil comporte des modifications qui n’ont pas été enregistrées.",
       "keepEditing": "Continuer la modification",
