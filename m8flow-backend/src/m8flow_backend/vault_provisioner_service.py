@@ -14,7 +14,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-from m8flow_backend.config import vault_provisioner_api_token
+from m8flow_backend.config import vault_approle_mount_point, vault_provisioner_api_token
 from m8flow_backend.secrets.http import HttpVault
 from m8flow_backend.secrets.provisioning import reconcile_tenant_identity
 
@@ -33,7 +33,10 @@ class ProvisionerHandler(BaseHTTPRequestHandler):
         self._respond(404, {"error": "not_found"})
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/v1/tenant-identities/ensure":
+        if self.path not in {
+            "/v1/tenant-identities/ensure",
+            "/v1/tenant-identities/login",
+        }:
             self._respond(404, {"error": "not_found"})
             return
 
@@ -74,12 +77,66 @@ class ProvisionerHandler(BaseHTTPRequestHandler):
             self._respond(503, {"error": "provisioning_failed"})
             return
 
+        if self.path.endswith("/ensure"):
+            self._respond(
+                200,
+                {
+                    "tenant_id": identity.tenant_id,
+                    "role_name": identity.role_name,
+                    "role_id": identity.role_id,
+                },
+            )
+            return
+
+        # Keep AppRole SecretID creation and login inside the isolated
+        # provisioner. The application runtime token must not have broad
+        # AppRole control-plane permissions just to access tenant KV data.
+        vault = self.server.vault  # type: ignore[attr-defined]
+        mount = vault_approle_mount_point()
+        minted = None
+        try:
+            minted = vault.mint_approle_secret_id(identity.role_name, mount=mount)
+            tenant_store = vault.login_approle(
+                role_id=identity.role_id,
+                secret_id=minted.secret_id,
+                mount=mount,
+            )
+            client_token = tenant_store.client_token
+            lease_duration = tenant_store.token_lease_duration
+            if (
+                not isinstance(client_token, str)
+                or not client_token
+                or type(lease_duration) is not int
+                or lease_duration <= 0
+            ):
+                raise RuntimeError("Vault tenant login returned invalid credentials.")
+        except Exception as exc:
+            if minted is not None:
+                try:
+                    if minted.secret_id_accessor:
+                        vault.destroy_approle_secret_id_accessor(
+                            identity.role_name,
+                            mount=mount,
+                            secret_id_accessor=minted.secret_id_accessor,
+                        )
+                    else:
+                        vault.destroy_approle_secret_id(
+                            identity.role_name,
+                            mount=mount,
+                            secret_id=minted.secret_id,
+                        )
+                except Exception:
+                    LOGGER.warning("Vault SecretID cleanup after login failure did not complete.")
+            LOGGER.warning("Vault tenant login failed: %s", type(exc).__name__)
+            self._respond(503, {"error": "tenant_login_failed"})
+            return
+
         self._respond(
             200,
             {
                 "tenant_id": identity.tenant_id,
-                "role_name": identity.role_name,
-                "role_id": identity.role_id,
+                "client_token": client_token,
+                "lease_duration": lease_duration,
             },
         )
 

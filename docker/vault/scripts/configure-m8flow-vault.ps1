@@ -106,8 +106,6 @@ $policyText = $policyText.Replace('__APPROLE_MOUNT_POINT__', $approleMountPoint.
 $policyText = $policyText.Replace('__TENANT_POLICY_PREFIX__', $tenantPolicyPrefix.Trim('/'))
 $policyText = $policyText.Replace('__TENANT_ROLE_PREFIX__', $tenantRolePrefix.Trim('/'))
 $runtimePolicyText = Get-Content -Path $runtimePolicyTemplate -Raw
-$runtimePolicyText = $runtimePolicyText.Replace('__APPROLE_MOUNT_POINT__', $approleMountPoint.Trim('/'))
-$runtimePolicyText = $runtimePolicyText.Replace('__TENANT_ROLE_PREFIX__', $tenantRolePrefix.Trim('/'))
 
 $tempPolicyFile = [System.IO.Path]::GetTempFileName()
 $tempRuntimePolicyFile = [System.IO.Path]::GetTempFileName()
@@ -127,7 +125,7 @@ try {
   Remove-Item -Path $tempRuntimePolicyFile -ErrorAction SilentlyContinue
 }
 
-Write-Host "configure-m8flow-vault: wrote provisioner policy '$policyName' and runtime policy '$runtimePolicyName'."
+Write-Host "configure-m8flow-vault: wrote provisioner policy '$policyName' and least-privilege runtime policy '$runtimePolicyName'."
 Write-Host ''
 Write-Host 'Next steps:'
 Write-Host '1. For the development-only AppRole + demo-seeding flow, run:'

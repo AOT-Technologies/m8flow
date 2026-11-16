@@ -21,6 +21,8 @@ from m8flow_backend.config import (
     vault_approle_mount_point,
     vault_mount_point,
     vault_namespace,
+    vault_provisioner_api_token,
+    vault_provisioner_url,
     vault_role_id,
     vault_secret_id,
     vault_timeout_seconds,
@@ -101,6 +103,15 @@ class HttpVault:
             return None
         skew = min(30.0, max(1.0, self._token_lease_duration * 0.1))
         return self._token_expires_at - skew
+
+    @property
+    def client_token(self) -> str | None:
+        """Vault token for this client, exposed for the isolated provisioner response."""
+        return self._token
+
+    @property
+    def token_lease_duration(self) -> int | None:
+        return self._token_lease_duration
 
     def set_auth_failure_callback(
         self, callback: Callable[[HttpVault], HttpVault]
@@ -310,27 +321,49 @@ class HttpVault:
     def store_for_tenant(
         self, tenant_id: str, *, role_name: str, role_id: str | None = None
     ) -> HttpVault:
-        mount = self._approle_mount
-        if role_id is None:
-            role = self.read_approle(role_name, mount=mount)
-            if role is None:
-                raise VaultTransportError(f"No AppRole for tenant {tenant_id!r}.")
-            role_id = self.read_approle_role_id(role_name, mount=mount)
-        minted = self.mint_approle_secret_id(role_name, mount=mount)
+        # The application runtime credential must not mint AppRole SecretIDs.
+        # Ask the isolated provisioner to reconcile the tenant role, mint a
+        # one-use SecretID, and log in. It returns only the resulting
+        # tenant-scoped token, never the SecretID or its accessor.
+        del role_name, role_id
+        base_url = vault_provisioner_url()
+        api_token = vault_provisioner_api_token()
+        if not base_url or not api_token:
+            raise VaultTransportError("Vault tenant login provisioner is not configured.")
         try:
-            tenant_store = self.login_approle(
-                role_id=role_id, secret_id=minted.secret_id, mount=mount
+            response = requests.post(
+                f"{base_url.rstrip('/')}/v1/tenant-identities/login",
+                json={"tenant_id": tenant_id},
+                headers={"Authorization": f"Bearer {api_token}"},
+                timeout=self._timeout,
+                verify=self._verify,
             )
-        except Exception:
-            try:
-                self._destroy_minted_secret_id(role_name, mount=mount, minted=minted)
-            except Exception:
-                # Do not include role identifiers or credential material in logs.
-                LOGGER.warning(
-                    "Cleanup after Vault authentication failure did not complete."
-                )
-            raise
-        return tenant_store
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise VaultTransportError("Vault tenant login provisioner request failed.") from exc
+        if not isinstance(payload, dict) or payload.get("tenant_id") != tenant_id:
+            raise VaultTransportError("Vault tenant login provisioner returned an invalid response.")
+        token = payload.get("client_token")
+        lease_duration = payload.get("lease_duration")
+        if (
+            not isinstance(token, str)
+            or not token
+            or type(lease_duration) is not int
+            or lease_duration <= 0
+        ):
+            raise VaultTransportError("Vault tenant login provisioner returned invalid credentials.")
+        return HttpVault(
+            addr=self._addr,
+            token=token,
+            namespace=self._namespace,
+            mount=self._mount,
+            approle_mount=self._approle_mount,
+            timeout_seconds=self._timeout,
+            verify=self._verify,
+            token_expires_at=time.monotonic() + lease_duration,
+            token_lease_duration=lease_duration,
+        )
 
     def _destroy_minted_secret_id(
         self, role_name: str, *, mount: str, minted: AppRoleSecret

@@ -1,18 +1,6 @@
-# Runtime M8Flow policy. This identity can request a tenant-scoped token but
-# cannot create or modify tenant AppRoles or policies.
-
-path "auth/__APPROLE_MOUNT_POINT__/role/__TENANT_ROLE_PREFIX__-*/role-id" {
+# Runtime M8Flow identity has no AppRole control-plane access. The backend asks
+# the isolated provisioner to log in to a tenant role and receives only the
+# resulting tenant-scoped token.
+path "sys/health" {
   capabilities = ["read"]
-}
-
-path "auth/__APPROLE_MOUNT_POINT__/role/__TENANT_ROLE_PREFIX__-*/secret-id" {
-  capabilities = ["create", "update"]
-}
-
-path "auth/__APPROLE_MOUNT_POINT__/role/__TENANT_ROLE_PREFIX__-*/secret-id/destroy" {
-  capabilities = ["update"]
-}
-
-path "auth/__APPROLE_MOUNT_POINT__/role/__TENANT_ROLE_PREFIX__-*/secret-id-accessor/destroy" {
-  capabilities = ["update"]
 }

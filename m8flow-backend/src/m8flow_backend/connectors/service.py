@@ -359,8 +359,7 @@ def resolve_for_runtime(
     profile = _by_name(session, tenant_id, connector_type, profile_name)
     if profile is None:
         raise ServiceTaskExecutionError(
-            f"No '{profile_name}' profile is configured for connector "
-            f"'{connector_type}'."
+            f"No profile is configured for connector '{connector_type}'."
         )
     if not profile.is_active:
         raise ServiceTaskExecutionError(

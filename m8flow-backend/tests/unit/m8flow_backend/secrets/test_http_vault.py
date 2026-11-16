@@ -186,162 +186,61 @@ def test_cache_identity_includes_all_vault_connection_settings():
     assert all(variant.cache_identity != base.cache_identity for variant in variants)
 
 
-def test_store_for_tenant_reuses_reconciled_role_id(monkeypatch):
-    calls: list[str] = []
-
-    def fake_request(method, url, **kwargs):
-        calls.append(url)
-        if url.endswith("/secret-id"):
-            return _response(
-                payload={
-                    "data": {
-                        "secret_id": "one-use-secret",
-                        "secret_id_accessor": "one-use-accessor",
-                    }
-                }
-            )
-        if url.endswith("/login"):
-            return _response(
-                payload={"auth": {"client_token": "tenant-token", "lease_duration": 600}}
-            )
-        pytest.fail(f"Unexpected Vault request: {method} {url}")
-
-    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
-    broker = HttpVault(addr="http://vault:8200", token="broker-token")
-
-    tenant_store = broker.store_for_tenant("tenant-a", role_name="role-a", role_id="known-role-id")
-
-    assert tenant_store.token_cache_deadline is not None
-    assert calls == [
-        "http://vault:8200/v1/auth/approle/role/role-a/secret-id",
-        "http://vault:8200/v1/auth/approle/login",
-    ]
-
-
-def test_minted_secret_id_is_limited_to_one_successful_login(monkeypatch):
+def test_store_for_tenant_uses_isolated_provisioner_login(monkeypatch):
     calls = []
-
-    def fake_request(method, url, **kwargs):
-        calls.append((url, kwargs.get("json")))
-        if url.endswith("/secret-id"):
-            return _response(payload={"data": {"secret_id": "one-use-secret"}})
-        if url.endswith("/login"):
-            return _response(
-                payload={"auth": {"client_token": "tenant-token", "lease_duration": 600}}
-            )
-        pytest.fail(f"Unexpected Vault request: {method} {url}")
-
-    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
-    broker = HttpVault(addr="http://vault:8200", token="broker-token")
-
-    broker.store_for_tenant("tenant-a", role_name="role-a", role_id="role-id")
-
-    assert calls == [
-        (
-            "http://vault:8200/v1/auth/approle/role/role-a/secret-id",
-            {"num_uses": 1},
-        ),
-        (
-            "http://vault:8200/v1/auth/approle/login",
-            {"role_id": "role-id", "secret_id": "one-use-secret"},
-        ),
-    ]
-
-
-def test_store_for_tenant_cleans_up_secret_id_when_login_fails(monkeypatch):
-    calls = []
-
-    def fake_request(method, url, **kwargs):
-        calls.append((method, url, kwargs.get("json")))
-        if url.endswith("/secret-id"):
-            return _response(
-                payload={
-                    "data": {
-                        "secret_id": "one-use-secret",
-                        "secret_id_accessor": "one-use-accessor",
-                    }
-                }
-            )
-        if url.endswith("/login"):
-            return _response(status_code=400, payload={"errors": ["invalid SecretID"]})
-        if url.endswith("/secret-id-accessor/destroy"):
-            return _response(payload={})
-        pytest.fail(f"Unexpected Vault request: {method} {url}")
-
-    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
-    broker = HttpVault(addr="http://vault:8200", token="broker-token")
-
-    with pytest.raises(VaultTransportError, match="Vault request failed"):
-        broker.store_for_tenant("tenant-a", role_name="role-a", role_id="role-id")
-
-    assert [method for method, _url, _payload in calls] == ["POST", "POST", "POST"]
-    assert calls[-1][1].endswith("/secret-id-accessor/destroy")
-    assert calls[-1][2] == {"secret_id_accessor": "one-use-accessor"}
-
-
-def test_store_for_tenant_destroys_secret_id_without_accessor_after_login_failure(monkeypatch):
-    calls = []
-
-    def fake_request(method, url, **kwargs):
-        calls.append((method, url, kwargs.get("json")))
-        if url.endswith("/secret-id"):
-            return _response(payload={"data": {"secret_id": "one-use-secret"}})
-        if url.endswith("/login"):
-            return _response(status_code=400, payload={"errors": ["invalid SecretID"]})
-        if url.endswith("/secret-id/destroy"):
-            return _response(payload={})
-        pytest.fail(f"Unexpected Vault request: {method} {url}")
-
-    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
-    broker = HttpVault(addr="http://vault:8200", token="broker-token")
-
-    with pytest.raises(VaultTransportError, match="Vault request failed"):
-        broker.store_for_tenant("tenant-a", role_name="role-a", role_id="role-id")
-
-    assert calls[-1] == (
-        "POST",
-        "http://vault:8200/v1/auth/approle/role/role-a/secret-id/destroy",
-        {"secret_id": "one-use-secret"},
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.vault_provisioner_url",
+        lambda: "http://provisioner:8098/",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.vault_provisioner_api_token",
+        lambda: "internal-api-token",
     )
 
+    def fake_post(url, **kwargs):
+        calls.append((url, kwargs))
+        return _response(
+            payload={
+                "tenant_id": "tenant-a",
+                "client_token": "tenant-scoped-token",
+                "lease_duration": 600,
+            }
+        )
 
-def test_store_for_tenant_preserves_login_error_if_secret_id_cleanup_fails(monkeypatch, caplog):
-    calls = []
+    monkeypatch.setattr("m8flow_backend.secrets.http.requests.post", fake_post)
+    broker = HttpVault(addr="http://vault:8200", token="unused-runtime-token")
 
-    def fake_request(method, url, **kwargs):
-        calls.append((method, url, kwargs.get("headers", {}).get("X-Vault-Token")))
-        if url.endswith("/secret-id"):
-            return _response(
-                payload={
-                    "data": {
-                        "secret_id": "one-use-secret",
-                        "secret_id_accessor": "one-use-accessor",
-                    }
-                }
-            )
-        if url.endswith("/login"):
-            return _response(status_code=400, payload={"errors": ["invalid SecretID"]})
-        if url.endswith("/secret-id-accessor/destroy"):
-            return _response(status_code=500, payload={"errors": ["cleanup failed"]})
-        pytest.fail(f"Unexpected Vault request: {method} {url}")
+    tenant_store = broker.store_for_tenant("tenant-a", role_name="role-a", role_id="role-id")
 
-    monkeypatch.setattr("m8flow_backend.secrets.http.requests.request", fake_request)
-    broker = HttpVault(addr="http://vault:8200", token="broker-token")
+    assert tenant_store.client_token == "tenant-scoped-token"
+    assert tenant_store.token_cache_deadline is not None
+    assert calls[0][0] == "http://provisioner:8098/v1/tenant-identities/login"
+    assert calls[0][1]["json"] == {"tenant_id": "tenant-a"}
+    assert calls[0][1]["headers"] == {"Authorization": "Bearer internal-api-token"}
 
-    with pytest.raises(VaultTransportError, match="Vault request failed"):
+
+def test_store_for_tenant_rejects_mismatched_or_unbounded_login_response(monkeypatch):
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.vault_provisioner_url",
+        lambda: "http://provisioner:8098",
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.vault_provisioner_api_token", lambda: "api-token"
+    )
+    monkeypatch.setattr(
+        "m8flow_backend.secrets.http.requests.post",
+        lambda *_a, **_k: _response(
+            payload={
+                "tenant_id": "tenant-a",
+                "client_token": "tenant-token",
+                "lease_duration": 0,
+            }
+        ),
+    )
+    broker = HttpVault(addr="http://vault:8200")
+
+    with pytest.raises(VaultTransportError, match="invalid credentials"):
         broker.store_for_tenant("tenant-a", role_name="role-a", role_id="role-id")
-
-    assert [url.rsplit("/", 1)[-1] for _method, url, _token in calls] == [
-        "secret-id",
-        "login",
-        "destroy",
-    ]
-    assert "Cleanup after Vault authentication failure did not complete." in caplog.text
-    assert "role-a" not in caplog.text
-    assert "credential" not in caplog.text.lower()
-    assert "secretid" not in caplog.text.lower()
-    assert "one-use-secret" not in caplog.text
-    assert "one-use-accessor" not in caplog.text
 
 
 def test_http_error_wrapped(monkeypatch):

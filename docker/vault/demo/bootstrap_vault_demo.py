@@ -29,6 +29,11 @@ PATH_PREFIX = os.getenv("M8FLOW_VAULT_SECRET_PATH_PREFIX", "m8flow").strip("/")
 DEMO_TENANT_ID = os.getenv("M8FLOW_VAULT_DEMO_TENANT_ID", "m8flow")
 SEED_POLICY = os.getenv("M8FLOW_VAULT_DEMO_SEED_POLICY_NAME", "m8flow-demo-seed")
 TIMEOUT = int(os.getenv("M8FLOW_VAULT_DEMO_WAIT_TIMEOUT_SECONDS", "180"))
+# A single-node Raft Vault can take longer than the usual 10-second HTTP
+# timeout to elect itself leader on a cold start. In particular, timing out
+# during sys/init is unsafe: Vault may initialize successfully while the
+# response containing the only root token is lost.
+REQUEST_TIMEOUT = max(30, TIMEOUT)
 _POLICY_COMPONENT = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -94,7 +99,7 @@ def call(method: str, path: str, *, token: str | None = None, payload: object | 
     body = json.dumps(payload).encode() if payload is not None else None
     req = request.Request(f"{ADDR}/v1/{path.lstrip('/')}", data=body, headers=headers, method=method)
     try:
-        with request.urlopen(req, timeout=10) as response:
+        with request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
             code, data = response.status, response.read()
     except error.HTTPError as exc:
         code, data = exc.code, exc.read()
@@ -184,10 +189,10 @@ path "sys/policy/{POLICY_PREFIX}-*" {{ capabilities = ["create", "read", "update
 path "auth/{APPROLE}/role/{ROLE_PREFIX}-*" {{ capabilities = ["create", "read", "update"] }}
 path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/role-id" {{ capabilities = ["read"] }}
 '''
-    runtime_policy = f'''path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/role-id" {{ capabilities = ["read"] }}
-path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id" {{ capabilities = ["create", "update"] }}
-path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id/destroy" {{ capabilities = ["update"] }}
-path "auth/{APPROLE}/role/{ROLE_PREFIX}-*/secret-id-accessor/destroy" {{ capabilities = ["update"] }}
+    # The backend receives tenant-scoped Vault tokens from the isolated
+    # provisioner. Its own workload identity has no AppRole control-plane
+    # permissions, including SecretID creation.
+    runtime_policy = '''path "sys/health" { capabilities = ["read"] }
 '''
     call("PUT", f"sys/policies/acl/{parse.quote(POLICY, safe='')}", token=root_token,
          payload={"policy": provisioner_policy}, expected=(200, 204))

@@ -25,6 +25,32 @@ def _bootstrap_module():
     return module
 
 
+def test_vault_http_requests_allow_cold_raft_initialization_to_finish(monkeypatch):
+    module = _bootstrap_module()
+    observed = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    def fake_urlopen(_request, *, timeout):
+        observed["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr(module.request, "urlopen", fake_urlopen)
+
+    assert module.call("PUT", "sys/init", payload={}) == (200, {})
+    assert observed["timeout"] >= 30
+
+
 def test_vault_demo_runtime_volume_is_writable_for_bootstrap():
     compose_path = _BOOTSTRAP_SCRIPT.parents[3] / "docker" / "m8flow-docker-compose.yml"
     compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
@@ -222,13 +248,11 @@ def test_bootstrap_mints_scoped_seed_token_and_keeps_root_state_private(
     runtime_policy_call = next(
         call for call in calls if call[1] == f"sys/policies/acl/{module.RUNTIME_POLICY}"
     )
-    assert f'auth/{module.APPROLE}/role/{module.ROLE_PREFIX}-*/secret-id"' in (
+    assert 'path "sys/health" { capabilities = ["read"] }' in (
         runtime_policy_call[3]["policy"]
     )
-    assert (
-        f'path "auth/{module.APPROLE}/role/{module.ROLE_PREFIX}-*/'
-        'secret-id-accessor/destroy" { capabilities = ["update"] }'
-    ) in runtime_policy_call[3]["policy"]
+    assert f'auth/{module.APPROLE}/role/' not in runtime_policy_call[3]["policy"]
+    assert "secret-id" not in runtime_policy_call[3]["policy"]
     assert "sys/policies/acl/" not in runtime_policy_call[3]["policy"]
     token_request = next(call for call in calls if call[1] == "auth/token/create-orphan")[3]
     assert token_request == {

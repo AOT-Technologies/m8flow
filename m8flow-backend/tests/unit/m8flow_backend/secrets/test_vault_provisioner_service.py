@@ -25,10 +25,10 @@ def _run_server(monkeypatch, reconcile):
     return server, thread
 
 
-def _post(server, payload, token="test-api-token"):
+def _post(server, payload, token="test-api-token", path="/v1/tenant-identities/ensure"):
     body = json.dumps(payload).encode()
     request = Request(
-        f"http://127.0.0.1:{server.server_address[1]}/v1/tenant-identities/ensure",
+        f"http://127.0.0.1:{server.server_address[1]}{path}",
         data=body,
         headers={
             "Authorization": f"Bearer {token}" if token else "",
@@ -103,6 +103,106 @@ def test_provisioner_service_does_not_expose_vault_exception_details(monkeypatch
         assert status == 503
         assert body == {"error": "provisioning_failed"}
         assert "secret-token-value" not in json.dumps(body)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_provisioner_login_mints_and_consumes_tenant_secret_id(monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+
+    events = []
+
+    class _Vault:
+        def mint_approle_secret_id(self, role_name, *, mount):
+            events.append(("mint", role_name, mount))
+            return SimpleNamespace(secret_id="one-use-secret", secret_id_accessor="accessor")
+
+        def login_approle(self, *, role_id, secret_id, mount):
+            events.append(("login", role_id, secret_id, mount))
+            return SimpleNamespace(
+                client_token="tenant-scoped-token", token_lease_duration=600
+            )
+
+        def destroy_approle_secret_id_accessor(self, *args, **kwargs):
+            events.append(("destroy_accessor", args, kwargs))
+
+    def reconcile(tenant_id, *, control):
+        assert control is server.vault
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="policy-tenant-a",
+            role_name="role-tenant-a",
+            role_id="role-id-tenant-a",
+        )
+
+    monkeypatch.setattr("m8flow_backend.vault_provisioner_service.vault_approle_mount_point", lambda: "approle")
+    server, thread = _run_server(monkeypatch, reconcile)
+    server.vault = _Vault()
+    try:
+        status, body = _post(
+            server,
+            {"tenant_id": "tenant-a"},
+            path="/v1/tenant-identities/login",
+        )
+        assert status == 200
+        assert body == {
+            "tenant_id": "tenant-a",
+            "client_token": "tenant-scoped-token",
+            "lease_duration": 600,
+        }
+        assert events == [
+            ("mint", "role-tenant-a", "approle"),
+            ("login", "role-id-tenant-a", "one-use-secret", "approle"),
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_provisioner_login_cleans_up_secret_id_when_vault_login_fails(monkeypatch):
+    from types import SimpleNamespace
+
+    from m8flow_backend.secrets.provisioning import TenantVaultIdentity
+
+    cleanup = []
+
+    class _Vault:
+        def mint_approle_secret_id(self, role_name, *, mount):
+            return SimpleNamespace(secret_id="secret", secret_id_accessor="accessor")
+
+        def login_approle(self, **_kwargs):
+            raise RuntimeError("do not return secret values")
+
+        def destroy_approle_secret_id_accessor(self, role_name, *, mount, secret_id_accessor):
+            cleanup.append((role_name, mount, secret_id_accessor))
+
+    def reconcile(tenant_id, *, control):
+        assert control is server.vault
+        return TenantVaultIdentity(
+            tenant_id=tenant_id,
+            policy_name="policy-tenant-a",
+            role_name="role-tenant-a",
+            role_id="role-id-tenant-a",
+        )
+
+    monkeypatch.setattr("m8flow_backend.vault_provisioner_service.vault_approle_mount_point", lambda: "approle")
+    server, thread = _run_server(monkeypatch, reconcile)
+    server.vault = _Vault()
+    try:
+        status, body = _post(
+            server,
+            {"tenant_id": "tenant-a"},
+            path="/v1/tenant-identities/login",
+        )
+        assert status == 503
+        assert body == {"error": "tenant_login_failed"}
+        assert cleanup == [("role-tenant-a", "approle", "accessor")]
+        assert "secret" not in json.dumps(body)
     finally:
         server.shutdown()
         server.server_close()

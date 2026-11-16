@@ -95,10 +95,7 @@ sed \
   -e "s|__TENANT_ROLE_PREFIX__|$rendered_tenant_role_prefix|g" \
   "$policy_template" > "$tmp_policy"
 
-sed \
-  -e "s|__APPROLE_MOUNT_POINT__|$rendered_approle_mount_point|g" \
-  -e "s|__TENANT_ROLE_PREFIX__|$rendered_tenant_role_prefix|g" \
-  "$runtime_policy_template" > "$tmp_runtime_policy"
+cp "$runtime_policy_template" "$tmp_runtime_policy"
 
 compose exec -T -e VAULT_ADDR -e VAULT_TOKEN -e POLICY_NAME "$vault_service" \
   sh -lc 'vault policy write "$POLICY_NAME" -' < "$tmp_policy" >/dev/null
@@ -106,7 +103,7 @@ compose exec -T -e VAULT_ADDR -e VAULT_TOKEN -e RUNTIME_POLICY_NAME "$vault_serv
   sh -lc 'vault policy write "$RUNTIME_POLICY_NAME" -' < "$tmp_runtime_policy" >/dev/null
 
 cat <<EOF
-configure-m8flow-vault: wrote provisioner policy '$policy_name' and runtime policy '$runtime_policy_name'.
+configure-m8flow-vault: wrote provisioner policy '$policy_name' and least-privilege runtime policy '$runtime_policy_name'.
 
 Next steps:
 1. For the development-only AppRole + demo-seeding flow, run:
@@ -114,10 +111,11 @@ Next steps:
 2. Create separate workload AppRoles: the provisioner role receives '$policy_name';
    the backend/worker runtime role receives '$runtime_policy_name'. Never mount
    the provisioner credential in backend or worker containers.
-3. Configure the runtime container with its RoleID/SecretID. Configure the
-   separate provisioner service with its own RoleID/SecretID and an internal
-   request token shared with the backend. Do not expose the provisioner service
-   outside a private network.
+3. Configure the backend and workers with the runtime credentials, and configure
+   the isolated provisioner with its own RoleID/SecretID plus the internal API
+   token shared with the backend. The provisioner mints and consumes one-use
+   tenant SecretIDs, returning only short-lived tenant-scoped tokens. Do not
+   expose the provisioner service outside a private network.
 4. The Vault override file selects the Vault backend and sets its local address.
    M8FLOW_VAULT_MOUNT_POINT=$mount_point
    M8FLOW_VAULT_SECRET_PATH_PREFIX=$path_prefix
