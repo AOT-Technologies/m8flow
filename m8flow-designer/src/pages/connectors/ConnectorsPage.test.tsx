@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -130,6 +131,24 @@ const PROFILE = {
 
 /** The single-profile read an integrator gets: plain settings, no credentials. */
 const PROFILE_DETAIL = { ...PROFILE, config: { basic_auth_username: 'api-user' } };
+
+const SMTP_TEMPLATE = {
+  ...TEMPLATE,
+  id: 'smtp',
+  name: 'SMTP',
+  profileFields: [
+    { id: 'smtp_host', label: 'Host', type: 'text', required: true, secret: true },
+    { id: 'smtp_starttls', label: 'Use STARTTLS', type: 'boolean', required: false, secret: true },
+  ],
+};
+const SMTP_PROFILE = {
+  ...PROFILE,
+  connector_type: 'smtp',
+  profile_name: 'smtp-prod',
+  display_name: 'SMTP prod',
+  config: { smtp_host: 'smtp.example.com', smtp_starttls: 'true' },
+  configured_secrets: ['smtp_host', 'smtp_starttls'],
+};
 
 /** Data router (as in App) so the profile form's useBlocker works; `path` may
  * be a history stack, the last entry being the current page. */
@@ -426,9 +445,16 @@ describe('Connectors UI', () => {
     expect(await screen.findByRole('heading', { name: 'Edit HTTP profile' })).toBeInTheDocument();
     expect(screen.getByTestId('connector-profile-name')).toHaveValue('http-prod');
     expect(screen.getByTestId('connector-profile-name')).toHaveAttribute('readonly');
-    expect(screen.getByRole('button', { name: 'Save changes' })).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Save changes' });
+    expect(save).toBeDisabled();
+    fireEvent.submit(save.closest('form')!);
+    expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+    expect(screen.getByText('Passwords and tokens are never shown after saving. Use Replace to change one.'))
+      .toBeInTheDocument();
     expect(screen.getByTestId('connector-profile-field-basic_auth_username')).toHaveValue('api-user');
-    // A saved credential shows its status, not an input or dots.
+    expect(screen.queryByTestId('connector-profile-input-basic_auth_username-status')).not.toBeInTheDocument();
+    expect(screen.getByTestId('connector-profile-input-description-status')).toHaveTextContent('Not set');
+    expect(screen.getByText('••••••••')).toBeInTheDocument();
     expect(screen.queryByTestId('connector-profile-field-basic_auth_password')).not.toBeInTheDocument();
     expect(screen.getByTestId('connector-profile-input-basic_auth_password-status')).toHaveTextContent(
       'Configured',
@@ -437,7 +463,15 @@ describe('Connectors UI', () => {
     fireEvent.change(screen.getByTestId('connector-profile-display-name'), {
       target: { value: 'HTTP production' },
     });
-    fireEvent.click(screen.getByTestId('connector-profile-save'));
+    expect(save).toBeEnabled();
+    fireEvent.change(screen.getByTestId('connector-profile-display-name'), {
+      target: { value: ' HTTP prod ' },
+    });
+    expect(save).toBeDisabled();
+    fireEvent.change(screen.getByTestId('connector-profile-display-name'), {
+      target: { value: 'HTTP production' },
+    });
+    fireEvent.click(save);
 
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
@@ -463,16 +497,19 @@ describe('Connectors UI', () => {
     const password = screen.getByTestId('connector-profile-field-basic_auth_password');
     expect(password).toHaveValue('');
     expect(password).toHaveAttribute('placeholder', 'Enter a new value');
+    expect(screen.getByTestId('connector-profile-save')).toBeDisabled();
     expect(screen.getByText(/Leave blank to keep the saved value/)).toBeInTheDocument();
     fireEvent.change(password, { target: { value: 'new-secret' } });
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear basic auth username' }));
-    expect(screen.queryByTestId('connector-profile-field-basic_auth_username')).not.toBeInTheDocument();
-    expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
-      'Will be cleared',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Undo basic auth username' }));
-    expect(screen.getByTestId('connector-profile-field-basic_auth_username')).toHaveValue('api-user');
+    expect(screen.getByTestId('connector-profile-field-basic_auth_username')).toHaveValue('');
+    expect(screen.getByText('Will be cleared on save')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo basic auth username removal' }));
+    const username = screen.getByTestId('connector-profile-field-basic_auth_username');
+    expect(username).toHaveValue('api-user');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear basic auth username' }));
+    fireEvent.change(username, { target: { value: 'another-user' } });
+    expect(screen.queryByText('Will be cleared on save')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear basic auth username' }));
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
@@ -490,6 +527,119 @@ describe('Connectors UI', () => {
     });
   });
 
+  it.each([
+    ['', { config: {}, clear: ['smtp_starttls'] }],
+    ['false', { config: { smtp_starttls: 'false' } }],
+  ])('saves the STARTTLS choice %j without conflating Off and Not set', async (value, payload) => {
+    mockFetchConnectorTemplate.mockResolvedValue(SMTP_TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(SMTP_PROFILE);
+    mockUpdateConnectorProfile.mockResolvedValue(SMTP_PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([SMTP_PROFILE]);
+    renderAt('/connectors/smtp/profiles/7/edit', INTEGRATOR);
+
+    const starttls = await screen.findByRole('combobox', { name: /Use STARTTLS/ });
+    const save = screen.getByRole('button', { name: 'Save changes' });
+    expect(starttls).toHaveValue('true');
+    expect(within(starttls).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Not set (default: Off)', 'On', 'Off',
+    ]);
+    expect(screen.queryByRole('button', { name: 'Clear use starttls' })).not.toBeInTheDocument();
+    fireEvent.change(starttls, { target: { value: '' } });
+    expect(screen.getByText('Will be cleared on save')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo use starttls removal' }));
+    expect(starttls).toHaveValue('true');
+    expect(save).toBeDisabled();
+
+    fireEvent.change(starttls, { target: { value } });
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7, { display_name: 'SMTP prod', description: null, ...payload }, 't1',
+      );
+    });
+  });
+
+  it('requires confirmation for secret removal and can undo it before saving', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    const remove = await screen.findByRole('button', { name: 'Remove basic auth password' });
+    const save = screen.getByRole('button', { name: 'Save changes' });
+    fireEvent.click(remove);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Remove Basic Auth Password?' });
+    expect(dialog).toHaveTextContent('This saved credential will be removed when you save changes.');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(save).toBeDisabled();
+
+    async function confirmRemoval() {
+      fireEvent.click(screen.getByRole('button', { name: 'Remove basic auth password' }));
+      fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Remove' }));
+      expect(screen.getByText('Will be cleared on save')).toBeInTheDocument();
+      expect(screen.queryByText('Configured')).not.toBeInTheDocument();
+      expect(screen.queryByText('••••••••')).not.toBeInTheDocument();
+      expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+    }
+
+    await confirmRemoval();
+    fireEvent.click(screen.getByRole('button', { name: 'Undo basic auth password removal' }));
+    expect(screen.getByText('Configured')).toBeInTheDocument();
+    expect(screen.getByText('••••••••')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await confirmRemoval();
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7, { display_name: 'HTTP prod', description: null, config: {}, clear: ['basic_auth_password'] }, 't1',
+      );
+    });
+  });
+
+  it.each([true, false])('validates a required token (already saved: %s)', async (configured) => {
+    mockFetchConnectorTemplate.mockResolvedValue({
+      ...TEMPLATE,
+      id: 'github',
+      name: 'GitHub',
+      profileFields: [{ id: 'token', label: 'Personal access token', type: 'password', required: true }],
+    });
+    const profile = {
+      ...PROFILE,
+      connector_type: 'github',
+      display_name: 'GitHub prod',
+      configured_secrets: configured ? ['token'] : [],
+    };
+    mockFetchConnectorProfile.mockResolvedValue(profile);
+    mockUpdateConnectorProfile.mockResolvedValue(profile);
+    mockFetchConnectorProfiles.mockResolvedValue([profile]);
+    renderAt('/connectors/github/profiles/7/edit', INTEGRATOR);
+
+    const description = await screen.findByTestId('connector-profile-description');
+    expect(screen.getByText('Personal access token')).toHaveTextContent('*');
+    const validation = 'Personal access token is required.';
+    if (configured) {
+      expect(screen.queryByText(validation)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remove personal access token' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Replace personal access token' }));
+      expect(screen.getByTestId('connector-profile-field-token')).toHaveValue('');
+    } else {
+      expect(screen.getByText(validation)).toBeInTheDocument();
+      expect(screen.getByTestId('connector-profile-input-token-status')).toHaveTextContent('Not set');
+    }
+
+    fireEvent.change(description, { target: { value: 'New description' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    if (configured) {
+      await waitFor(() => expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
+        7, { display_name: 'GitHub prod', description: 'New description', config: {} }, 't1',
+      ));
+    } else {
+      expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+      expect(screen.getByTestId('connector-profile-field-token')).toHaveFocus();
+    }
+  });
+
   it('keeps a prefilled optional value the user blanks out', async () => {
     mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
     mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
@@ -500,17 +650,19 @@ describe('Connectors UI', () => {
     fireEvent.change(await screen.findByTestId('connector-profile-field-basic_auth_username'), {
       target: { value: '' },
     });
-    // Only the Clear button removes a value; an emptied input keeps it.
-    expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
-      'Configured',
-    );
-    expect(screen.getByText(/Leave blank to keep the saved value/)).toBeInTheDocument();
+    expect(screen.queryByTestId('connector-profile-input-basic_auth_username-status')).not.toBeInTheDocument();
+    expect(screen.getByText('Leave blank to keep the saved value. Use × to clear it.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clear basic auth username' })).toBeEnabled();
+    expect(screen.getByTestId('connector-profile-save')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('connector-profile-description'), {
+      target: { value: 'New description' },
+    });
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         7,
-        { display_name: 'HTTP prod', description: null, config: {} },
+        { display_name: 'HTTP prod', description: 'New description', config: {} },
         't1',
       );
     });
@@ -547,45 +699,40 @@ describe('Connectors UI', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Discard changes' }));
 
     expect(await screen.findByTestId('connector-profile-field-basic_auth_username')).toHaveValue('api-user');
-    expect(screen.getByTestId('connector-profile-input-basic_auth_username-status')).toHaveTextContent(
-      'Configured',
-    );
+    expect(screen.queryByText('Will be cleared on save')).not.toBeInTheDocument();
+    expect(screen.getByTestId('connector-profile-save')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('connector-profile-description'), {
+      target: { value: 'Second profile' },
+    });
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
         8,
-        { display_name: 'HTTP prod', description: null, config: {} },
+        { display_name: 'HTTP prod', description: 'Second profile', config: {} },
         't1',
       );
     });
   });
 
-  it('keeps a prefilled required value the user blanks out', async () => {
-    mockFetchConnectorTemplate.mockResolvedValue({
-      ...TEMPLATE,
-      profileFields: TEMPLATE.profileFields.map((field) =>
-        field.id === 'basic_auth_username' ? { ...field, required: true } : field,
-      ),
-    });
-    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
-    mockUpdateConnectorProfile.mockResolvedValue(PROFILE);
-    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
-    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+  it('validates a required setting and display name immediately when cleared', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(SMTP_TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(SMTP_PROFILE);
+    renderAt('/connectors/smtp/profiles/7/edit', INTEGRATOR);
 
-    fireEvent.change(await screen.findByTestId('connector-profile-field-basic_auth_username'), {
-      target: { value: '  ' },
-    });
+    const host = await screen.findByRole('textbox', { name: 'Host' });
+    expect(host).toHaveAttribute('aria-required', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear host' }));
+    expect(host).toHaveFocus();
+    expect(host).toHaveValue('');
+    expect(host).toHaveAccessibleDescription('Host is required.');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear display name' }));
+    expect(screen.getByText('Display name is required.')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('connector-profile-save'));
-
-    await waitFor(() => {
-      expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(
-        7,
-        { display_name: 'HTTP prod', description: null, config: {} },
-        't1',
-      );
-    });
-    expect(screen.queryByText('Basic Auth Username is required.')).not.toBeInTheDocument();
+    expect(screen.getByText('Fix the highlighted fields and try again.')).toBeInTheDocument();
+    expect(mockUpdateConnectorProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('link', { name: 'Cancel' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Discard unsaved changes?');
   });
 
   it('cancelling Replace leaves the saved credential untouched', async () => {
@@ -598,12 +745,82 @@ describe('Connectors UI', () => {
     fireEvent.change(screen.getByTestId('connector-profile-field-basic_auth_password'), {
       target: { value: 'typo' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel basic auth password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear basic auth password' }));
+    expect(screen.getByTestId('connector-profile-field-basic_auth_password')).toHaveValue('');
+    expect(screen.getByTestId('connector-profile-save')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('connector-profile-field-basic_auth_password'), {
+      target: { value: 'second typo' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel basic auth password replacement' }));
     expect(screen.queryByTestId('connector-profile-field-basic_auth_password')).not.toBeInTheDocument();
     // Back to the loaded state, so leaving does not prompt.
     fireEvent.click(screen.getByRole('link', { name: 'Cancel' }));
     expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
     expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+  });
+
+  it('supports clearing description by keyboard and warns about a dirty edit on reload', async () => {
+    const user = userEvent.setup();
+    const profile = { ...PROFILE_DETAIL, description: 'Saved notes' };
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(profile);
+    mockFetchConnectorProfiles.mockResolvedValue([profile]);
+    renderAt('/connectors/http/profiles/7/edit', INTEGRATOR);
+
+    const clear = await screen.findByRole('button', { name: 'Clear description' });
+    const description = screen.getByTestId('connector-profile-description');
+    function reloadWasBlocked() {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }
+    expect(reloadWasBlocked()).toBe(false);
+    clear.focus();
+    await user.keyboard('{Enter}');
+    expect(description).toHaveValue('');
+    expect(description).toHaveFocus();
+    expect(reloadWasBlocked()).toBe(true);
+    fireEvent.change(description, { target: { value: 'Saved notes' } });
+    expect(reloadWasBlocked()).toBe(false);
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it('protects an in-flight edit, preserves a failed draft, and redirects after a retry', async () => {
+    let rejectSave!: (error: Error) => void;
+    let finishSave!: (profile: typeof PROFILE) => void;
+    mockFetchConnectorTemplate.mockResolvedValue(TEMPLATE);
+    mockFetchConnectorProfile.mockResolvedValue(PROFILE_DETAIL);
+    mockFetchConnectorProfiles.mockResolvedValue([PROFILE]);
+    mockUpdateConnectorProfile
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectSave = reject; }))
+      .mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve; }));
+    const router = renderAt(['/connectors/http/profiles', '/connectors/http/profiles/7/edit'], INTEGRATOR);
+
+    const clear = await screen.findByRole('button', { name: 'Clear basic auth username' });
+    const save = screen.getByTestId('connector-profile-save');
+    fireEvent.click(clear);
+    fireEvent.click(save);
+    expect(save).toBeDisabled();
+    fireEvent.submit(save.closest('form')!);
+    expect(mockUpdateConnectorProfile).toHaveBeenCalledTimes(1);
+
+    await act(() => router.navigate(-1));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Wait for the save to finish before leaving.');
+    expect(within(dialog).getByRole('button', { name: 'Discard changes' })).toBeDisabled();
+    await act(() => rejectSave(new Error('Save failed')));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep editing' }));
+    expect(screen.getByText('Save failed')).toBeInTheDocument();
+    expect(screen.getByText('Will be cleared on save')).toBeInTheDocument();
+    expect(save).toBeEnabled();
+
+    fireEvent.click(save);
+    fireEvent.click(screen.getByRole('link', { name: 'Cancel' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Wait for the save to finish before leaving.');
+    await act(() => finishSave(PROFILE));
+    expect(await screen.findByText('HTTP prod')).toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/connectors/http/profiles');
   });
 
   it('blocks a duplicate identifier before calling the API', async () => {
@@ -672,6 +889,9 @@ describe('Connectors UI', () => {
     expect(await screen.findByTestId('connector-profile-legacy-name')).toHaveTextContent(
       /doesn't meet the current naming rules/,
     );
+    fireEvent.change(screen.getByTestId('connector-profile-description'), {
+      target: { value: 'New description' },
+    });
     fireEvent.click(screen.getByTestId('connector-profile-save'));
     await waitFor(() => {
       expect(mockUpdateConnectorProfile).toHaveBeenCalledWith(

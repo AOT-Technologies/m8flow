@@ -61,7 +61,30 @@
     "notAllowedBody": "您的角色可以打开连接器，但无法创建或编辑配置文件。",
     "backToProfiles": "返回配置文件",
     "subtitleAdd": "机密值在保存时会被加密，并且不会再次显示。",
-    "subtitleEdit": "已存储的机密值永远不会显示。将机密留空即可保留其当前值。",
+    "subtitleEdit": "密码和令牌保存后不再显示。如需更改，请使用“替换”。",
+    "status": {
+      "configured": "已配置",
+      "notSet": "未设置"
+    },
+    "notSetOff": "未设置（默认：关）",
+    "starttlsHelp": "使用 STARTTLS 保护连接。",
+    "keepSavedSetting": "留空可保留已保存的值。点击 × 可清除该值。",
+    "willClear": "保存时将清除",
+    "actions": {
+      "clear": "清除{{label}}",
+      "replace": "替换{{label}}",
+      "replaceLabel": "替换",
+      "cancel": "取消替换{{label}}",
+      "cancelLabel": "取消",
+      "remove": "移除{{label}}",
+      "removeLabel": "移除",
+      "undo": "撤销移除{{label}}",
+      "undoLabel": "撤销"
+    },
+    "removeSecret": {
+      "title": "移除{{label}}？",
+      "description": "保存更改时将移除此已保存的凭据。"
+    },
     "loading": "正在加载配置文件…",
     "requiredNote": "标有 <req>*</req> 的字段为必填项。",
     "optional": "（可选）",
@@ -73,7 +96,6 @@
     "identifierPlaceholder": "根据显示名称生成",
     "descriptionPlaceholder": "此配置文件的用途，例如面向哪个环境。",
     "valueSaved": "已保存一个值。留空即可保留。",
-    "keepCurrentSetting": "保留当前设置",
     "offDefault": "关（默认）",
     "on": "开",
     "off": "关",
@@ -83,6 +105,7 @@
     "saveChanges": "保存更改",
     "saveProfile": "保存配置文件",
     "unsaved": {
+      "saving": "请等待保存完成后再离开。",
       "title": "放弃未保存的更改？",
       "description": "您对此配置文件所做的更改尚未保存。",
       "keepEditing": "继续编辑",

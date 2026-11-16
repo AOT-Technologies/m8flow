@@ -62,7 +62,30 @@
     "notAllowedBody": "Su rol puede abrir Conectores, pero no puede crear ni editar un perfil.",
     "backToProfiles": "Volver a los perfiles",
     "subtitleAdd": "Los valores secretos se cifran al guardarse y no se vuelven a mostrar.",
-    "subtitleEdit": "Los valores secretos guardados nunca se muestran. Deje un secreto en blanco para conservar su valor actual.",
+    "subtitleEdit": "Las contraseñas y los tokens nunca se muestran después de guardarlos. Use Reemplazar para cambiar uno.",
+    "status": {
+      "configured": "Configurado",
+      "notSet": "Sin configurar"
+    },
+    "notSetOff": "Sin configurar (por defecto: desactivado)",
+    "starttlsHelp": "Protege la conexión con STARTTLS.",
+    "keepSavedSetting": "Deje el campo vacío para conservar el valor guardado. Use × para borrarlo.",
+    "willClear": "Se borrará al guardar",
+    "actions": {
+      "clear": "Borrar: {{label}}",
+      "replace": "Reemplazar: {{label}}",
+      "replaceLabel": "Reemplazar",
+      "cancel": "Cancelar el reemplazo de {{label}}",
+      "cancelLabel": "Cancelar",
+      "remove": "Quitar: {{label}}",
+      "removeLabel": "Quitar",
+      "undo": "Deshacer la eliminación de {{label}}",
+      "undoLabel": "Deshacer"
+    },
+    "removeSecret": {
+      "title": "¿Quitar {{label}}?",
+      "description": "Esta credencial guardada se eliminará al guardar los cambios."
+    },
     "loading": "Cargando perfil…",
     "requiredNote": "Los campos marcados con <req>*</req> son obligatorios.",
     "optional": "(opcional)",
@@ -74,7 +97,6 @@
     "identifierPlaceholder": "Se genera a partir del nombre para mostrar",
     "descriptionPlaceholder": "Para qué sirve este perfil, p. ej., a qué entorno apunta.",
     "valueSaved": "Hay un valor guardado. Déjelo en blanco para conservarlo.",
-    "keepCurrentSetting": "Conservar la configuración actual",
     "offDefault": "Desactivado (predeterminado)",
     "on": "Activado",
     "off": "Desactivado",
@@ -84,6 +106,7 @@
     "saveChanges": "Guardar cambios",
     "saveProfile": "Guardar perfil",
     "unsaved": {
+      "saving": "Espere a que se guarden los cambios antes de salir.",
       "title": "¿Descartar los cambios no guardados?",
       "description": "Tiene cambios en este perfil que no se han guardado.",
       "keepEditing": "Seguir editando",

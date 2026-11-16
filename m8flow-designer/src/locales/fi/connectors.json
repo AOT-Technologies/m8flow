@@ -61,7 +61,30 @@
     "notAllowedBody": "Roolisi voi avata liittimet mutta ei luoda tai muokata profiileja.",
     "backToProfiles": "Takaisin profiileihin",
     "subtitleAdd": "Salaiset arvot salataan tallennettaessa, eikä niitä näytetä enää koskaan.",
-    "subtitleEdit": "Tallennettuja salaisia arvoja ei koskaan näytetä. Säilytä nykyinen arvo jättämällä salainen kenttä tyhjäksi.",
+    "subtitleEdit": "Salasanoja ja tunnuksia ei näytetä tallentamisen jälkeen. Voit vaihtaa arvon valitsemalla Korvaa.",
+    "status": {
+      "configured": "Määritetty",
+      "notSet": "Ei määritetty"
+    },
+    "notSetOff": "Ei määritetty (oletus: pois)",
+    "starttlsHelp": "Suojaa yhteys STARTTLS:llä.",
+    "keepSavedSetting": "Säilytä tallennettu arvo jättämällä kenttä tyhjäksi. Poista arvo valitsemalla ×.",
+    "willClear": "Poistetaan tallennettaessa",
+    "actions": {
+      "clear": "Tyhjennä: {{label}}",
+      "replace": "Korvaa: {{label}}",
+      "replaceLabel": "Korvaa",
+      "cancel": "Peru korvaaminen: {{label}}",
+      "cancelLabel": "Peruuta",
+      "remove": "Poista: {{label}}",
+      "removeLabel": "Poista",
+      "undo": "Kumoa poistaminen: {{label}}",
+      "undoLabel": "Kumoa"
+    },
+    "removeSecret": {
+      "title": "Poistetaanko {{label}}?",
+      "description": "Tämä tallennettu tunnistetieto poistetaan, kun tallennat muutokset."
+    },
     "loading": "Ladataan profiilia…",
     "requiredNote": "Merkillä <req>*</req> merkityt kentät ovat pakollisia.",
     "optional": "(valinnainen)",
@@ -73,7 +96,6 @@
     "identifierPlaceholder": "Muodostetaan näyttönimestä",
     "descriptionPlaceholder": "Mihin tätä profiilia käytetään, esim. mihin ympäristöön se on tarkoitettu.",
     "valueSaved": "Arvo on tallennettu. Säilytä se jättämällä kenttä tyhjäksi.",
-    "keepCurrentSetting": "Säilytä nykyinen asetus",
     "offDefault": "Pois (oletus)",
     "on": "Päällä",
     "off": "Pois",
@@ -83,6 +105,7 @@
     "saveChanges": "Tallenna muutokset",
     "saveProfile": "Tallenna profiili",
     "unsaved": {
+      "saving": "Odota, että muutokset on tallennettu, ennen kuin poistut.",
       "title": "Hylätäänkö tallentamattomat muutokset?",
       "description": "Tähän profiiliin tekemiäsi muutoksia ei ole tallennettu.",
       "keepEditing": "Jatka muokkaamista",

@@ -62,7 +62,30 @@
     "notAllowedBody": "Sua função pode abrir Conectores, mas não pode criar nem editar um perfil.",
     "backToProfiles": "Voltar aos perfis",
     "subtitleAdd": "Os valores secretos são criptografados ao salvar e nunca mais são exibidos.",
-    "subtitleEdit": "Os valores secretos armazenados nunca são exibidos. Deixe um segredo em branco para manter o valor atual.",
+    "subtitleEdit": "Senhas e tokens nunca são exibidos após serem salvos. Use Substituir para alterá-los.",
+    "status": {
+      "configured": "Configurado",
+      "notSet": "Não definido"
+    },
+    "notSetOff": "Não definido (padrão: desativado)",
+    "starttlsHelp": "Protege a conexão com STARTTLS.",
+    "keepSavedSetting": "Deixe o campo em branco para manter o valor salvo. Use × para apagá-lo.",
+    "willClear": "Será apagado ao salvar",
+    "actions": {
+      "clear": "Limpar: {{label}}",
+      "replace": "Substituir: {{label}}",
+      "replaceLabel": "Substituir",
+      "cancel": "Cancelar a substituição de {{label}}",
+      "cancelLabel": "Cancelar",
+      "remove": "Remover: {{label}}",
+      "removeLabel": "Remover",
+      "undo": "Desfazer a remoção de {{label}}",
+      "undoLabel": "Desfazer"
+    },
+    "removeSecret": {
+      "title": "Remover {{label}}?",
+      "description": "Esta credencial será removida ao salvar as alterações."
+    },
     "loading": "Carregando perfil…",
     "requiredNote": "Os campos marcados com <req>*</req> são obrigatórios.",
     "optional": "(opcional)",
@@ -74,7 +97,6 @@
     "identifierPlaceholder": "Gerado a partir do nome de exibição",
     "descriptionPlaceholder": "Para que serve este perfil, ex.: qual ambiente ele usa.",
     "valueSaved": "Há um valor salvo. Deixe em branco para mantê-lo.",
-    "keepCurrentSetting": "Manter a configuração atual",
     "offDefault": "Desativado (padrão)",
     "on": "Ativado",
     "off": "Desativado",
@@ -84,6 +106,7 @@
     "saveChanges": "Salvar alterações",
     "saveProfile": "Salvar perfil",
     "unsaved": {
+      "saving": "Aguarde até que as alterações sejam salvas antes de sair.",
       "title": "Descartar as alterações não salvas?",
       "description": "Você tem alterações neste perfil que não foram salvas.",
       "keepEditing": "Continuar editando",
