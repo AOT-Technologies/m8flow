@@ -41,6 +41,7 @@ def test_allow_uri_normalizes_standard_granted_route(path, regular_user, monkeyp
         ("GET", "finance:invoice-approval/unknown", "read", None),
         ("POST", "finance:invoice-approval/unknown/publish", "create", None),
         ("POST", "%2F/publish", "create", None),
+        ("POST", "finance%253A%252e%252e%253Ainvoice-approval/publish", "create", None),
         ("GET", "versions", "read", None),
     ],
 )

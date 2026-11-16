@@ -93,6 +93,7 @@ def test_versioned_model_publishes_and_restores_saved_drafts(client, db_session,
         assert instance.bpmn_version_control_identifier.endswith(f":{expected_version}")
         return instance
 
+    assert client.post(f"{path}/publish", headers=headers).status_code == 428
     published = client.post(f"{path}/publish", headers=revision(created))
     assert published.status_code == 200, published.json
     assert published.json["published_version"] == 1
@@ -125,8 +126,10 @@ def test_versioned_model_publishes_and_restores_saved_drafts(client, db_session,
     instance = start_and_check("Second", 2)
     assert instance.bpmn_process_definition_id != first.bpmn_process_definition_id
 
-    restored = client.put(f"{path}/working-version", headers=revision(second),
-                          json={"operation": "restore", "version": 1})
+    restore = {"operation": "restore", "version": 1}
+    assert client.put(f"{path}/working-version", headers=headers, json=restore).status_code == 428
+    assert client.put(f"{path}/working-version", headers=revision(resumed), json=restore).status_code == 409
+    restored = client.put(f"{path}/working-version", headers=revision(second), json=restore)
     assert restored.status_code == 200, restored.json
     assert restored.json["draft_version"] == 3
     assert client.get(file_path, headers=headers).data == xml

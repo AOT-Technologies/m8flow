@@ -357,10 +357,10 @@ def read_json_file(path: Path) -> dict[str, Any]:
 
 
 def process_model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
+    """Read the catalog display name, falling back to the model path's leaf."""
     model = versioned.read_state(tenant_id, process_model_identifier)
     if model is not None:
         return model.display_name
-    """Prefer process_model.json display_name; fall back to the leaf path segment."""
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     display = meta.get("display_name")
     if isinstance(display, str) and display.strip():
