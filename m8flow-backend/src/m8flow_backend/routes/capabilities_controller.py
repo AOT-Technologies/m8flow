@@ -3,7 +3,7 @@ from __future__ import annotations
 from flask import g, jsonify, request
 
 from m8flow_backend.auth import require_current_user
-from m8flow_backend.authorization import allow_uri, database_permission
+from m8flow_backend.authorization import check_uri_permission, database_permission
 from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors, success_response
 
@@ -45,7 +45,7 @@ def permissions_check():
             # action mapping, which also accepts backend-only action names.
             target_results[normalized_method or method.strip().upper()] = (
                 normalized_method is not None
-                and allow_uri(user, normalized_method, target_uri, session=session)
+                and check_uri_permission(user, normalized_method, target_uri, session=session)
             )
         results[target_uri] = target_results
     return jsonify({"results": results})

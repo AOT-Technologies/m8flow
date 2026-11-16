@@ -557,7 +557,7 @@ def validate_process_group_id(group_id: str) -> str:
     return cleaned
 
 
-def process_group_exists(*, tenant_id: str, group_id: str) -> bool:
+def process_group_exists(*, tenant_id: str, group_id: str, session: Session | None = None) -> bool:
     """True when `group_id` is a directory in the tenant catalog that is not a process model."""
     try:
         cleaned = validate_process_group_id(group_id)
@@ -566,7 +566,11 @@ def process_group_exists(*, tenant_id: str, group_id: str) -> bool:
         return False
     if not target.is_dir():
         return False
-    return not is_process_model_identifier(cleaned, tenant_id=tenant_id)
+    model = versions.state(session or versions.request_session(), tenant_id, cleaned)
+    if model is not None and not model.deleted:
+        return False
+    # A deleted model can still have its pre-upgrade BPMN directory.
+    return not _legacy_model_exists(tenant_id, cleaned)
 
 
 def create_process_group(
@@ -655,7 +659,7 @@ def process_model_identifier_from_path_param(modified: str | None) -> str:
     for _ in range(4):
         decoded = unquote(value)
         if decoded == value:
-            return value.replace(":", "/")
+            return decoded.replace(":", "/")
         value = decoded
     raise ApiError("invalid_process_model", "Process model path is encoded too deeply.", 400)
 

@@ -15,16 +15,24 @@ from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 VALID_BPMN = Path(__file__).resolve().parents[3] / "fixtures" / "invoice_approval_poc.bpmn"
 
 
-def test_path_param_unquotes_colon_and_double_encoding():
-    assert process_model_identifier_from_path_param("finance:invoice-approval") == (
-        "finance/invoice-approval"
-    )
-    assert process_model_identifier_from_path_param("finance%3Ainvoice-approval") == (
-        "finance/invoice-approval"
-    )
-    assert process_model_identifier_from_path_param("finance%253Ainvoice-approval") == (
-        "finance/invoice-approval"
-    )
+@pytest.mark.parametrize(("encoded", "decoded"), [
+    ("finance:invoice-approval", "finance/invoice-approval"),
+    ("finance%3Ainvoice-approval", "finance/invoice-approval"),
+    ("finance%253Ainvoice-approval", "finance/invoice-approval"),
+    ("finance%253Aapprovals%2Finvoice%25253Astep", "finance/approvals/invoice/step"),
+    ("finance%3Ainvoice%25zz%2", "finance/invoice%zz%2"),
+    ("finance%2G%25%3Ainvoice", "finance%2G%/invoice"),
+])
+def test_path_param_decodes_model_id(encoded, decoded):
+    assert process_model_identifier_from_path_param(encoded) == decoded
+
+
+def test_path_param_rejects_ids_beyond_decoding_limit():
+    from m8flow_backend.errors import ApiError
+
+    with pytest.raises(ApiError, match="encoded too deeply") as exc:
+        process_model_identifier_from_path_param("finance%2525253Ainvoice")
+    assert exc.value.error_code == "invalid_process_model"
 
 
 def _login_user(
@@ -221,6 +229,63 @@ def test_start_rejects_stale_model_state_during_release_bootstrap(
     )
     assert response.status_code == 409, response.json
     assert response.json["error_code"] == "stale_working_revision"
+
+
+@pytest.mark.parametrize(("instance_create", "model_start"), [
+    (True, False), (False, True), (True, True),
+], ids=["instance-grant-only", "model-grant-only", "both-grants"])
+def test_model_start_permission_requires_instance_and_model_grants(
+    client, db_session, monkeypatch, tmp_path, instance_create, model_start,
+):
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_core.services.authorization import grant_permission_to_user
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant = ensure_tenant(db_session, tenant_id="t1")
+    ensure_tenant(db_session, tenant_id="t2")
+    user = ensure_user(db_session, username="custom-starter", service="https://example.test/realms/m8flow",
+                       service_id="custom-starter")
+    ensure_membership(db_session, user, tenant)
+    sync_groups(db_session, user=user, group_identifiers=["t1:custom-starter"], tenant_id=tenant.id)
+    for tenant_id, name, status in (
+        ("t1", "review", "published"), ("t1", "draft", "draft"),
+        ("t1", "paused", "paused"), ("t2", "other", "published"),
+    ):
+        versions.initialize(
+            db_session, tenant_id, f"finance/{name}",
+            versions.snapshot({f"{name}.bpmn": default_bpmn_xml(process_id=name).encode()}),
+            display_name=name, status=status,
+        )
+    if instance_create:
+        grant_permission_to_user(
+            db_session, user_id=user.id, permission="create", command="route.create",
+            resource_type="tenant", resource_id="/process-instances",
+        )
+    if model_start:
+        for name in ("review", "draft", "paused", "other"):
+            grant_permission_to_user(
+                db_session, user_id=user.id, permission="start", command="process.start",
+                resource_type="tenant", resource_id=f"/process-models/finance/{name}",
+            )
+    db_session.commit()
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant.id)
+    headers = {"Authorization": f"Bearer {encode_auth_token(user=user)}"}
+    base = "/v1.0/m8flow/process-models"
+    hint_path = f"{base}/finance%253Areview/start"
+    result = client.post(
+        "/v1.0/permissions-check", headers=headers,
+        json={"requests_to_check": {hint_path: ["POST"], "/v1.0/process-instances": ["POST"]}},
+    )
+    assert result.status_code == 200, result.json
+    can_start = instance_create and model_start
+    assert result.json["results"][hint_path]["POST"] is can_start
+    assert result.json["results"]["/v1.0/process-instances"]["POST"] is instance_create
+    response = client.post(f"{base}/finance:review/start", headers=headers)
+    assert response.status_code == (201 if can_start else 403), response.json
+    if can_start:
+        for name, status in (("other", 404), ("draft", 409), ("paused", 409)):
+            response = client.post(f"{base}/finance:{name}/start", headers=headers)
+            assert response.status_code == status, response.json
 
 
 def test_working_version_restore_rolls_back_if_response_preparation_fails(
@@ -1359,6 +1424,50 @@ def test_deleting_versioned_process_model_updates_tombstone_revision(client, db_
     assert tombstone.working_revision != previous_revision
     assert tombstone.updated_at.replace(tzinfo=UTC) > previous_update
     assert client.put(f"{path}/working-version", headers=headers, json={"operation": "discard"}).status_code == 404
+
+
+@pytest.mark.parametrize("operation", ["create", "copy"])
+def test_reuses_deleted_legacy_model_id(client, db_session, tmp_path, monkeypatch, operation):
+    from m8flow_backend.catalog import versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(client, db_session, username="recreator", groups=["t1:editor"], tenant_id="t1")
+    headers = {"Authorization": f"Bearer {token}"}
+    base = "/v1.0/m8flow/process-models"
+    model_id = "finance/invoice-approval"
+    legacy = versions.import_legacy(db_session, "t1", model_id)
+    old_generation = legacy.generation
+    old_revision = legacy.working_revision
+    db_session.commit()
+    assert client.post(base, headers=headers, json={"group_id": "finance", "id": "source"}).status_code == 201
+    assert client.post(base, headers=headers, json={"group_id": "finance", "id": "occupied"}).status_code == 201
+    assert client.delete(f"{base}/finance:occupied", headers=headers).status_code == 200
+    occupied = tmp_path / "bpmn" / "t1" / "finance" / "occupied"
+    occupied.mkdir()
+    (occupied / "process_group.json").write_text("{}", encoding="utf-8")
+
+    def create_target(leaf):
+        if operation == "copy":
+            return client.post(f"{base}/finance:source/copy", headers=headers, json={"id": leaf})
+        return client.post(base, headers=headers, json={"group_id": "finance", "id": leaf})
+
+    live = create_target("invoice-approval")
+    assert (live.status_code, live.json["error_code"]) == (409, "process_model_exists")
+    collision = create_target("occupied")
+    assert (collision.status_code, collision.json["error_code"]) == (409, "process_group_exists")
+
+    assert client.delete(f"{base}/finance:invoice-approval", headers=headers).status_code == 200
+    legacy_file = tmp_path / "bpmn" / "t1" / model_id / "invoice-approval.bpmn"
+    assert legacy_file.is_file()
+    recreated = create_target("invoice-approval")
+    assert recreated.status_code == 201, recreated.json
+    model = _stored_model(db_session, "t1", model_id)
+    assert not model.deleted
+    assert model.generation != old_generation
+    assert model.working_revision != old_revision
+    assert recreated.json["draft_version"] == 1
+    assert recreated.json["published_version"] is None
+    assert versions.release_by_reference(db_session, "t1", model_id, f"{old_generation}:1") is not None
 
 
 def test_delete_blocked_when_instances_exist(client, db_session, tmp_path, monkeypatch):
@@ -2564,10 +2673,15 @@ def test_super_admin_starts_instance_in_a_tenant_they_never_logged_into(
     )
     assert published.status_code == 200, published.json
 
-    started = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/start?tenantId=t2",
-        headers=headers,
+    client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
+    start_path = "/v1.0/m8flow/process-models/finance:invoice-approval/start"
+    permissions = client.post(
+        "/v1.0/permissions-check", headers=headers, json={"requests_to_check": {start_path: ["POST"]}},
     )
+    assert permissions.status_code == 200, permissions.json
+    assert permissions.json["results"][start_path]["POST"] is True
+
+    started = client.post(f"{start_path}?tenantId=t2", headers=headers)
     assert started.status_code == 201, started.get_json()
 
 

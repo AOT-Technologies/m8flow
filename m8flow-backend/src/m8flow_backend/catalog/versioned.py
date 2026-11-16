@@ -7,11 +7,13 @@ from typing import Any
 from xml.etree.ElementTree import Element, ParseError
 
 from defusedxml.common import DefusedXmlException
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from m8flow_backend import catalog, workflow
 from m8flow_backend.catalog import versions
 from m8flow_backend.errors import ApiError
+from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
 from m8flow_backend.models.process_model_version import ProcessModelState
 
 
@@ -107,15 +109,24 @@ def create(
 ) -> ProcessModelState:
     versions.lock_tenant(session, tenant_id)
     catalog._resolved_inside_tenant(tenant_id, model_id, **catalog._MODEL_PATH_ERROR)
-    if catalog.model_exists(tenant_id=tenant_id, process_model_identifier=model_id, session=session):
+    existing = versions.write_state(session, tenant_id, model_id)
+    if (existing is not None and not existing.deleted) or (
+        existing is None and catalog._legacy_model_exists(tenant_id, model_id)
+    ):
         raise ApiError("process_model_exists", "Process model already exists", 409)
-    if catalog.process_group_exists(tenant_id=tenant_id, group_id=model_id):
+    if catalog.process_group_exists(tenant_id=tenant_id, group_id=model_id, session=session):
         raise ApiError("process_group_exists", "A process group already uses this id", 409)
     for file_name, body in files.items():
         _validate_file(file_name, body)
     contents = versions.snapshot(files, primary, process_id)
     if not versions.bpmn_names(contents):
         raise ApiError("invalid_process_model", "A process model requires a BPMN file", 400)
+    if existing is not None:
+        # Provenance is keyed by model ID and belongs to the previous generation.
+        session.execute(delete(ProcessModelTemplateModel).where(
+            ProcessModelTemplateModel.m8f_tenant_id == tenant_id,
+            ProcessModelTemplateModel.process_model_identifier == model_id,
+        ))
     return versions.initialize(session, tenant_id, model_id, contents, display_name=name, description=description)
 
 
