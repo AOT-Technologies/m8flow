@@ -28,6 +28,7 @@ export const permissionCheckTargets = {
   deleteProcessModelFiles: ['/process-models/{id}/files/{file}', 'DELETE'],
   suspendProcessInstances: ['/process-instances/{id}/suspend', 'POST'],
   resumeProcessInstances: ['/process-instances/{id}/resume', 'POST'],
+  retryProcessInstances: ['/process-instances/{id}/retry', 'POST'],
   terminateProcessInstances: ['/process-instances/{id}/terminate', 'POST'],
   deleteProcessInstances: ['/process-instances/{id}', 'DELETE'],
   readMcpConnection: ['/m8flow/mcp-connection', 'GET'],

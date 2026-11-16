@@ -139,6 +139,7 @@ export type ProcessInstanceDetail = {
   /** Set when the detail shows a called child process instead of the instance's own. */
   called_process?: { bpmn_process_identifier: string; process_model_identifier: string } | null;
   error_message: string | null;
+  has_failed_compensation?: boolean;
   started_by_me?: boolean;
   assigned_to_me?: boolean;
 };
@@ -355,7 +356,7 @@ export function fetchProcessInstanceCompletedTasks(
   }));
 }
 
-export type ProcessInstanceLifecycleAction = 'suspend' | 'resume' | 'terminate';
+export type ProcessInstanceLifecycleAction = 'suspend' | 'resume' | 'terminate' | 'retry';
 
 export type ProcessInstanceLifecycleResult = {
   id: number;

@@ -6,12 +6,16 @@ import logging
 import math
 import time
 from collections import OrderedDict
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from graphlib import CycleError, TopologicalSorter
+from inspect import Parameter, signature
 from threading import Lock
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import case, exists, false as sa_false, func, or_, select, text
+from sqlalchemy import case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -23,6 +27,7 @@ from m8flow_core.models.work_item import WorkItemModel
 from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
 from m8flow_backend.auth import is_super_admin_request
+from m8flow_backend.auth.tenant_context import reset_context_tenant_id, set_context_tenant_id
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend.workflow.process_model_tests import run_process_model_tests as run_process_model_tests
 from m8flow_backend.workflow.script_unit_tests import (
@@ -63,6 +68,13 @@ _TERMINAL_INSTANCE_STATUSES = frozenset(
         "terminated",
     }
 )
+
+
+def _map_execution_error(session: Session, error: BpmnCoreError) -> ApiError:
+    if getattr(error, "compensation_recovery_flushed", False):
+        # The HTTP error response would otherwise roll back the recovery point.
+        session.commit()
+    return map_bpmn_error(error)
 
 
 def _instance_status_value(status: object) -> str:
@@ -651,7 +663,7 @@ def start(
                 ),
             )
     except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
     except Exception as exc:
         # SpiffWorkflow raises its own parse/validation errors that are not
         # BpmnCoreError — e.g. ValidationException "No start event found." when
@@ -813,6 +825,12 @@ def reconcile_pending_tasks_for_user(
         raise map_bpmn_error(exc) from exc
 
 
+@dataclass(frozen=True)
+class TaskCompletionResult:
+    process_instance_id: int
+    status: str
+
+
 def complete(
     session: Session,
     *,
@@ -820,7 +838,7 @@ def complete(
     work_item_id: int,
     user_id: int,
     task_payload: dict[str, Any] | None = None,
-) -> ProcessInstanceModel:
+) -> TaskCompletionResult:
     work_item = session.get(WorkItemModel, work_item_id)
     process_instance_id = (
         work_item.process_instance_id
@@ -843,7 +861,7 @@ def complete(
         _reject_in_app_completion_of_external_form_task(
             session, tenant_id=tenant_id, work_item_id=work_item_id
         )
-        instance = api.execute_command(
+        completed_task = api.execute_command(
             session,
             api.CompleteTaskCommand(
                 tenant_id=tenant_id,
@@ -885,9 +903,7 @@ def complete(
             record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, str(exc)) from exc
     except BpmnCoreError as exc:
-        # Preserve the public core-error contract before handling the
-        # SpiffWorkflow wrapper used for script-task failures below.
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
     except Exception as exc:
         # Spiff wraps script failures in WorkflowTaskException. Unlike service
         # tasks, core does not transition the process to Error for this case, so
@@ -965,20 +981,25 @@ def complete(
         session.commit()
         record_task_completed(tenant_id, task_type="UserTask")
         raise _automatic_step_failure_api_error(process_instance_id, failure_detail) from exc
+    process_instance_id = completed_task.process_instance_id
+    status = session.scalar(
+        select(ProcessInstanceModel.status).where(
+            ProcessInstanceModel.id == process_instance_id,
+            ProcessInstanceModel.m8f_tenant_id == tenant_id,
+        )
+    )
+    if status is None:
+        raise ApiError("not_found", "Process instance not found", 404)
+    # Capture the response before notification hooks can commit or expire ORM state.
+    result = TaskCompletionResult(process_instance_id=process_instance_id, status=status)
     record_task_completed(tenant_id, task_type="UserTask")
-    process_instance_id = getattr(instance, "process_instance_id", None)
-    if process_instance_id is None:
-        process_instance_id = getattr(instance, "id", None)
-    if process_instance_id is not None:
-        terminal = _emit_process_instance_terminal_log(
-            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
-        )
-        if terminal == "complete":
-            record_process_instance_terminal(tenant_id, outcome="completed")
-        _emit_external_form_requests(
-            session, tenant_id=tenant_id, process_instance_id=int(process_instance_id)
-        )
-    return instance
+    terminal = _emit_process_instance_terminal_log(
+        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    )
+    if terminal == "complete":
+        record_process_instance_terminal(tenant_id, outcome="completed")
+    _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
+    return result
 
 
 def _nest_payload_under_task_variable(
@@ -1245,6 +1266,108 @@ def resume_instance(
         raise map_bpmn_error(exc) from exc
 
 
+def _has_failed_compensation(session: Session, *, tenant_id: str, process_instance_id: int) -> bool:
+    """Report a detail-page hint. Core decides retry eligibility during dispatch."""
+    query = getattr(api, "GetProcessInstanceCompensationsQuery", None)
+    return query is not None and any(
+        record.status == "failed"
+        for record in api.execute_query(session, query(tenant_id, process_instance_id))
+    )
+
+
+def _compensation_only_retry_command() -> Callable[..., object] | None:
+    command = getattr(api, "RetryProcessInstanceCommand", None)
+    if not callable(command):
+        return None
+    try:
+        command_signature = signature(command)
+        option = command_signature.parameters.get("compensation_only")
+        if option is None or option.kind not in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY):
+            return None
+        command_signature.bind(tenant_id="", process_instance_id=0, user_id=0, compensation_only=True)
+    except (TypeError, ValueError):
+        return None
+    return command
+
+
+def retry_instance(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_instance_id: int,
+    user_id: int,
+) -> ProcessInstanceModel:
+    """Retry failed compensation in a transaction owned by this operation."""
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.authorization import PROCESS_RETRY_COMMAND, require_command_authorization
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+
+    from m8flow_backend.authorization import actor_is_super_admin, instance_initiator_scope
+
+    if session.in_transaction():
+        raise RuntimeError("Compensation retry requires a session without an active transaction")
+
+    tenant_token = set_context_tenant_id(tenant_id)
+    try:
+        instance = session.scalar(
+            select(ProcessInstanceModel).where(
+                ProcessInstanceModel.id == process_instance_id,
+                ProcessInstanceModel.m8f_tenant_id == tenant_id,
+            )
+        )
+        user = session.get(UserModel, user_id)
+        if instance is None or user is None:
+            raise ApiError("not_found", "Process instance not found", 404)
+        if not actor_is_super_admin(user) and not user_belongs_to_tenant(
+            user, tenant_identifiers_for(session, tenant_id)
+        ):
+            raise ApiError("not_found", "Process instance not found", 404)
+        if instance_initiator_scope(user, session=session) not in (None, instance.process_initiator_id):
+            raise ApiError("not_found", "Process instance not found", 404)
+
+        require_command_authorization(
+            session,
+            tenant_id=tenant_id,
+            actor_user_id=user_id,
+            command_key=PROCESS_RETRY_COMMAND,
+            resource_id=process_instance_id,
+        )
+        retry_command = _compensation_only_retry_command()
+        if retry_command is None:
+            raise ApiError("invalid_state", "The installed core does not support compensation-only retry", 409)
+
+        # End the authorization read transaction before core opens its own baseline session.
+        session.commit()
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            try:
+                instance = api.execute_command(
+                    session,
+                    retry_command(
+                        tenant_id=tenant_id,
+                        process_instance_id=process_instance_id,
+                        user_id=user_id,
+                        compensation_only=True,
+                    ),
+                )
+                session.commit()
+            except BpmnCoreError as exc:
+                raise _map_execution_error(session, exc) from exc
+            finally:
+                # Clear partial writes before membership restoration commits.
+                session.rollback()
+        _emit_external_form_requests(session, tenant_id=tenant_id, process_instance_id=instance.id)
+        session.commit()
+        return instance
+    except BpmnCoreError as exc:
+        session.rollback()
+        raise map_bpmn_error(exc) from exc
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        reset_context_tenant_id(tenant_token)
+
+
 def terminate_instance(
     session: Session,
     *,
@@ -1272,6 +1395,40 @@ def terminate_instance(
     return instance
 
 
+def _delete_compensation_journal(session: Session, *, tenant_id: str, process_instance_id: int) -> None:
+    # The migration can create or adopt these tables even if core does not map them.
+    inspector = sa_inspect(session.connection())
+    foreign_keys = inspector.get_multi_foreign_keys(
+        filter_names=("compensation_scope", "compensation_run", "compensation_record"),
+    )
+    journal_names = {name for _, name in foreign_keys}
+    delete_order = TopologicalSorter[str]()
+    for (_, name), constraints in foreign_keys.items():
+        delete_order.add(name)
+        for constraint in constraints:
+            parent = constraint["referred_table"]
+            if (
+                parent != name
+                and parent in journal_names
+                and constraint.get("referred_schema") in (None, inspector.default_schema_name)
+            ):
+                delete_order.add(parent, name)
+
+    try:
+        ordered_names = tuple(delete_order.static_order())
+    except CycleError as exc:
+        raise RuntimeError("Cannot delete process instance with cyclic compensation journal foreign keys") from exc
+
+    for name in ordered_names:
+        journal = table(name, column("m8f_tenant_id"), column("process_instance_id"))
+        session.execute(
+            journal.delete().where(
+                journal.c.m8f_tenant_id == tenant_id,
+                journal.c.process_instance_id == process_instance_id,
+            )
+        )
+
+
 def delete_instance(
     session: Session,
     *,
@@ -1285,9 +1442,9 @@ def delete_instance(
     races a running workflow. Core has no delete command, so this removes the
     instance through the ORM: the ProcessInstanceModel relationships cascade
     to tasks, human tasks (and their potential owners), events, metadata and
-    scheduler jobs. Host-side rows keyed only by ``process_instance_id`` (no
-    FK) are removed explicitly. Shared rows -- the process definition, the
-    ``bpmn_process`` it points at, content-addressed json data -- are kept.
+    scheduler jobs. The compensation journal and host-side rows keyed only by
+    ``process_instance_id`` are removed explicitly. Shared rows such as the
+    process definition, its ``bpmn_process``, and content-addressed JSON data are kept.
     """
     from sqlalchemy import delete as sql_delete
 
@@ -1308,6 +1465,7 @@ def delete_instance(
             "only complete, terminated or error instances can be deleted. Terminate it first.",
             409,
         )
+    _delete_compensation_journal(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
     for model in (
         TaskDraftDataModel,
         TaskInstructionsForEndUserModel,
@@ -2194,11 +2352,17 @@ def get_instance_detail_for_designer(
         ]
 
     error_message = None
+    has_failed_compensation = False
     if instance.status == ProcessInstanceStatus.error.value:
+        has_failed_compensation = _has_failed_compensation(
+            session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
+        )
         errors = list_instance_errors(
             session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
         )
         error_message = errors[-1][1] if errors else None
+        if error_message is None and has_failed_compensation:
+            error_message = "A compensation handler failed. Resolve the cause before retrying."
 
     return {
         "id": instance.id,
@@ -2215,6 +2379,7 @@ def get_instance_detail_for_designer(
         "tasks": tasks,
         "called_process": called_process,
         "error_message": error_message,
+        "has_failed_compensation": has_failed_compensation and _compensation_only_retry_command() is not None,
     }
 
 
@@ -2919,7 +3084,8 @@ def run_due(
     happens to `session` afterward. CompleteTaskCommand does not use this
     mechanism. Callers of run_due don't need extra commit/session handling
     for that recovery state -- core already commits it internally for the
-    job types processed here.
+    job types processed here. Compensation failures instead use the current
+    transaction and commit only when core marks the recovery state as flushed.
     """
     try:
         return api.run_due_scheduler_jobs(
@@ -2930,7 +3096,7 @@ def run_due(
             tenant_id=tenant_id,
         )
     except BpmnCoreError as exc:
-        raise map_bpmn_error(exc) from exc
+        raise _map_execution_error(session, exc) from exc
 
 
 class _StartImportPolicy:

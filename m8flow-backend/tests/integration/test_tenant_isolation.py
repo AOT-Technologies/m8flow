@@ -6,6 +6,8 @@ The host connects as a role without BYPASSRLS, so every core query runs with
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 import sqlalchemy as sa
 
@@ -58,6 +60,65 @@ def test_rls_hides_other_tenants_core_rows_from_the_runtime_role(admin_engine):
             ).scalars()
         )
     assert tenants == {tenant_a, tenant_b}
+
+
+def test_compensation_journal_rls_scopes_runtime_role_reads_and_writes(admin_engine):
+    from m8flow_backend import workflow
+
+    tenant_a, editor_a, instance_a, _ = _tenant_with_running_instance("journal-a")
+    tenant_b, _, instance_b, _ = _tenant_with_running_instance("journal-b")
+    created_at = datetime.now(UTC)
+    updated_at = created_at + timedelta(seconds=1)
+    metadata = sa.MetaData()
+
+    for table_name, fields in (
+        ("compensation_scope", {"activity_id": "charge", "completed": True, "data_hash": "hash"}),
+        ("compensation_run", {
+            "run_id": "run", "throw_task_guid": "throw", "wait_for_completion": True, "status": "failed",
+        }),
+        ("compensation_record", {
+            "source_task_guid": "source", "activity_id": "charge", "completion_sequence": 1,
+            "status": "failed", "attempts": 1, "data_hash": "hash",
+        }),
+    ):
+        table = sa.Table(table_name, metadata, autoload_with=admin_engine)
+        row = table.insert().values(
+            created_at=created_at, updated_at=created_at, scope_id="scope", **fields
+        ).returning(table.c.id)
+        with tenant_session(tenant_b) as session:
+            row_b = session.scalar(row.values(m8f_tenant_id=tenant_b, process_instance_id=instance_b))
+        with tenant_session(tenant_a) as session:
+            row_a = session.scalar(row.values(m8f_tenant_id=tenant_a, process_instance_id=instance_a))
+            assert session.scalars(sa.select(table.c.id).where(table.c.id.in_((row_a, row_b)))).all() == [row_a]
+            update = table.update().values(updated_at=updated_at).returning(table.c.id)
+            assert session.scalar(update.where(table.c.id == row_a)) == row_a
+            assert session.scalar(update.where(table.c.id == row_b)) is None
+
+        with pytest.raises(sa.exc.ProgrammingError) as denied:
+            with tenant_session(tenant_a) as session:
+                session.execute(row.values(m8f_tenant_id=tenant_b, process_instance_id=instance_b))
+        assert denied.value.orig.sqlstate == "42501", table_name
+
+        with admin_engine.connect() as connection:
+            rows = connection.execute(
+                sa.select(table.c.m8f_tenant_id, table.c.updated_at).where(
+                    table.c.process_instance_id.in_((instance_a, instance_b))
+                )
+            ).all()
+        assert len(rows) == 2
+        assert dict(rows) == {tenant_a: updated_at, tenant_b: created_at}
+
+    with tenant_session(tenant_a) as session:
+        workflow.terminate_instance(session, tenant_id=tenant_a, process_instance_id=instance_a, user_id=editor_a)
+        workflow.delete_instance(session, tenant_id=tenant_a, process_instance_id=instance_a)
+
+    with admin_engine.connect() as connection:
+        for table_name in ("compensation_scope", "compensation_run", "compensation_record"):
+            table = metadata.tables[table_name]
+            remaining = connection.scalars(sa.select(table.c.process_instance_id).where(
+                table.c.process_instance_id.in_((instance_a, instance_b))
+            )).all()
+            assert remaining == [instance_b], table_name
 
 
 def test_host_listings_are_scoped_to_the_active_tenant():

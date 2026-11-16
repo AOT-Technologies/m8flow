@@ -329,11 +329,7 @@ def submit_task_review(work_item_id: int):
     task_payload: dict[str, Any] = {
         key: value for key, value in body.items() if value is not None
     }
-    # submit_external_form (claim-then-complete) returns the WorkItemModel that
-    # core's complete_task produces -- NOT the ProcessInstanceModel -- so resolve
-    # the instance explicitly for its id + advanced status (the contract's
-    # {process_instance_id, status}).
-    completed_task = human_task.submit_external_form(
+    result = human_task.submit_external_form(
         session,
         tenant_id=tenant_id,
         work_item_id=work_item_id,
@@ -343,10 +339,7 @@ def submit_task_review(work_item_id: int):
         # required fields (the designer validates too, but isn't authoritative).
         require_fields=True,
     )
-    process_instance_id = completed_task.process_instance_id
-    instance = session.get(ProcessInstanceModel, process_instance_id)
-    process_status = instance.status if instance is not None else None
-    process_complete = process_status == "complete"
+    process_complete = result.status == "complete"
     # A 200 already means the task was completed; spell it out so the response
     # doesn't read as a failure just because the *process* status is an ongoing
     # state like "user_input_required" (the workflow advanced to its next step).
@@ -357,8 +350,8 @@ def submit_task_review(work_item_id: int):
     )
     return success_response(
         {
-            "process_instance_id": process_instance_id,
-            "process_status": process_status,
+            "process_instance_id": result.process_instance_id,
+            "process_status": result.status,
             "process_complete": process_complete,
             "message": message,
         },

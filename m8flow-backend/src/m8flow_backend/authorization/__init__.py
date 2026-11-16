@@ -39,7 +39,7 @@ _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # The regex accepts an optional API version prefix (such as /v1.0) and optional
 # trailing slash so versioned and unversioned checks normalize identically.
 _LIFECYCLE_ROUTE = re.compile(
-    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate)/?"
+    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate|retry)/?"
 )
 LOGGER = logging.getLogger(__name__)
 
