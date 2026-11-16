@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_wfh_self_service" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_wfh_self_service"><bpmn:participant id="Participant_Process_flow_wfh_self_service" name="E2E WFH Self Service" processRef="Process_flow_wfh_self_service" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_wfh_self_service" name="E2E WFH Self Service" isExecutable="true">
     <bpmn:documentation>An employee records the days they work from home; no approval is needed.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_wfh_self_service"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_submit_wfh</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

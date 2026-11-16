@@ -61,10 +61,10 @@ export function displayNameError(raw: string): string | null {
   return /^[\p{L}\p{N}][\p{L}\p{N}_ .()-]*$/u.test(value) ? null : DISPLAY_NAME_HINT;
 }
 
-/** Only `type: "password"` fields are masked; other profile fields are stored
- * encrypted too but are not credentials (host, port, instance URL…). */
-function isMasked(field: ConnectorFieldDescriptor) {
-  return field.type === 'password';
+/** Descriptor metadata controls field-level sensitivity; password fields remain
+ * masked for compatibility with older connector templates. */
+export function isMaskedConnectorField(field: ConnectorFieldDescriptor) {
+  return field.isHighlySensitive === true || field.type === 'password';
 }
 
 export function connectorFieldError(
@@ -387,7 +387,7 @@ function ConnectorProfileEditBody() {
       const loadedValues: Record<string, string> = {};
       for (const field of loadedTemplate.profileFields) {
         const value = loadedProfile?.config[field.id];
-        if (!isMasked(field) && value !== undefined) {
+        if (!isMaskedConnectorField(field) && value !== undefined) {
           loadedValues[field.id] = value;
         }
       }
@@ -468,12 +468,20 @@ function ConnectorProfileEditBody() {
     );
   }
 
+  function isConfigured(field: ConnectorFieldDescriptor) {
+    return Boolean(
+      existing?.configured_fields.includes(field.id) ||
+        existing?.configured_secrets.includes(field.id) ||
+        Object.prototype.hasOwnProperty.call(existing?.config ?? {}, field.id),
+    );
+  }
+
   function hasStoredValue(field: ConnectorFieldDescriptor) {
-    return Boolean(existing?.configured_secrets.includes(field.id) || existing?.config[field.id]?.trim());
+    return isConfigured(field);
   }
 
   function missingRequiredValue(field: ConnectorFieldDescriptor, value: string) {
-    return field.required && !value.trim() && !(isMasked(field) && hasStoredValue(field));
+    return field.required && !value.trim() && !(isMaskedConnectorField(field) && hasStoredValue(field));
   }
 
   function identifierError(): string | null {
@@ -506,7 +514,11 @@ function ConnectorProfileEditBody() {
       if (cleared.includes(field.id) || (value.trim() && !(field.id in config))) {
         continue;
       }
-      const message = connectorFieldError(field, value, isMasked(field) && hasStoredValue(field));
+      const message = connectorFieldError(
+        field,
+        value,
+        isMaskedConnectorField(field) && hasStoredValue(field),
+      );
       if (message) {
         next[field.id] = message;
       }
@@ -630,10 +642,11 @@ function ConnectorProfileEditBody() {
 
   function renderField(field: ConnectorFieldDescriptor) {
     const inputId = `connector-profile-input-${field.id}`;
+    const configured = isConfigured(field);
     const stored = hasStoredValue(field);
     const isCleared = cleared.includes(field.id);
-    const masked = isMasked(field);
-    const savedCredential = masked && stored;
+    const masked = isMaskedConnectorField(field);
+    const savedCredential = masked && configured;
     const hideSecret = savedCredential && !replacing[field.id];
     const value = values[field.id] ?? '';
     const filled = Boolean(value.trim());

@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_e2e_work_from_home" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_e2e_work_from_home"><bpmn:participant id="Participant_e2e_work_from_home" name="E2E Work From Home Request" processRef="e2e_work_from_home" /></bpmn:collaboration>
-  
+
   <bpmn:process id="e2e_work_from_home" name="E2E Work From Home Request" isExecutable="true">
     <bpmn:documentation>An employee asks to work from home for some days; the manager approves or rejects it.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_e2e_work_from_home"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>start_wfh</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_submit_wfh</bpmn:flowNodeRef><bpmn:flowNodeRef>record_wfh</bpmn:flowNodeRef><bpmn:flowNodeRef>end_wfh_approved</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>Activity_review_wfh</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_wfh_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>end_wfh_rejected</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

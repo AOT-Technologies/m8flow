@@ -16,7 +16,8 @@
     "apiKeys": "Klíče API",
     "system": "Systém",
     "celery": "Celery",
-    "nats": "NATS"
+    "nats": "NATS",
+    "configurationVariables": "Configuration variables"
   },
   "locale": {
     "label": "Jazyk",
@@ -65,6 +66,7 @@
     "nats": "Načítání NATS…",
     "celery": "Načítání Celery…",
     "apiKeys": "Načítání klíčů API…",
-    "invitation": "Načítání pozvánky…"
+    "invitation": "Načítání pozvánky…",
+    "namedValues": "Loading configuration variables…"
   }
 }

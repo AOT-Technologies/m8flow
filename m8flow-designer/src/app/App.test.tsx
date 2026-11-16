@@ -61,6 +61,10 @@ vi.mock('@/pages/configuration/SecretListPage', () => ({
   default: () => <div>secrets-list-page</div>,
 }));
 
+vi.mock('@/pages/configuration/NamedValuesPage', () => ({
+  default: () => <div>configuration-variables-page</div>,
+}));
+
 vi.mock('@/pages/connectors/ConnectorsPage', () => ({
   default: () => <div>connectors-page</div>,
 }));
@@ -172,13 +176,13 @@ describe('AppRoutes tenant gate', () => {
     expect(await screen.findByText('tenant-management-page')).toBeInTheDocument();
   });
 
-  it('redirects /configuration to the secrets list', async () => {
+  it('redirects /configuration to the configuration variables list', async () => {
     mockShouldShowTenantSelectionGate.mockReturnValue(false);
 
     renderRoutes('/configuration');
 
     expect(screen.getByText('app-shell')).toBeInTheDocument();
-    expect(await screen.findByText('secrets-list-page')).toBeInTheDocument();
+    expect(await screen.findByText('configuration-variables-page')).toBeInTheDocument();
   });
 
   it('renders Connectors when the gate is not shown', async () => {

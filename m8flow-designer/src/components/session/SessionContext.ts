@@ -53,6 +53,11 @@ export type CapabilityFlags = {
   canManageProcessModels: boolean;
   canReadSecrets: boolean;
   canManageSecrets: boolean;
+  canReadNamedValues: boolean;
+  canReadNamedValueItems: boolean;
+  canCreateNamedValues: boolean;
+  canUpdateNamedValues: boolean;
+  canDeleteNamedValues: boolean;
   canReadConnectors: boolean;
   canReadMcpConnection: boolean;
   /** `permissions-check` GET on `/m8flow/mcp-tools` (tenant-admin, super-admin). */

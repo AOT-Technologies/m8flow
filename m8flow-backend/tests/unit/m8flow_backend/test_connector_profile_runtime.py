@@ -15,7 +15,11 @@ from m8flow_backend.connectors.runtime import (
     ProfileInjectingServiceTaskRegistry,
     wrap_registry_for_connector_profiles,
 )
-from m8flow_backend.connectors.service import create_profile, deactivate_profile
+from m8flow_backend.connectors.service import (
+    create_profile,
+    deactivate_profile,
+    resolve_for_runtime,
+)
 from m8flow_backend.identity import ensure_tenant, ensure_user
 from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 from m8flow_backend.secrets import add_secret, build_host_service_task_registry
@@ -166,9 +170,24 @@ def test_unknown_profile_fails_closed(db_session, monkeypatch):
     fake = _RecordingConnector()
     registry = _composed(fake)
 
-    with pytest.raises(ServiceTaskExecutionError, match="does-not-exist"):
+    with pytest.raises(ServiceTaskExecutionError) as raised:
         registry.execute(_request(parameters={"m8flow_profile": "does-not-exist"}))
+    assert str(raised.value) == "No profile is configured for connector 'http'."
     assert fake.last_request is None
+
+
+def test_missing_default_profile_error_names_connector_not_profile(db_session):
+    ensure_tenant(db_session, tenant_id="t1", slug="t1", name="t1")
+
+    with pytest.raises(ServiceTaskExecutionError) as raised:
+        resolve_for_runtime(
+            db_session,
+            tenant_id="t1",
+            connector_type="smtp",
+            profile_name="default",
+        )
+
+    assert str(raised.value) == "No profile is configured for connector 'smtp'."
 
 
 def test_inactive_profile_fails_closed(db_session, monkeypatch):

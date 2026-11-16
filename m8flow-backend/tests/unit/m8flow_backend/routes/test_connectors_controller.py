@@ -141,10 +141,12 @@ def test_profile_and_task_fields_never_overlap() -> None:
         assert not (profile_ids & task_ids), descriptor["id"]
 
 
-def test_credentials_are_marked_secret_so_they_are_never_returned() -> None:
+def test_profile_field_sensitivity_matches_storage_contract() -> None:
     from m8flow_backend.connectors.m8flow_templates import M8FLOW_DESCRIPTORS
 
     for descriptor in M8FLOW_DESCRIPTORS:
         for field in descriptor["profileFields"]:
-            assert field["secret"] is True, (descriptor["id"], field["id"])
+            assert field["secret"] is (
+                field["isHighlySensitive"] or field["type"] == "password"
+            ), (descriptor["id"], field["id"])
             assert field["binding"] == "secret_param", (descriptor["id"], field["id"])

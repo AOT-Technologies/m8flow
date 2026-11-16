@@ -218,6 +218,80 @@ def test_database_provider_encrypts_at_rest(db_session):
     assert get_secret_value(db_session, tenant_id="t1", key="API_TOKEN") == "super-secret"
 
 
+def test_generic_secret_routes_cannot_access_internal_configuration_payloads(
+    client, db_session
+):
+    from m8flow_backend.secrets import (
+        get_configuration_value,
+        get_connector_configuration,
+        set_connector_configuration,
+    )
+
+    _user, token = _login_user(
+        client,
+        db_session,
+        username="integrator-internal-secret-boundary",
+        groups=["t1:integrator"],
+        tenant_id="t1",
+    )
+    headers = _headers(token)
+    created = client.post(
+        "/v1.0/m8flow/named-values",
+        json={
+            "name": "INTERNAL_TOKEN",
+            "value": "named-value-payload",
+            "is_sensitive": True,
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201
+    variable_id = created.get_json()["id"]
+    named_value_key = f"m8flow_named_value_{variable_id.replace('-', '')}"
+    connector_key = "m8flow_connector_configuration_91"
+    set_connector_configuration(
+        db_session,
+        tenant_id="t1",
+        configuration_id=91,
+        values={"password": "connector-payload"},
+        user_id=1,
+    )
+    db_session.commit()
+
+    listed = client.get("/v1.0/secrets", headers=headers).get_json()
+    listed_keys = {row["key"] for row in listed["results"]}
+    assert named_value_key not in listed_keys
+    assert connector_key not in listed_keys
+
+    for key in (named_value_key, connector_key):
+        assert client.get(f"/v1.0/secrets/{key}", headers=headers).status_code == 404
+        assert (
+            client.put(
+                f"/v1.0/secrets/{key}",
+                json={"value": "attacker-replacement"},
+                headers=headers,
+            ).status_code
+            == 404
+        )
+        assert client.delete(f"/v1.0/secrets/{key}", headers=headers).status_code == 404
+
+    assert get_configuration_value(
+        db_session, tenant_id="t1", variable_id=variable_id
+    ) == "named-value-payload"
+    assert get_connector_configuration(
+        db_session, tenant_id="t1", configuration_id=91
+    ) == {"password": "connector-payload"}
+    assert client.get(
+        f"/v1.0/m8flow/named-values/{variable_id}", headers=headers
+    ).get_json()["isConfigured"] is True
+
+    reserved_create = client.post(
+        "/v1.0/secrets",
+        json={"key": named_value_key, "value": "collision"},
+        headers=headers,
+    )
+    assert reserved_create.status_code == 400
+
+
 def test_unknown_backend_kind_fails_closed(client, db_session, monkeypatch):
     monkeypatch.setenv("M8FLOW_SECRET_BACKEND_KIND", "nosuch")
     _user, token = _login_user(

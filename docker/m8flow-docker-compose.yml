@@ -185,6 +185,142 @@ services:
     volumes:
       - redis-data:/data
 
+  # Local-development-only Vault. The production override intentionally does not
+  # include this service; production Vault endpoints and credentials belong to
+  # deployment configuration.
+  vault:
+    profiles: ["vault"]
+    image: hashicorp/vault:1.18.5
+    container_name: m8flow-vault
+    user: "0"
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    # Keep HashiCorp's image entrypoint: it handles root-to-vault privilege
+    # dropping with the su-exec binary included in this pinned image.
+    command: ["server"]
+    ports:
+      - "127.0.0.1:${M8FLOW_VAULT_PORT:-8200}:8200"
+    volumes:
+      # The official image entrypoint prepares/chowns /vault/file before it
+      # drops privileges to the vault user. The named volume preserves data
+      # across this mount-path change.
+      - vault-data:/vault/file
+      - ./vault/config:/vault/config:ro
+    healthcheck:
+      test:
+        ["CMD-SHELL", "VAULT_ADDR=http://127.0.0.1:8200 vault status >/dev/null 2>&1; code=$$?; [ $$code -eq 0 ] || [ $$code -eq 2 ]"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Creates the local KV mount, broker policy/AppRole, and a short-lived,
+  # named-value-only seed token. Admin init data stays in its private volume;
+  # vault-seed cannot mount or read it.
+  vault-demo:
+    profiles: ["vault-demo"]
+    image: m8flow-backend
+    pull_policy: never
+    user: "0"
+    entrypoint: ["python", "/app/docker/vault/demo/bootstrap_vault_demo.py"]
+    environment:
+      M8FLOW_VAULT_INTERNAL_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_ADMIN_STATE_DIR: /vault/admin
+      M8FLOW_VAULT_LEGACY_STATE_DIR: /vault/legacy-demo
+      M8FLOW_VAULT_DEMO_STATE_DIR: /vault/demo
+      M8FLOW_VAULT_RUNTIME_DIR: /vault/runtime
+      M8FLOW_VAULT_PROVISIONER_DIR: /vault/provisioner
+      M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
+      M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
+      M8FLOW_VAULT_DEMO_SEED_POLICY_NAME: "${M8FLOW_VAULT_DEMO_SEED_POLICY_NAME:-m8flow-demo-seed}"
+      M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
+      M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
+      M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
+      M8FLOW_VAULT_POLICY_NAME: "${M8FLOW_VAULT_POLICY_NAME:-m8flow}"
+      M8FLOW_VAULT_APPROLE_NAME: "${M8FLOW_VAULT_APPROLE_NAME:-m8flow}"
+      M8FLOW_VAULT_RUNTIME_POLICY_NAME: "${M8FLOW_VAULT_RUNTIME_POLICY_NAME:-m8flow-runtime}"
+      M8FLOW_VAULT_RUNTIME_APPROLE_NAME: "${M8FLOW_VAULT_RUNTIME_APPROLE_NAME:-m8flow-runtime}"
+    volumes:
+      - vault-admin-state:/vault/admin
+      - vault-demo-state:/vault/legacy-demo
+      - vault-seed-state:/vault/demo
+      # Bootstrap writes runtime RoleID, SecretID, and provisioner request-token
+      # files here. Application services mount this volume read-only below.
+      - vault-runtime:/vault/runtime
+      - vault-provisioner:/vault/provisioner
+      - ../docker/vault/demo:/app/docker/vault/demo:ro
+    depends_on:
+      vault:
+        condition: service_healthy
+    restart: "no"
+
+  # The API/worker processes receive only a request token. This isolated
+  # service holds the Vault policy/role management AppRole credential.
+  vault-provisioner:
+    profiles: ["vault-demo"]
+    image: m8flow-backend
+    pull_policy: never
+    user: "1000:1000"
+    command: ["python", "-m", "m8flow_backend.vault_provisioner_service"]
+    environment:
+      M8FLOW_VAULT_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
+      M8FLOW_VAULT_APPROLE_MOUNT_POINT: "${M8FLOW_VAULT_APPROLE_MOUNT_POINT:-approle}"
+      M8FLOW_VAULT_TENANT_POLICY_PREFIX: "${M8FLOW_VAULT_TENANT_POLICY_PREFIX:-m8flow-tenant-policy}"
+      M8FLOW_VAULT_TENANT_ROLE_PREFIX: "${M8FLOW_VAULT_TENANT_ROLE_PREFIX:-m8flow-tenant-role}"
+      M8FLOW_VAULT_ROLE_ID_FILE: /vault/provisioner/provisioner-role-id
+      M8FLOW_VAULT_SECRET_ID_FILE: /vault/provisioner/provisioner-secret-id
+      M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE: /vault/provisioner/provisioner-api-token
+      M8FLOW_VAULT_PROVISIONER_PORT: "8098"
+    volumes:
+      - vault-provisioner:/vault/provisioner:ro
+    depends_on:
+      vault-demo:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8098/healthz', timeout=2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  vault-seed:
+    profiles: ["vault-demo"]
+    image: m8flow-backend
+    pull_policy: never
+    user: "0"
+    entrypoint: ["python", "/app/docker/vault/demo/seed_vault_demo.py"]
+    env_file: ../.env
+    environment:
+      M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
+      M8FLOW_VAULT_INTERNAL_ADDR: "http://vault:8200"
+      M8FLOW_VAULT_DEMO_STATE_DIR: /vault/demo
+      M8FLOW_VAULT_DEMO_SECRETS_FILE: /app/docker/vault/demo/secrets.yml
+      M8FLOW_VAULT_MOUNT_POINT: "${M8FLOW_VAULT_MOUNT_POINT:-kv}"
+      M8FLOW_VAULT_SECRET_PATH_PREFIX: "${M8FLOW_VAULT_SECRET_PATH_PREFIX:-m8flow}"
+      M8FLOW_VAULT_DEMO_TENANT_ID: "${M8FLOW_VAULT_DEMO_TENANT_ID:-m8flow}"
+      M8FLOW_VAULT_DEMO_OVERWRITE: "${M8FLOW_VAULT_DEMO_OVERWRITE:-false}"
+      M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS: "${M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS:-m8flow}"
+      # The backend launcher listens on M8FLOW_BACKEND_PORT inside the
+      # container; this Compose file currently uses it for both mapped ports.
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL: "http://m8flow-backend:${M8FLOW_BACKEND_PORT:-6840}/v1.0/healthy"
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS: "600"
+      M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS: "5"
+    volumes:
+      - vault-seed-state:/vault/demo:ro
+      - ../docker/vault/demo:/app/docker/vault/demo:ro
+    depends_on:
+      vault-demo:
+        condition: service_completed_successfully
+      m8flow-backend:
+        # Let the seed container start its bounded health wait and print a
+        # useful diagnostic if backend migrations/startup never complete.
+        condition: service_started
+    restart: "no"
+
   m8flow-nats-consumer:
     profiles: ["nats"]
     container_name: m8flow-nats-consumer
@@ -210,6 +346,7 @@ services:
       <<: *otel-environment
       OTEL_SERVICE_NAME: m8flow-nats-consumer
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
+      M8FLOW_VAULT_ENABLED: "false"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
@@ -227,6 +364,7 @@ services:
         source: ../data/process_models
         target: /data/process_models
       - ../data/m8flow_nats_consumer:/data/m8flow_nats_consumer
+      - vault-runtime:/vault/runtime:ro
     restart: unless-stopped
 
   m8flow-notification-worker:
@@ -250,6 +388,9 @@ services:
       <<: *otel-environment
       OTEL_SERVICE_NAME: m8flow-nats-notification-worker
       M8FLOW_NATS_URL: "nats://${M8FLOW_NATS_USER:-admin}:${M8FLOW_NATS_PASSWORD:-admin}@nats:4222"
+      # A Vault address alone does not select the provider. Opt in through the
+      # Vault override file or an explicit deployment backend selection.
+      M8FLOW_VAULT_ENABLED: "false"
       M8FLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       SPIFFWORKFLOW_BACKEND_DATABASE_URI: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@m8flow-db:5432/${POSTGRES_DB:-postgres}"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
@@ -267,6 +408,7 @@ services:
       - type: bind
         source: ../data/process_models
         target: /data/process_models
+      - vault-runtime:/vault/runtime:ro
     restart: unless-stopped
 
   minio:
@@ -383,6 +525,7 @@ services:
       M8FLOW_BACKEND_URL_FOR_FRONTEND: "${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      M8FLOW_VAULT_ENABLED: "false"
       # Celery Beat owns periodic timer polling in Compose; avoid running the
       # same scheduler loop inside the API process as well.
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
@@ -397,6 +540,7 @@ services:
       - templates_cache:/app/data/templates
       # Dev image bakes /app/.env at build time; mount host .env so OTEL and other toggles apply without rebuild.
       - ../.env:/app/.env:ro
+      - vault-runtime:/vault/runtime:ro
     depends_on:
       m8flow-db:
         condition: service_healthy
@@ -410,6 +554,15 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import os, urllib.request; response=urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('M8FLOW_BACKEND_PORT', '6840') + '/v1.0/healthy', timeout=5); status=response.status; response.close(); raise SystemExit(0 if 200 <= status < 300 else 1)"]
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      # Backend startup includes migrations; allow cold CI runners five minutes
+      # before failed health checks count, then retain two minutes of retries.
+      start_period: 300s
 
   m8flow-celery-worker:
     image: m8flow-backend
@@ -429,6 +582,7 @@ services:
       KEYCLOAK_HOSTNAME: "${KEYCLOAK_HOSTNAME:-http://localhost:6842}"
       M8FLOW_BACKEND_CELERY_BROKER_URL: "${M8FLOW_BACKEND_CELERY_BROKER_URL:-redis://redis:6379/0}"
       M8FLOW_BACKEND_CELERY_RESULT_BACKEND: "${M8FLOW_BACKEND_CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      M8FLOW_VAULT_ENABLED: "false"
       M8FLOW_BACKEND_RUNNING_IN_CELERY_WORKER: "true"
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
@@ -444,6 +598,7 @@ services:
         target: /data/process_models
       - ../.env:/app/.env:ro
       - celery_worker_state:/var/lib/m8flow/celery
+      - vault-runtime:/vault/runtime:ro
     depends_on:
       m8flow-db:
         condition: service_started
@@ -502,6 +657,20 @@ services:
       M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP: "false"
       M8FLOW_BACKEND_UPGRADE_DB: "false"
       M8FLOW_BACKEND_SW_UPGRADE_DB: "false"
+      # Flower observes Celery only; do not pass the broker credential from
+      # the shared .env even if one is configured for the trusted workers.
+      M8FLOW_VAULT_TOKEN: ""
+      VAULT_TOKEN: ""
+      M8FLOW_VAULT_TOKEN_FILE: ""
+      VAULT_TOKEN_FILE: ""
+      M8FLOW_VAULT_ROLE_ID: ""
+      VAULT_ROLE_ID: ""
+      M8FLOW_VAULT_ROLE_ID_FILE: ""
+      VAULT_ROLE_ID_FILE: ""
+      M8FLOW_VAULT_SECRET_ID: ""
+      VAULT_SECRET_ID: ""
+      M8FLOW_VAULT_SECRET_ID_FILE: ""
+      VAULT_SECRET_ID_FILE: ""
     ports:
       - "${M8FLOW_BACKEND_CELERY_FLOWER_PORT:-6850}:${M8FLOW_BACKEND_CELERY_FLOWER_PORT:-6850}"
     volumes:
@@ -599,4 +768,17 @@ volumes:
   smtp_attachments:
     driver: local
   slack_attachments:
+    driver: local
+  vault-data:
+    driver: local
+  vault-demo-state:
+    # Legacy init state is mounted only by vault-demo for one-time migration.
+    driver: local
+  vault-admin-state:
+    driver: local
+  vault-seed-state:
+    driver: local
+  vault-runtime:
+    driver: local
+  vault-provisioner:
     driver: local

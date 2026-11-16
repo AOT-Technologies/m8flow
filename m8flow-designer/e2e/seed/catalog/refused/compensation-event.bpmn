@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_refused_compensation_event" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_refused_compensation_event"><bpmn:participant id="Participant_Process_refused_compensation_event" name="E2E Refused Undo the booking" processRef="Process_refused_compensation_event" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_refused_compensation_event" name="E2E Refused Undo the booking" isExecutable="true">
     <bpmn:documentation>Refused on purpose: the app does not support this element (guard test).</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_refused_compensation_event"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>Event_refused</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

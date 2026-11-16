@@ -4,7 +4,13 @@ import { useNavigate } from 'react-router-dom';
 
 import { Button } from '@/components/ui/button';
 
-export function ConfigurationBackButton() {
+export function ConfigurationBackButton({
+  label,
+  to = '/configuration/secrets',
+}: {
+  label?: string;
+  to?: string;
+} = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -14,10 +20,10 @@ export function ConfigurationBackButton() {
       variant="outline"
       size="sm"
       className="mb-1.5 rounded-full font-semibold"
-      onClick={() => navigate('/configuration/secrets')}
+      onClick={() => navigate(to)}
     >
       <ChevronLeft className="size-3.5" strokeWidth={2} aria-hidden />
-      {t('configuration.title')}
+      {label ?? t('configuration.title')}
     </Button>
   );
 }

@@ -16,7 +16,8 @@
     "apiKeys": "API 密钥",
     "system": "系统",
     "celery": "Celery",
-    "nats": "NATS"
+    "nats": "NATS",
+    "configurationVariables": "Configuration variables"
   },
   "locale": {
     "label": "语言",
@@ -65,6 +66,7 @@
     "nats": "正在加载 NATS…",
     "celery": "正在加载 Celery…",
     "apiKeys": "正在加载 API 密钥…",
-    "invitation": "正在加载邀请…"
+    "invitation": "正在加载邀请…",
+    "namedValues": "Loading configuration variables…"
   }
 }
