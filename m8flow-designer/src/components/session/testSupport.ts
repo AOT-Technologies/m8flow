@@ -59,6 +59,7 @@ export type SessionFixtureContext = {
   canSuspendProcessInstances?: boolean;
   canResumeProcessInstances?: boolean;
   canTerminateProcessInstances?: boolean;
+  canRetryProcessInstances?: boolean;
   canDeleteProcessInstances?: boolean;
   canCreateTemplates?: boolean;
   canImportTemplates?: boolean;
@@ -152,6 +153,7 @@ export function capabilitiesFromContext(ctx: SessionFixtureContext): CapabilityF
     canDeleteProcessModelFiles: Boolean(ctx.canDeleteProcessModelFiles ?? ctx.canManageProcesses),
     canSuspendProcessInstances: Boolean(ctx.canSuspendProcessInstances ?? ctx.canManageProcesses),
     canResumeProcessInstances: Boolean(ctx.canResumeProcessInstances ?? ctx.canManageProcesses),
+    canRetryProcessInstances: Boolean(ctx.canRetryProcessInstances),
     canTerminateProcessInstances: Boolean(ctx.canTerminateProcessInstances ?? ctx.canManageProcesses),
     canDeleteProcessInstances: Boolean(ctx.canDeleteProcessInstances ?? ctx.canManageProcesses),
     canCreateTemplates: Boolean(ctx.canCreateTemplates ?? ctx.canManageProcesses),

@@ -114,7 +114,7 @@
   "Compensation": "Kompenzace",
   "Compensation boundary event": "Hraniční událost kompenzace",
   "Compensation end event": "Koncová událost kompenzace",
-  "Compensation events are not supported. The catalog rejects this construct on save.": "Události kompenzace nejsou podporovány. Katalog tuto konstrukci při uložení odmítne.",
+  "Compensation start events are not supported. The catalog rejects this construct on save.": "Počáteční události kompenzace nejsou podporovány. Katalog tuto konstrukci při uložení odmítne.",
   "Compensation intermediate throw event": "Mezilehlá vyvolávací událost kompenzace",
   "Compensation start event": "Počáteční událost kompenzace",
   "Completed": "Dokončeno",

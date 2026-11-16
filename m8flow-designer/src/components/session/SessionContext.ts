@@ -95,6 +95,7 @@ export type CapabilityFlags = {
   canSuspendProcessInstances: boolean;
   canResumeProcessInstances: boolean;
   canTerminateProcessInstances: boolean;
+  canRetryProcessInstances: boolean;
   canDeleteProcessInstances: boolean;
   canCreateTemplates: boolean;
   canImportTemplates: boolean;

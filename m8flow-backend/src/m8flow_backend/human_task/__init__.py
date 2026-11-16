@@ -323,7 +323,7 @@ def submit_external_form(
     user_id: int,
     task_payload: dict[str, Any] | None,
     require_fields: bool = False,
-) -> Any:
+) -> workflow.TaskCompletionResult:
     work_item = workflow.claim(
         session,
         tenant_id=tenant_id,

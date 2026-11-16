@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "f7a8b9c0d1e2"
+_HEAD = "fbcad9e02138"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -51,3 +51,15 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     from_old_merge = _required_revisions(script, "f3243241c342")
     assert "d4e5f6a7b8c9" in from_old_merge
     assert _HEAD in from_old_merge
+
+    # The current task/connector merge and compensation journal branch must
+    # converge at the single current head. A database already at either branch
+    # head only needs the other branch and the merge revision.
+    assert _required_revisions(script, "f7a8b9c0d1e2") == {"fa8b9c0d1e2f", _HEAD}
+    assert _required_revisions(script, "fa8b9c0d1e2f") == {
+        "d1e2f3a4b5c6",
+        "d2f4a6b8c0e1",
+        "e3f5a7c9d1b2",
+        "f7a8b9c0d1e2",
+        _HEAD,
+    }

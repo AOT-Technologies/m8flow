@@ -131,7 +131,7 @@
         "key": "order-fulfilment",
         "name": "E2E Order Fulfilment",
         "category": "E2E",
-        "why": "process data input/output, data object written and read, looping script, escalation end caught without interrupting, transaction cancelled on payment failure, timer until a date, database connector"
+        "why": "process data input/output, data object written and read, looping script, escalation end caught without interrupting, payment error caught by a boundary event, timer until a date, database connector"
       },
       {
         "key": "work-from-home",
