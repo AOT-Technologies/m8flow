@@ -129,6 +129,8 @@ def register_v1_routes(app: Flask) -> None:
         if catalog.model_exists(tenant_id=tenant_id, process_model_identifier=model_id, session=session):
             model = versioned.for_write(session, tenant_id, model_id)
             file_name = versions.primary_bpmn(model.working, model_id)
+            if file_name is None:
+                raise ApiError("invalid_process_model", "Select a primary BPMN file.", 400)
             versioned.write_file(model, file_name, body["xml"].encode("utf-8"))
         else:
             leaf = model_id.rsplit("/", 1)[-1]

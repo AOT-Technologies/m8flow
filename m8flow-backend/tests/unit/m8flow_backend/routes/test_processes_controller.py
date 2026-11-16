@@ -516,6 +516,43 @@ def test_thin_v1_process_models_unchanged(client, db_session, tmp_path, monkeypa
     ]
 
 
+def test_thin_v1_save_rejects_existing_model_without_bpmn(client, db_session, tmp_path, monkeypatch):
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="thin-editor", groups=["t1:editor"], tenant_id="t1", seed_permissions=True,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    endpoint = "/v1.0/process-models"
+    model_id = "finance/thin-save"
+    xml = default_bpmn_xml(process_id="thin_save")
+
+    created = client.post(endpoint, headers=headers, json={"path": model_id, "xml": xml})
+    assert created.status_code == 201, created.json
+
+    updated_xml = xml.replace('name="Task"', 'name="Updated task"')
+    updated = client.post(endpoint, headers=headers, json={"path": model_id, "xml": updated_xml})
+    assert updated.status_code == 201, updated.json
+    model = _stored_model(db_session, "t1", model_id)
+    assert versions.read_file(model.working, "thin-save.bpmn") == updated_xml.encode()
+
+    invalid_snapshot = versions.snapshot({"form-schema.json": b"{}"})
+    versions.replace_working(model, invalid_snapshot)
+    invalid_revision = model.working_revision
+    db_session.commit()
+
+    rejected = client.post(endpoint, headers=headers, json={"path": model_id, "xml": xml})
+    assert rejected.status_code == 400, rejected.json
+    assert rejected.json == {
+        "error_code": "invalid_process_model",
+        "message": "Select a primary BPMN file.",
+    }
+    model = _stored_model(db_session, "t1", model_id)
+    assert model.working == invalid_snapshot
+    assert model.working_revision == invalid_revision
+
+
 def test_editor_lists_groups_with_empty_group_and_last_run(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(

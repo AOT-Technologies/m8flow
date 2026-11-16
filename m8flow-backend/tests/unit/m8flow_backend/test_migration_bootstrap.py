@@ -17,6 +17,7 @@ disposable database.
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -120,6 +121,100 @@ def test_process_model_version_upgrade_preserves_catalog_status_and_baseline(tmp
                 entry, = entries
                 assert entry.version == 1
                 assert versions.read_file(entry.contents, "form-schema.json") == b'{"title":"Baseline"}'
+
+
+def test_process_model_version_upgrade_rolls_back_after_later_tenant_import_fails(tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.models.process_model_version import (
+        ProcessInstanceCalledReleases,
+        ProcessModelRelease,
+        ProcessModelState,
+    )
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    database_uri = f"sqlite:///{tmp_path / 'catalog-retry.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    root = tmp_path / "catalog"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(root))
+    previous_revision = "d1e2f3a4b5c6"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    version_tables = (
+        ProcessInstanceCalledReleases.__table__,
+        ProcessModelRelease.__table__,
+        ProcessModelState.__table__,
+    )
+    # The squashed root uses current ORM metadata. Recreate the schema an
+    # installation already at the previous revision had before this feature.
+    with engine.begin() as connection:
+        for table in version_tables:
+            table.drop(connection, checkfirst=True)
+
+    tenant_ids = ("m8flow", "second-tenant")
+    model_id = "test/timer"
+    now = datetime.now(UTC)
+    with Session(engine) as session, session.begin():
+        for tenant_id in tenant_ids:
+            ensure_tenant(session, tenant_id=tenant_id)
+            folder = root / tenant_id / model_id
+            folder.mkdir(parents=True)
+            (folder / "timer.bpmn").write_text(default_bpmn_xml(process_id="timer"), encoding="utf-8")
+            definition = BpmnProcessDefinitionModel(
+                m8f_tenant_id=tenant_id,
+                process_xml_digest="stale-definition",
+                bpmn_identifier=model_id,
+                properties_json={},
+            )
+            session.add(SchedulerJobModel(
+                m8f_tenant_id=tenant_id,
+                job_key="legacy-timer",
+                job_type="timer_start",
+                bpmn_process_definition=definition,
+                run_at=now,
+                updated_at=now,
+                created_at=now,
+            ))
+
+    import_legacy = versions.import_legacy
+
+    def fail_second_import(session, tenant_id, identifier):
+        model = import_legacy(session, tenant_id, identifier)
+        if tenant_id == "second-tenant":
+            remaining_jobs = session.scalars(sa.select(SchedulerJobModel.m8f_tenant_id)).all()
+            assert remaining_jobs == ["second-tenant"]
+            raise ValueError("injected legacy import failure")
+        return model
+
+    with monkeypatch.context() as patch:
+        patch.setattr(versions, "import_legacy", fail_second_import)
+        with pytest.raises(RuntimeError, match="tenant 'second-tenant' while importing model 'test/timer'") as exc:
+            command.upgrade(cfg, "head")
+    assert isinstance(exc.value.__cause__, ValueError)
+    assert str(exc.value.__cause__) == "injected legacy import failure"
+
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == previous_revision
+        assert {table.name for table in version_tables}.isdisjoint(sa.inspect(connection).get_table_names())
+        assert connection.scalars(
+            sa.select(SchedulerJobModel.m8f_tenant_id).order_by(SchedulerJobModel.m8f_tenant_id),
+        ).all() == list(tenant_ids)
+
+    command.upgrade(cfg, "head")
+    with Session(engine) as session:
+        assert session.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == _script_head()
+        assert session.scalars(sa.select(SchedulerJobModel)).all() == []
+        for tenant_id in tenant_ids:
+            model = session.get(ProcessModelState, (tenant_id, model_id))
+            assert model is not None
+            assert model.status == "published"
+            entry, = versions.model_releases(session, model)
+            assert entry.version == 1
+            assert entry.published_at is None
 
 
 def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):

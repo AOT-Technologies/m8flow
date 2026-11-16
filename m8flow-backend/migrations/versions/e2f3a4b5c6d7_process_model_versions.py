@@ -16,6 +16,9 @@ CALLED_RELEASES = "m8flow_process_instance_called_releases"
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name == "sqlite" and not bind.connection.driver_connection.in_transaction:
+        # sqlite3 legacy transaction mode needs BEGIN before DDL and SAVEPOINT.
+        bind.exec_driver_sql("BEGIN")
     op.create_table(
         STATE,
         sa.Column("m8f_tenant_id", sa.String(255), primary_key=True),
@@ -68,20 +71,32 @@ def _import_existing_catalog(bind) -> None:
     from m8flow_backend.catalog import legacy_model_ids, versions
     from m8flow_backend.workflow import _retire_stale_timer_starts
 
-    if not sa.inspect(bind).has_table("m8flow_tenant"):
+    inspector = sa.inspect(bind)
+    if not inspector.has_table("m8flow_tenant"):
         return
-    tenants = bind.execute(sa.text("SELECT id FROM m8flow_tenant")).scalars().all()
-    with Session(bind=bind, autoflush=False) as session:
-        for tenant_id in tenants:
-            if bind.dialect.name == "postgresql":
-                bind.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
-                    "tenant_id": tenant_id,
-                })
-            for model_id in legacy_model_ids(tenant_id=tenant_id):
-                versions.import_legacy(session, tenant_id, model_id)
-            if sa.inspect(bind).has_table("scheduler_job"):
-                _retire_stale_timer_starts(session, tenant_id)
-        session.flush()
+    has_scheduler = inspector.has_table("scheduler_job")
+    tenants = bind.execute(sa.text("SELECT id FROM m8flow_tenant ORDER BY id")).scalars().all()
+    for tenant_id in tenants:
+        phase = "setting up the tenant import"
+        try:
+            # Releasing the savepoint leaves the revision under Alembic's outer transaction.
+            with Session(bind=bind, autoflush=False, join_transaction_mode="create_savepoint") as session:
+                with session.begin():
+                    if bind.dialect.name == "postgresql":
+                        session.execute(sa.text("SELECT set_config('app.current_tenant', :tenant_id, true)"), {
+                            "tenant_id": tenant_id,
+                        })
+                    phase = "listing legacy process models"
+                    for model_id in legacy_model_ids(tenant_id=tenant_id):
+                        phase = f"importing model {model_id!r}"
+                        versions.import_legacy(session, tenant_id, model_id)
+                        session.flush()
+                    if has_scheduler:
+                        phase = "retiring stale timer starts"
+                        _retire_stale_timer_starts(session, tenant_id)
+                    phase = "releasing the tenant savepoint"
+        except Exception as exc:
+            raise RuntimeError(f"Process model migration failed for tenant {tenant_id!r} while {phase}") from exc
 
 
 def downgrade() -> None:
