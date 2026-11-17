@@ -4,6 +4,8 @@ import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -1005,6 +1007,7 @@ def test_only_model_detail_loads_collaboration_participants(
 
 def test_collaboration_participant_selection_and_start(start_invoice, client, db_session, tmp_path, monkeypatch):
     from m8flow_core import api
+    from m8flow_core.models.process_instance import ProcessInstanceModel
 
     from m8flow_backend.catalog import _reject_unsupported_constructs
 
@@ -1040,9 +1043,23 @@ def test_collaboration_participant_selection_and_start(start_invoice, client, db
     assert bad.get_json()["error_code"] == "collaboration_participant_not_found"
 
     key = " Order 123 "
-    response = start_invoice(headers, bpmn_process_id="Order", collaboration_correlation_key=key)
+    response = start_invoice(headers, bpmn_process_id="Fulfilment", collaboration_correlation_key=key)
     assert response.status_code == 201, response.get_json()
-    assert response.get_json()["collaboration_correlation_key"] == key
+    body = response.get_json()
+    assert body["collaboration_correlation_key"] == key
+    instance = db_session.get(ProcessInstanceModel, body["id"])
+    assert instance is not None
+    assert {item.task_name for item in instance.active_work_items} == {"PrepareFulfilment"}
+
+    response = start_invoice(headers, bpmn_process_id="Order")
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    generated_key = body["collaboration_correlation_key"]
+    assert isinstance(generated_key, str) and generated_key.strip()
+    assert generated_key != key
+    instance = db_session.get(ProcessInstanceModel, body["id"])
+    assert instance is not None
+    assert instance.collaboration_correlation_key == generated_key
 
     primary.write_text(
         xml.replace(
@@ -1055,6 +1072,54 @@ def test_collaboration_participant_selection_and_start(start_invoice, client, db
     event_only = start_invoice(headers, bpmn_process_id="Fulfilment")
     assert event_only.status_code == 409, event_only.get_json()
     assert event_only.get_json()["error_code"] == "collaboration_participant_not_startable"
+
+
+@pytest.mark.parametrize(
+    ("options", "response_key"),
+    [
+        pytest.param(
+            {"bpmn_process_id": "Order", "collaboration_correlation_key": "order-123"},
+            "order-123",
+            id="selected-participant",
+        ),
+        pytest.param({"bpmn_process_id": "Order"}, "generated-key", id="generated-key"),
+        pytest.param({}, None, id="missing-participant"),
+    ],
+)
+def test_v1_start_collaboration_contract(client, db_session, monkeypatch, options, response_key):
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    user, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    start = Mock(
+        return_value=SimpleNamespace(id=123, status="running", collaboration_correlation_key=response_key)
+    )
+    if response_key is None:
+        start.side_effect = ApiError("collaboration_participant_required", "Choose a BPMN participant to start.", 400)
+    monkeypatch.setattr(workflow, "start", start)
+
+    response = client.post(
+        "/v1.0/process-instances",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"process_model_identifier": "finance/invoice-approval", **options},
+    )
+
+    start.assert_called_once()
+    assert start.call_args.kwargs == {
+        "tenant_id": "t1",
+        "user_id": user.id,
+        "process_model_identifier": "finance/invoice-approval",
+        "bpmn_process_id": options.get("bpmn_process_id"),
+        "collaboration_correlation_key": options.get("collaboration_correlation_key"),
+    }
+    if response_key is None:
+        assert response.status_code == 400, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_participant_required"
+    else:
+        assert response.status_code == 201, response.get_json()
+        assert response.get_json() == {"id": 123, "status": "running", "collaboration_correlation_key": response_key}
 
 
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):
