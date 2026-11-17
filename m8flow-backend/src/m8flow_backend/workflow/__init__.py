@@ -1521,8 +1521,11 @@ def _error_boundary_catches(session: Session, *, context: Any, exc: BaseExceptio
     """True when core will catch this coded failure on an error boundary, so
     the instance carries on and there is no failure to record (M8F-675).
 
-    Mirrors core's match: the task or an enclosing sub-process has an error
-    boundary whose code equals ``exc.error_code``, or that has no code.
+    Mirrors core's match: the nearest error boundary whose code equals
+    ``exc.error_code``, or that has no code, on the failed service task, then
+    on each sub-process around it, then on the call activity that called its
+    process (and the sub-processes around that), outward. When the task can't
+    be placed with certainty, the failure is recorded.
     """
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
@@ -1537,28 +1540,87 @@ def _error_boundary_catches(session: Session, *, context: Any, exc: BaseExceptio
             BpmnProcessDefinitionModel.m8f_tenant_id == context.tenant_id,
         )
     )
-    bpmn_xml = definition.source_bpmn_xml if definition is not None else None
-    if not bpmn_xml:
+    if definition is None:
         return False
+    return (
+        _service_task_error_caught(
+            session, context=context, definition=definition, task_id=task_id, code=code, seen=frozenset()
+        )
+        is True
+    )
+
+
+def _service_task_error_caught(
+    session: Session,
+    *,
+    context: Any,
+    definition: Any,
+    task_id: str,
+    code: str,
+    seen: frozenset[int],
+) -> bool | None:
+    """True caught, False reaches the top uncaught, None the service task isn't
+    in this model or in any process its call activities call."""
+    from m8flow_core.errors import CallActivityResolutionError
+    from m8flow_core.services.call_activities import CallActivityContext
+
+    if definition.id in seen:
+        return None  # a process that calls itself: stop
+    root = _parse_bpmn_for_boundary_check(definition)
+    if root is None:
+        return None
+    tasks = root.xpath(".//bpmn:process//bpmn:serviceTask[@id=$id]", namespaces=_BPMN_MODEL_NS, id=task_id)
+    if tasks:
+        # A duplicate id can't be told apart: only the boundaries outside it count.
+        return len(tasks) == 1 and _error_boundary_on(root, tasks[0], code)
+    # The task runs in a process a call activity calls; core's context carries
+    # the instance's root definition, not the called one.
+    resolve = _call_activity_resolver(session, definitions=True)
+    found: list[tuple[Any, bool]] = []
+    for call in root.xpath(".//bpmn:process//bpmn:callActivity[@calledElement]", namespaces=_BPMN_MODEL_NS):
+        try:
+            child = resolve(
+                CallActivityContext(
+                    tenant_id=context.tenant_id,
+                    called_element=call.get("calledElement"),
+                    parent_process_instance_id=getattr(context, "process_instance_id", None),
+                    parent_process_definition_id=definition.id,
+                )
+            )
+        except CallActivityResolutionError:
+            continue
+        caught = _service_task_error_caught(
+            session, context=context, definition=child, task_id=task_id, code=code, seen=seen | {definition.id}
+        )
+        if caught is not None:
+            found.append((call, caught))
+    if not found:
+        return None
+    if len(found) > 1:
+        return False  # more than one call activity could have run it: record
+    call, caught = found[0]
+    return caught or _error_boundary_on(root, call, code)
+
+
+def _parse_bpmn_for_boundary_check(definition: Any) -> Any:
+    bpmn_xml = definition.source_bpmn_xml
+    if not bpmn_xml:
+        return None
     parser = etree.XMLParser(resolve_entities=False, no_network=True, remove_comments=True, remove_pis=True)
     raw = bpmn_xml.encode("utf-8") if isinstance(bpmn_xml, str) else bpmn_xml
     try:
-        root = etree.fromstring(raw, parser)
+        return etree.fromstring(raw, parser)
     except (etree.XMLSyntaxError, ValueError):
         # An unreadable model can't show a catcher; record the failure.
-        LOGGER.debug("Could not parse BPMN of process definition %s", definition_id)
-        return False
+        LOGGER.debug("Could not parse BPMN of process definition %s", definition.id)
+        return None
+
+
+def _error_boundary_on(root: Any, element: Any, code: str) -> bool:
+    """A matching error boundary on ``element`` or a sub-process around it,
+    nearest first; never the process or definitions element."""
     codes = {e.get("id"): e.get("errorCode") for e in root.iterfind(".//bpmn:error", _BPMN_MODEL_NS)}
-    # ponytail: a task inside a called child process is not in this XML, so its
-    # failure is still recorded even if the call activity's boundary catches it.
-    tasks = root.xpath(
-        ".//bpmn:process//bpmn:serviceTask[@id=$id]", namespaces=_BPMN_MODEL_NS, id=task_id
-    )
-    if len(tasks) != 1:
-        return False  # not this definition's service task, or a duplicate id: record
-    # The task, then each enclosing sub-process, nearest first; never the
-    # process or definitions element, whose ids no boundary should attach to.
-    hosts = [tasks[0], *reversed(tasks[0].xpath("ancestor::bpmn:subProcess", namespaces=_BPMN_MODEL_NS))]
+    hosts = [element, *reversed(element.xpath("ancestor::bpmn:subProcess", namespaces=_BPMN_MODEL_NS))]
     for host in hosts:
         for definition in root.xpath(
             ".//bpmn:boundaryEvent[@attachedToRef=$host]/bpmn:errorEventDefinition",

@@ -658,6 +658,95 @@ def test_failing_to_record_a_start_failure_still_reports_the_script_error(
     assert raised.value.process_instance_id is None
 
 
+SERVICE_CALL_PARENT_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:error id="Err_1" errorCode="{code}" />
+  <bpmn:process id="Process_service_call_parent" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:callActivity id="call" calledElement="Process_service_call_child" />
+    <bpmn:endEvent id="end" />
+    <bpmn:boundaryEvent id="catch" attachedToRef="call">
+      <bpmn:errorEventDefinition errorRef="Err_1" />
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="handled" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call" />
+    <bpmn:sequenceFlow id="f2" sourceRef="call" targetRef="end" />
+    <bpmn:sequenceFlow id="f3" sourceRef="catch" targetRef="handled" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+SERVICE_CALL_CHILD_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+    xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core">
+  <bpmn:process id="Process_service_call_child" isExecutable="true">
+    <bpmn:startEvent id="child_start" />
+    <bpmn:serviceTask id="lookup">
+      <bpmn:extensionElements>
+        <spiffworkflow:serviceTaskOperator id="http/GetRequestV2"><spiffworkflow:parameters /></spiffworkflow:serviceTaskOperator>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="child_end" />
+    <bpmn:sequenceFlow id="child_f1" sourceRef="child_start" targetRef="lookup" />
+    <bpmn:sequenceFlow id="child_f2" sourceRef="lookup" targetRef="child_end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+@pytest.mark.parametrize(("boundary_code", "recorded"), [("HttpError404", False), ("HttpError500", True)])
+def test_called_process_service_error_caught_on_the_call_activity_is_not_recorded(
+    db_session, tmp_path, monkeypatch, boundary_code, recorded
+):
+    """The connector context names the instance's root definition, but the
+    failed service task lives in the called process. An error boundary on the
+    parent's call activity catches it, so no instance error is recorded; with a
+    boundary for another code, it still is."""
+    from m8flow_core.errors import ServiceTaskExecutionError
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.services.service_tasks import ServiceTaskContext
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/service-call-parent",
+        xml=SERVICE_CALL_PARENT_BPMN.format(code=boundary_code),
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    catalog.save(
+        db_session,
+        path="examples/service-call-child",
+        xml=SERVICE_CALL_CHILD_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    (parent,) = [
+        definition
+        for definition in db_session.query(BpmnProcessDefinitionModel).filter_by(m8f_tenant_id=tenant.id)
+        if definition.process_model_identifier == "examples/service-call-parent"
+    ]
+    db_session.commit()  # the recorder reads on its own session
+    error = ServiceTaskExecutionError("proxy said 404 Not Found")
+    error.error_code = "HttpError404"  # set, not passed: core 1.0.0b3 takes no error_code
+
+    workflow.record_service_task_error(
+        context=ServiceTaskContext(
+            tenant_id=tenant.id,
+            process_instance_id=42,
+            process_definition_id=parent.id,
+            task_guid="g-lookup",
+            task_name="lookup",
+        ),
+        exc=error,
+    )
+
+    errors = workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=42)
+    assert errors == ([("g-lookup", "proxy said 404 Not Found")] if recorded else [])
+
+
 def test_instance_detail_drills_into_called_child_process(db_session, tmp_path, monkeypatch):
     from m8flow_backend.errors import ApiError
 
