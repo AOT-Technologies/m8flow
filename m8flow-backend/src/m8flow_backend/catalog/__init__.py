@@ -25,9 +25,6 @@ from m8flow_backend import workflow
 LOGGER = logging.getLogger(__name__)
 
 UNSUPPORTED_CONSTRUCTS = (
-    "messageEventDefinition",
-    "correlationKey",
-    "correlationProperty",
     "compensateEventDefinition",
 )
 
@@ -1199,6 +1196,11 @@ def _reject_unsupported_constructs(xml: str) -> None:
     except ParseError as exc:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
+    if "messageEventDefinition" in xml:
+        try:
+            api.validate_message_bpmn(xml)
+        except api.ValidationError as exc:
+            raise ApiError("unsupported_bpmn", str(exc), 400) from exc
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
     # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).

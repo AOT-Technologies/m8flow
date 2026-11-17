@@ -32,6 +32,7 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
     {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
 _PROCESS_START_COMMAND = "process.start"
+MESSAGE_CORRELATION_PATH = "/m8flow/messages/correlate"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
 # their paths the same way here, or permissions-check reads POST as ``create`` and
@@ -109,6 +110,23 @@ class HostAuthorizationPolicy:
         user = session.get(UserModel, request.actor_user_id)
         if user is None:
             return api.DatabaseAuthorizationPolicy().authorize(session, request)
+        if request.command_key == "message.correlate":
+            if (
+                request.permission == "execute"
+                and request.resource_type == "tenant"
+                and request.resource_id == request.tenant_id
+            ):
+                decision = _host_yaml_decision(
+                    session,
+                    user,
+                    permission="execute",
+                    resource_type="tenant",
+                    resource_id=MESSAGE_CORRELATION_PATH,
+                    command=request.command_key,
+                )
+                if decision is not None:
+                    return decision
+            return api.AuthorizationDecision(allowed=False, reason="message_correlation_requires_execute")
         if request.command_key == "process_definition.import":
             decision = _host_yaml_decision(
                 session,
@@ -233,6 +251,7 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/mcp-tools",
     "/m8flow/tenant-management",
     "/m8flow/celery/",
+    MESSAGE_CORRELATION_PATH,
 )
 
 
@@ -298,6 +317,8 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    if path == MESSAGE_CORRELATION_PATH and action == "create":
+        action = "execute"
     lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
     if lifecycle_route:
         target = lifecycle_route.group(1)

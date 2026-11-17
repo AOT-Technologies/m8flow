@@ -23,6 +23,8 @@ branch_labels = None
 depends_on = None
 
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
+# Host migration replay can encounter the additive message schema already installed.
+COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "m8f_694_message_correlation")
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
@@ -864,9 +866,9 @@ def _require_core_breaking_head() -> bool:
     revisions = _core_marker_revisions()
     if not revisions:
         return False
-    if revisions != [REQUIRED_CORE_MIGRATION]:
+    if len(revisions) != 1 or revisions[0] not in COMPATIBLE_CORE_REVISIONS:
         raise RuntimeError(
-            "m8flow-bpmn-core must be at exactly "
+            "m8flow-bpmn-core must be at a compatible revision for "
             f"{REQUIRED_CORE_MIGRATION}; found {revisions!r}"
         )
     return True
@@ -913,7 +915,7 @@ def _record_core_breaking_head() -> None:
     core_version = _table(CORE_VERSION_TABLE, "version_num")
     exists = _bind().execute(
         sa.select(core_version.c.version_num)
-        .where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
+        .where(core_version.c.version_num.in_(COMPATIBLE_CORE_REVISIONS))
         .limit(1)
     ).scalar()
     if exists is None:

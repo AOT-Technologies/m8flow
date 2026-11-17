@@ -20,6 +20,8 @@ depends_on = None
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
+# Host migration replay can encounter the additive message schema already installed.
+COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "m8f_694_message_correlation")
 
 
 def _bind():
@@ -50,7 +52,7 @@ def _record_core_head() -> None:
     core_version = _table(CORE_VERSION_TABLE, "version_num")
     exists = _bind().execute(
         sa.select(core_version.c.version_num)
-        .where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
+        .where(core_version.c.version_num.in_(COMPATIBLE_CORE_REVISIONS))
         .limit(1)
     ).scalar()
     if exists is None:

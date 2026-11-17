@@ -169,7 +169,13 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
                 constraint["constrained_columns"], constraint["referred_columns"], strict=True
             )
         ))
-    if actual_fks != expected_fks:
+    instance_key = (("process_instance_id", "process_instance.id"),)
+    tenant_instance_key = (
+        ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
+        ("process_instance_id", "process_instance.id"),
+    )
+    composite_fks = (expected_fks - {instance_key}) | {tenant_instance_key}
+    if actual_fks not in (expected_fks, composite_fks, expected_fks | composite_fks):
         required = sorted(f"{column} references {target}" for key in expected_fks for column, target in key)
         problems.append(f"expected foreign keys: {', '.join(required)}")
 

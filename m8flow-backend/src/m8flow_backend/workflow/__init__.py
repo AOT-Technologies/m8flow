@@ -297,6 +297,39 @@ def _acting_tenant_membership(session: Session, *, tenant_id: str, user_id: int)
     )
 
 
+def correlate_message(
+    session: Session,
+    *,
+    tenant_id: str,
+    user_id: int,
+    message_name: str,
+    delivery_id: str,
+    payload: dict[str, Any],
+    process_definition_id: int | None = None,
+    process_instance_id: int | None = None,
+) -> api.MessageDeliveryReceiptModel:
+    try:
+        with _acting_tenant_membership(session, tenant_id=tenant_id, user_id=user_id):
+            return api.execute_command(
+                session,
+                api.CorrelateMessageCommand(
+                    tenant_id=tenant_id,
+                    message_name=message_name,
+                    user_id=user_id,
+                    delivery_id=delivery_id,
+                    payload=payload,
+                    process_definition_id=process_definition_id,
+                    process_instance_id=process_instance_id,
+                ),
+            )
+    except api.AmbiguousMessageCorrelationError as exc:
+        raise ApiError("ambiguous_message_correlation", str(exc), 409) from exc
+    except api.MessageDeliveryConflictError as exc:
+        raise ApiError("message_delivery_conflict", str(exc), 409) from exc
+    except BpmnCoreError as exc:
+        raise map_bpmn_error(exc) from exc
+
+
 def import_definition(
     session: Session,
     *,

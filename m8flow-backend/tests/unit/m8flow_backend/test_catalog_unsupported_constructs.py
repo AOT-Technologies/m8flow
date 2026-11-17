@@ -103,7 +103,7 @@ def test_unsupported_construct_elements_are_rejected_regardless_of_prefix(elemen
         f"<bpmn:process id='process'>{element}</bpmn:process></bpmn:definitions>"
     )
 
-    with pytest.raises(ApiError, match="Unsupported BPMN construct"):
+    with pytest.raises(ApiError, match="Unsupported BPMN construct|Intermediate Message Catch"):
         _reject_unsupported_constructs(xml)
 
 

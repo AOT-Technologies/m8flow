@@ -94,4 +94,7 @@ def test_runtime_role_cannot_bypass_rls(migrated_database):
     finally:
         engine.dispose()
     assert (superuser, bypass) == (False, False)
-    assert {"process_instance", "work_item", "work_item_user", "task", "scheduler_job", "json_data"} <= rls_tables
+    assert {
+        "process_instance", "work_item", "work_item_user", "task", "scheduler_job", "json_data",
+        "signal_subscription", "compensation_record", "message_subscription", "message_delivery_receipt",
+    } <= rls_tables

@@ -11,7 +11,7 @@ file contains one of the following constructs, the save fails with the
 
 | Construct | BPMN element |
 |---|---|
-| Message events and message correlation | `messageEventDefinition`, `correlationKey`, `correlationProperty` |
+| Other Message Event forms | Message starts, throws, boundaries, and event-subprocess starts |
 | Compensation start events | `startEvent` with `compensateEventDefinition` |
 | Unsupported event subprocesses | `subProcess` with `triggeredByEvent="true"` must have at least one start event. Each start event must have exactly one definition: error, escalation, or timer with `isInterrupting="false"`. |
 
@@ -33,6 +33,13 @@ The engine runs the following elements:
 | Gateways | Exclusive, parallel, inclusive |
 | Structure | Embedded subprocess, call activity, pools, lanes, sequence flows with conditions |
 | Data | Data objects, data stores |
+
+### Intermediate Message Catch Events
+
+Use a named BPMN message and a complete correlation key with retrieval paths
+for the incoming JSON and bindings for the waiting workflow. The same key can
+contain several properties. Each accepted delivery advances one matching wait.
+See [the HTTP correlation endpoint](http-api.md#external-bpmn-message-delivery).
 
 ### Call activities
 
