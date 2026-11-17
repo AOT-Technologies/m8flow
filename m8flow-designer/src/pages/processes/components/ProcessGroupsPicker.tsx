@@ -326,10 +326,10 @@ export function ProcessGroupsPicker({
                             <Folder className="size-[15px] text-muted-foreground" strokeWidth={1.8} />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-semibold text-foreground">
+                            <span title={label} className="block truncate text-sm font-semibold text-foreground">
                               {label}
                             </span>
-                            <span className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
+                            <span title={group.description || group.id} className="mt-0.5 block truncate text-[12.5px] text-muted-foreground">
                               {group.description || group.id}
                             </span>
                           </span>
