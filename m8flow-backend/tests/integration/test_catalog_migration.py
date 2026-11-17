@@ -30,7 +30,7 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     cfg = Config()
     cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
-    previous = "d1e2f3a4b5c6"
+    previous = "fbcad9e02138"
     tenants = ("m8flow", "second-tenant")
     model_id = "test/review"
     tables = (ProcessInstanceCalledReleases.__table__, ProcessModelRelease.__table__, ProcessModelState.__table__)
@@ -89,7 +89,7 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
 
         command.upgrade(cfg, "head")
         with Session(engine) as session, session.begin():
-            assert session.scalar(stamp) == "e2f3a4b5c6d7"
+            assert session.scalar(stamp) == "9f2c6d4b8e71"
             assert session.scalars(sa.select(ProcessModelState)).all() == []
             assert session.scalars(sa.select(ProcessModelRelease)).all() == []
             for tenant_id in tenants:

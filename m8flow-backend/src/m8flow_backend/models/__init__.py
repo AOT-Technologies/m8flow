@@ -4,6 +4,7 @@ from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 from m8flow_backend.models.process_model_version import ProcessInstanceCalledReleases, ProcessModelRelease, ProcessModelState
 from m8flow_backend.models.host_base import HostBase
+from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 from m8flow_backend.models.tenant_invitation import M8flowTenantInvitationModel
 from m8flow_backend.models.tenant_permission_seed import M8flowTenantPermissionSeedModel
@@ -31,6 +32,7 @@ __all__ = [
     "ExternalFormRequestModel",
     "HostBase",
     "M8flowNatsApiKeyModel",
+    "NamedValueModel",
     "M8flowTenantInvitationModel",
     "M8flowTenantPermissionSeedModel",
     "M8flowTenantModel",

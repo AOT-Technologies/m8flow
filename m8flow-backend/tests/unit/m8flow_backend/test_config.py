@@ -71,3 +71,19 @@ def test_vault_ca_bundle_wins_over_skip_verify(monkeypatch, tmp_path):
     monkeypatch.setenv("M8FLOW_VAULT_CACERT", str(tmp_path / "ca.pem"))
     monkeypatch.setenv("M8FLOW_VAULT_SKIP_VERIFY", "true")
     assert vault_verify() == str(tmp_path / "ca.pem")
+
+
+def test_vault_provisioner_config_reads_url_and_secret_file(monkeypatch, tmp_path):
+    from m8flow_backend.config import (
+        vault_provisioner_api_token,
+        vault_provisioner_url,
+    )
+
+    token_file = tmp_path / "provisioner-token"
+    token_file.write_text("internal-token\n", encoding="utf-8")
+    monkeypatch.setenv("M8FLOW_VAULT_PROVISIONER_URL", "https://provisioner.internal")
+    monkeypatch.setenv("M8FLOW_VAULT_PROVISIONER_API_TOKEN_FILE", str(token_file))
+    monkeypatch.delenv("M8FLOW_VAULT_PROVISIONER_API_TOKEN", raising=False)
+
+    assert vault_provisioner_url() == "https://provisioner.internal"
+    assert vault_provisioner_api_token() == "internal-token"

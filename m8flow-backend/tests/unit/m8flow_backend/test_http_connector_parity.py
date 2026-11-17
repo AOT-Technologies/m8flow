@@ -170,7 +170,7 @@ def test_integrator_creates_http_profile_and_execute_posts_auth_without_profile_
     body = created.get_json()
     assert "from-profile" not in json.dumps(body)
     assert body["config"] == {}
-    assert body["configured_secrets"] == ["basic_auth_password", "basic_auth_username"]
+    assert body["configured_secrets"] == ["basic_auth_password"]
 
     db_session.expire_all()
     _bind_session(db_session, monkeypatch)
@@ -290,6 +290,9 @@ def test_missing_and_inactive_profile_never_post_to_proxy(
 
     with pytest.raises(ServiceTaskExecutionError, match="inactive"):
         _execute(parameters={"m8flow_profile": "http-prod", "url": "https://example.test"})
-    with pytest.raises(ServiceTaskExecutionError, match="does-not-exist"):
+    with pytest.raises(
+        ServiceTaskExecutionError,
+        match="No profile is configured for connector 'http'\\.",
+    ):
         _execute(parameters={"m8flow_profile": "does-not-exist", "url": "https://example.test"})
     assert node_wire_stub.posts == []

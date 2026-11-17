@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_decision_buttons" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_decision_buttons"><bpmn:participant id="Participant_Process_flow_decision_buttons" name="E2E Quote Decision" processRef="Process_flow_decision_buttons" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_decision_buttons" name="E2E Quote Decision" isExecutable="true">
     <bpmn:documentation>An approver accepts or rejects a supplier quote with the Approve / Reject buttons.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_decision_buttons"><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>Gateway_decision</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_other</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>

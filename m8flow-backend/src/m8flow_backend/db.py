@@ -135,6 +135,22 @@ def alembic_target_metadata() -> list[MetaData]:
     return [CoreBase.metadata, HostBase.metadata]
 
 
+def combined_model_metadata() -> MetaData:
+    """Return one metadata collection so cross-core/host foreign keys resolve.
+
+    The host models reference tables owned by m8flow-core. SQLAlchemy cannot
+    sort or create those host tables when each metadata collection is passed
+    to ``create_all`` separately, even if the referenced core tables were
+    created first in the database. Copying both collections into one metadata
+    object lets SQLAlchemy resolve the cross-metadata foreign keys.
+    """
+    combined = MetaData()
+    for metadata in alembic_target_metadata():
+        for table in metadata.tables.values():
+            table.to_metadata(combined)
+    return combined
+
+
 def assert_disjoint_table_names() -> None:
     alembic_target_metadata()
 
@@ -144,11 +160,9 @@ def assert_disjoint_table_names() -> None:
 
 
 def create_all(engine: Engine | None = None) -> None:
-    metadatas = alembic_target_metadata()
     bind = engine or get_engine()
     assert_disjoint_table_names()
-    for metadata in metadatas:
-        metadata.create_all(bind)
+    combined_model_metadata().create_all(bind)
 
 
 @contextmanager

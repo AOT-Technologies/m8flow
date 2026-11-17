@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -1260,8 +1260,8 @@ name = "node-wire-http-generic"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_http_generic-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_http_generic-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:5c7be141570aae40a8055ba4ea4c90149a7873db9022f187d502e4fcbd6f4d0a" },
@@ -1278,8 +1278,8 @@ name = "node-wire-m8flow-github"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_github-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_github-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:958ac9b739d867b373729f78e1f66546602371d401148a0cd7fbead73d4441ed" },
@@ -1296,8 +1296,8 @@ name = "node-wire-m8flow-n8n"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_n8n-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_n8n-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:6aa1cf3ef97ce3e3544888cc9d8c312238fd9e9f1ff612d6c16a62e5e881b956" },
@@ -1314,8 +1314,8 @@ name = "node-wire-m8flow-postgres"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_postgres-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "node-wire-runtime" },
-    { name = "psycopg", extra = ["binary"] },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
+    { name = "psycopg", extra = ["binary"], marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_postgres-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:c33a6c36d6dcce0ac25aaeea786d26593479486311b61d0ec47eaa4607301a66" },
@@ -1332,8 +1332,8 @@ name = "node-wire-m8flow-salesforce"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_salesforce-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_salesforce-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:72e9e112d2dcf02f1425ab69529ee133021f2205b1c17d196973a80214c1d3b6" },
@@ -1350,8 +1350,8 @@ name = "node-wire-m8flow-slack"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_slack-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_slack-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:e8ee4b043de152e2ea4a74d81b2a7bf4a2e6d79c933a9a7f4cd4a2f553ffaa33" },
@@ -1368,7 +1368,7 @@ name = "node-wire-m8flow-smtp"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "node-wire-runtime" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_smtp-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:d01190bb30404abc7837f693ac3dd98552734cc5a09802a17413ff304e84c2cc" },
@@ -1382,8 +1382,8 @@ name = "node-wire-m8flow-stripe"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_m8flow_stripe-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "node-wire-runtime" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "node-wire-runtime", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_m8flow_stripe-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:3e9109b2705265827259fedbf74adea1f098e737c00a8d6d659179f3b7d8646f" },
@@ -1400,17 +1400,17 @@ name = "node-wire-runtime"
 version = "1.1.0"
 source = { path = "vendor/wheels/node_wire_runtime-1.1.0-cp312-cp312-linux_x86_64.whl" }
 dependencies = [
-    { name = "httpx", extra = ["http2"] },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp" },
-    { name = "opentelemetry-sdk" },
-    { name = "pybreaker" },
-    { name = "pydantic" },
-    { name = "pyjwt", extra = ["crypto"] },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "tenacity" },
-    { name = "traceloop-sdk" },
+    { name = "httpx", extra = ["http2"], marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-api", marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-exporter-otlp", marker = "python_full_version < '3.13'" },
+    { name = "opentelemetry-sdk", marker = "python_full_version < '3.13'" },
+    { name = "pybreaker", marker = "python_full_version < '3.13'" },
+    { name = "pydantic", marker = "python_full_version < '3.13'" },
+    { name = "pyjwt", extra = ["crypto"], marker = "python_full_version < '3.13'" },
+    { name = "python-dotenv", marker = "python_full_version < '3.13'" },
+    { name = "pyyaml", marker = "python_full_version < '3.13'" },
+    { name = "tenacity", marker = "python_full_version < '3.13'" },
+    { name = "traceloop-sdk", marker = "python_full_version < '3.13'" },
 ]
 wheels = [
     { filename = "node_wire_runtime-1.1.0-cp312-cp312-linux_x86_64.whl", hash = "sha256:cf00e8f458b553609634f31d5a611e60bdf3c7c1f86883aaac007cea0a0ad290" },

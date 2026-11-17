@@ -10,9 +10,10 @@ genuinely fresh database ``alembic upgrade head`` therefore died with
 ``NoSuchTableError`` and the backend container crash-looped. See
 ``docs/upstream-recovery.md``.
 
-This revision builds every table from the live ORM metadata
-(``m8flow_backend.db.alembic_target_metadata()`` -> CoreBase + HostBase), then
-applies the pieces ``create_all`` cannot express:
+This revision builds the base schema from the live ORM metadata
+(``m8flow_backend.db.alembic_target_metadata()`` -> CoreBase + HostBase),
+projecting out configuration-variable tables/columns/indexes owned by their
+later additive revision. It then applies the pieces ``create_all`` cannot express:
 
 * PostgreSQL row-level-security policies on every tenant-scoped table,
 * the host-only ``uq_user_username_realm`` uniqueness constraint on ``user``
@@ -47,7 +48,7 @@ from datetime import UTC, datetime
 from alembic import op
 import sqlalchemy as sa
 
-from m8flow_backend.db import alembic_target_metadata
+from m8flow_backend.db import combined_model_metadata
 
 # revision identifiers, used by Alembic.
 revision = "1518b05122bc"
@@ -59,6 +60,54 @@ USER_TABLE = "user"
 USER_USERNAME_REALM_UNIQUE = "uq_user_username_realm"
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 CORE_HEAD = "k2l3m4n5o6p7"
+
+# Freeze the root revision's table scope. This revision is historical: using
+# every table in today's ORM metadata during downgrade could drop a table added
+# by a later model change. The configuration-variable tables belong to d2f4a6b8c0e1.
+BASELINE_TABLE_NAMES = frozenset(
+    {
+        "api_log",
+        "bpmn_process",
+        "bpmn_process_definition",
+        "configuration",
+        "future_task",
+        "json_data",
+        "m8f_group",
+        "m8flow_celery_task",
+        "m8flow_connector_configuration",
+        "m8flow_external_form_requests",
+        "m8flow_nats_api_keys",
+        "m8flow_nats_event_audit",
+        "m8flow_process_instance_error",
+        "m8flow_process_model_template",
+        "m8flow_templates",
+        "m8flow_tenant",
+        "m8flow_tenant_invitation",
+        "m8flow_tenant_permission_seed",
+        "permission_assignment",
+        "permission_target",
+        "pkce_code_verifier",
+        "principal",
+        "process_instance",
+        "process_instance_event",
+        "process_instance_file_data",
+        "process_instance_metadata",
+        "process_model_bpmn_version",
+        "refresh_token",
+        "scheduler_job",
+        "secret",
+        "service_account",
+        "task",
+        "task_definition",
+        "task_draft_data",
+        "task_instructions_for_end_user",
+        "typeahead",
+        "user",
+        "user_group_assignment",
+        "work_item",
+        "work_item_user",
+    }
+)
 
 # Base tenant seed (matches the retired d2b8f0d1a4c5 seed revision).
 BASE_TENANT_ID = "m8flow"
@@ -73,10 +122,47 @@ def _is_postgres() -> bool:
     return op.get_bind().dialect.name == "postgresql"
 
 
+def _validate_baseline_tables(metadata: sa.MetaData) -> None:
+    missing = sorted(BASELINE_TABLE_NAMES - set(metadata.tables))
+    if missing:
+        missing_names = ", ".join(missing)
+        raise RuntimeError(
+            "The 1518b05122bc migration baseline does not match the current ORM "
+            f"metadata; expected baseline table(s) are missing: {missing_names}. "
+            "Update BASELINE_TABLE_NAMES only after verifying the historical schema."
+        )
+
+
 def _create_all_tables() -> None:
     bind = op.get_bind()
-    for metadata in alembic_target_metadata():
-        metadata.create_all(bind, checkfirst=True)
+    current_metadata = combined_model_metadata()
+    _validate_baseline_tables(current_metadata)
+    baseline = sa.MetaData()
+
+    # This root migration is the historical schema baseline. The connector
+    # variable revision below the current-main head owns these additions, so
+    # do not create them here from today's ORM metadata or that later revision
+    # would see a partially-applied schema and refuse to run.
+    later_tables = {"m8flow_named_value", "m8flow_connector_variable"}
+    later_connector_columns = {"provider_key", "schema_version"}
+    for table in current_metadata.tables.values():
+        if table.name in later_tables:
+            continue
+        copied = table.to_metadata(baseline)
+        if table.name == "m8flow_connector_configuration":
+            # These columns have no constraints or indexes in the ORM; remove
+            # them from the copy so the later additive revision owns them.
+            for column_name in later_connector_columns:
+                column = copied.c.get(column_name)
+                if column is not None:
+                    copied._columns.remove(column)
+            # The additive migration creates this index for the composite
+            # connector-variable foreign key.
+            for index in tuple(copied.indexes):
+                if index.name == "uq_host_m8flow_connector_configuration_id_tenant":
+                    copied.indexes.remove(index)
+
+    baseline.create_all(bind, checkfirst=True)
 
 
 def _quote_identifier(identifier: str) -> str:
@@ -229,9 +315,16 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    current_metadata = combined_model_metadata()
+    _validate_baseline_tables(current_metadata)
     if sa.inspect(bind).has_table(CORE_VERSION_TABLE):
         op.drop_table(CORE_VERSION_TABLE)
-    # drop_all resolves FK order itself; reverse the metadata list so host
-    # tables (which FK into core/tenant tables) drop before their targets.
-    for metadata in reversed(alembic_target_metadata()):
-        metadata.drop_all(bind, checkfirst=True)
+    # Keep the root revision's historical table scope even as the live ORM
+    # metadata grows. Copying only these tables retains dependency ordering
+    # without allowing a later model to expand the downgrade's destructive set.
+    baseline = sa.MetaData()
+    for table_name in sorted(BASELINE_TABLE_NAMES):
+        table = current_metadata.tables.get(table_name)
+        if table is not None:
+            table.to_metadata(baseline)
+    baseline.drop_all(bind, checkfirst=True)

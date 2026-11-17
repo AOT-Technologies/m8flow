@@ -4,8 +4,10 @@ These tests run the host modules on the real `m8flow-core` wheel against
 PostgreSQL, with nothing in core mocked. Run them before and after swapping the
 core wheel: a difference between the two runs is a regression caused by core.
 
-They are opt-in. Without `M8FLOW_TEST_POSTGRES_URI` every test here is skipped,
-so the default `uv run pytest` run is unchanged.
+They are opt-in. PostgreSQL tests require `M8FLOW_TEST_POSTGRES_URI`; live Vault
+tests require `M8FLOW_TEST_VAULT_ADDR` and `M8FLOW_TEST_VAULT_TOKEN`. Each group
+skips independently when its service is not configured, so the default
+`uv run pytest` run is unchanged.
 
 ## Run
 
@@ -18,6 +20,22 @@ cd m8flow-backend
 M8FLOW_TEST_POSTGRES_URI=postgresql+psycopg://postgres:postgres@localhost:5432/postgres \
   uv run pytest tests/integration -n auto
 ```
+
+The live Vault tests require an operator token for a disposable Vault instance
+with the configured KV v2 and AppRole mounts. They create uniquely prefixed
+tenant policies, AppRoles, and probe secrets, and remove those resources after
+the test. Run only those tests with:
+
+```sh
+M8FLOW_TEST_VAULT_ADDR=http://localhost:8200 \
+M8FLOW_TEST_VAULT_TOKEN=<operator-token> \
+  uv run pytest tests/integration/test_vault_tenant_isolation.py
+```
+
+Optional settings are `M8FLOW_TEST_VAULT_KV_MOUNT` (default `kv`),
+`M8FLOW_TEST_VAULT_APPROLE_MOUNT` (default `approle`),
+`M8FLOW_TEST_VAULT_NAMESPACE`, and `M8FLOW_TEST_VAULT_SKIP_VERIFY=true` for a
+disposable local instance with an untrusted development certificate.
 
 Each pytest worker creates its own database, migrates it with `alembic upgrade
 head`, and creates a login role without `SUPERUSER` or `BYPASSRLS`. The host
@@ -34,6 +52,7 @@ as production. The database and role are dropped when the worker finishes.
 | `test_lane_assignment.py` | BPMN lanes reach lane members only, late joiners after reconcile, and never another tenant's lane |
 | `test_service_tasks.py` | Service tasks through the host registry and a stub connector proxy: success, secret sentinels, failure recording |
 | `test_scheduler.py` | Intermediate timer jobs created by core and released by `workflow.run_due` |
+| `test_vault_tenant_isolation.py` | Live Vault tenant-token isolation, concurrent first-use provisioning, and fresh-client reconciliation after restart |
 | `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it (M8F-665) |
 | `test_schema_matches_core.py` | The migrated schema matches core's ORM; the runtime role is subject to RLS |
 

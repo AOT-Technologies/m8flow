@@ -368,6 +368,28 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Delete process instance' })).not.toBeInTheDocument();
   });
 
+  it('offers and submits retry for failed compensation with permission', async () => {
+    const fetchMock = stubFetches(mockDetail({ status: 'error', has_failed_compensation: true }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithOutlet({ ...editorCtx, canRetryProcessInstances: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry compensation' }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/process-instances/7/retry'),
+        expect.objectContaining({ method: 'POST' }),
+      );
+    });
+  });
+
+  it('hides retry when the user lacks permission', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail({ status: 'error', has_failed_compensation: true })));
+    renderWithOutlet({ ...editorCtx, canRetryProcessInstances: false });
+
+    await screen.findByRole('heading', { name: 'Process Instance ID: 7' });
+    expect(screen.queryByRole('button', { name: 'Retry compensation' })).not.toBeInTheDocument();
+  });
+
   it('confirms terminate via the dialog then posts and refreshes', async () => {
     const fetchMock = stubFetches(mockDetail());
     vi.stubGlobal('fetch', fetchMock);

@@ -8,7 +8,7 @@
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_Process_flow_submit_then_approve" targetNamespace="http://m8flow.org/e2e/catalog">
   <bpmn:collaboration id="Collaboration_Process_flow_submit_then_approve"><bpmn:participant id="Participant_Process_flow_submit_then_approve" name="E2E Training Request" processRef="Process_flow_submit_then_approve" /></bpmn:collaboration>
-  
+
   <bpmn:process id="Process_flow_submit_then_approve" name="E2E Training Request" isExecutable="true">
     <bpmn:documentation>An employee describes the training they need; an approver approves it.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_Process_flow_submit_then_approve"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef><bpmn:flowNodeRef>Activity_submit_request</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>Activity_approve_request</bpmn:flowNodeRef><bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
