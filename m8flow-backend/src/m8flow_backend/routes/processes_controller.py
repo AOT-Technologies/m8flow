@@ -281,8 +281,10 @@ def delete_process_group(modified_process_group_identifier: str):
         )
 
     for model_id in catalog.list_models(group_id, tenant_id=tenant_id, session=session):
-        model = versions.import_legacy(session, tenant_id, model_id)
-        if model is not None:
+        model = versions.write_state(session, tenant_id, model_id)
+        if model is None:
+            model = versions.import_legacy(session, tenant_id, model_id)
+        if model is not None and not model.deleted:
             versioned.delete_model(session, model)
     catalog.delete_process_group(tenant_id=tenant_id, group_id=group_id)
     session.commit()

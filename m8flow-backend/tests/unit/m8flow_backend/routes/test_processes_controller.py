@@ -1676,6 +1676,35 @@ def test_delete_process_group_blocked_when_instances_exist(client, db_session, t
     assert (tmp_path / "bpmn" / "t1" / "finance" / "invoice-approval").is_dir()
 
 
+def test_delete_process_group_tombstones_published_and_legacy_models(client, db_session, tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="group-delete-published", groups=["t1:editor"], tenant_id="t1",
+        seed_permissions=True,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    base = "/v1.0/m8flow/process-models"
+    path = f"{base}/finance:versioned"
+    created = client.post(base, headers=headers, json={"group_id": "finance", "id": "versioned"})
+    assert created.status_code == 201, created.json
+    published = client.post(
+        f"{path}/publish", headers={**headers, "If-Match": f'"{created.json["working_revision"]}"'},
+    )
+    assert published.status_code == 200, published.json
+    assert published.json["published_version"] == 1
+    assert _stored_model(db_session, "t1", "finance/invoice-approval") is None
+
+    deleted = client.delete("/v1.0/m8flow/process-groups/finance", headers=headers)
+    assert deleted.status_code == 200, deleted.json
+    assert not (tmp_path / "bpmn" / "t1" / "finance").exists()
+    for model_id in ("finance/versioned", "finance/invoice-approval"):
+        assert _stored_model(db_session, "t1", model_id).deleted is True
+    remaining = client.get(base, headers=headers)
+    assert remaining.status_code == 200, remaining.json
+    assert {row["id"] for row in remaining.json} == {"onboarding/new-hire"}
+    assert client.post(f"{path}/start", headers=headers).status_code == 404
+
+
 def test_editor_deletes_empty_process_group(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
