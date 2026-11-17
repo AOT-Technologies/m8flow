@@ -1,13 +1,37 @@
 import { describe, expect, it } from 'vitest';
 
-import { API_BASE_URL } from './api';
+import { API_BASE_URL, ApiError } from './api';
 import {
   contentTypeForTemplateFileName,
   templatePath,
+  templateErrorMessage,
   templateFileDownloadUrl,
   templateModelerFilePath,
   templatesPath,
 } from './templatesApi';
+
+describe('templateErrorMessage', () => {
+  const fallback = 'Failed to import template';
+
+  it("returns the backend's message from an ApiError", () => {
+    const err = new ApiError('/v1.0/m8flow/templates/import', 400, 'POST', 'Zip must contain at least one .bpmn file');
+    expect(templateErrorMessage(err, fallback)).toBe('Zip must contain at least one .bpmn file');
+  });
+
+  it('returns the fallback, not "POST … failed: 413", when the ApiError has no server message', () => {
+    const err = new ApiError('/v1.0/m8flow/templates/import', 413, 'POST');
+    expect(templateErrorMessage(err, fallback)).toBe(fallback);
+  });
+
+  // Intentional: non-ApiError messages are client-side and technical too
+  // ("Failed to fetch", "Unexpected token <"), so they never reach the user.
+  it.each([new TypeError('Failed to fetch'), 'boom', null, undefined])(
+    'returns the fallback for a non-ApiError (%s)',
+    (err) => {
+      expect(templateErrorMessage(err, fallback)).toBe(fallback);
+    },
+  );
+});
 
 describe('templatesPath', () => {
   it('builds the bare path with no filters', () => {
