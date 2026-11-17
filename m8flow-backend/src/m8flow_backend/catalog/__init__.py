@@ -1283,7 +1283,6 @@ def _reject_unsupported_constructs(xml: str) -> Element:
             construct = element.tag.rsplit("}", 1)[-1]
             if construct in unsupported and element.tag != bpmn + "compensateEventDefinition":
                 raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
-    return root
 
     feature_tags = {bpmn + "compensateEventDefinition", bpmn + "cancelEventDefinition"}
     for element in root.iter():
@@ -1300,6 +1299,7 @@ def _reject_unsupported_constructs(xml: str) -> Element:
             except ValidationError as exc:
                 raise ApiError("unsupported_bpmn", str(exc), 400) from exc
             break
+    return root
 
 
 def _xml_boolean_is_true(value: str | None) -> bool:
