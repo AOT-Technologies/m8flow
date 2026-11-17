@@ -1,0 +1,19 @@
+{
+  "title": "Supervisor review",
+  "description": "E2E seed form: the supervisor's decision on an escalated complaint.",
+  "type": "object",
+  "required": [
+    "refund_amount"
+  ],
+  "properties": {
+    "refund_amount": {
+      "type": "number",
+      "title": "Refund amount",
+      "minimum": 0
+    },
+    "note": {
+      "type": "string",
+      "title": "Note"
+    }
+  }
+}

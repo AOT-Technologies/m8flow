@@ -1,0 +1,38 @@
+{
+  "title": "Travel request",
+  "description": "E2E seed form: the trip to approve.",
+  "type": "object",
+  "required": [
+    "destination",
+    "purpose",
+    "nights",
+    "estimated_cost",
+    "international"
+  ],
+  "properties": {
+    "destination": {
+      "type": "string",
+      "title": "Destination",
+      "minLength": 2
+    },
+    "purpose": {
+      "type": "string",
+      "title": "Purpose"
+    },
+    "nights": {
+      "type": "integer",
+      "title": "Nights",
+      "minimum": 1
+    },
+    "estimated_cost": {
+      "type": "number",
+      "title": "Estimated cost",
+      "minimum": 0
+    },
+    "international": {
+      "type": "boolean",
+      "title": "International trip",
+      "default": false
+    }
+  }
+}

@@ -4,12 +4,12 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
+import { useSeededModelCopy } from './helpers/seedCatalog';
 import { openChangeElementMenu, selectElement } from './helpers/diagram';
-import { SEED_MODELER_PATH, SEED_USER_TASK_ELEMENT_ID } from './helpers/fixtures';
+import { SEED_USER_TASK_ELEMENT_ID } from './helpers/fixtures';
 
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
+// Works on its own copy of the seeded "E2E Work From Home Request" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler-callact', 'work-from-home');
 
 /**
  * Call Activity and multi-instance constructs are now supported by the app.
@@ -19,7 +19,7 @@ useMockProcessModel(test);
 test.describe('Process Modeler: Call Activity and multi-instance support', () => {
   test.beforeEach(async ({ page }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODELER_PATH);
+    await page.goto(model.modelerPath());
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   });
 

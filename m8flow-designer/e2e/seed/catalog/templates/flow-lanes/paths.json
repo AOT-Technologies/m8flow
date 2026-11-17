@@ -1,0 +1,30 @@
+{
+  "$comment": "Routes through this process, used by e2e/seed/tools/validate_catalog.py to check the diagram on the engine (see any of the six use-case templates for the format). The flow specs (e2e-flow*.spec.ts, run-*.spec.ts) create their own model from this template and run it themselves.",
+  "paths": [
+    {
+      "id": "FL-LANES-01",
+      "title": "Every lane completes its own task",
+      "answers": {
+        "Activity_admin_approval": {
+          "approval_note": "ok"
+        },
+        "Activity_designers_signoff": {
+          "approval_note": "ok"
+        },
+        "Activity_unassigned": {
+          "approval_note": "ok"
+        }
+      },
+      "expect_tasks": [
+        "Activity_admin_approval",
+        "Activity_designers_signoff",
+        "Activity_unassigned"
+      ],
+      "expect_end": [
+        "EndEvent_admin",
+        "EndEvent_designers",
+        "EndEvent_unassigned"
+      ]
+    }
+  ]
+}

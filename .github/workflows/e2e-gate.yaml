@@ -110,10 +110,12 @@ jobs:
           # Test-only values; the stack is destroyed after the run.
           echo "M8FLOW_CONNECTOR_PROXY_API_KEY=e2e-ci-connector-key" >> .env
 
-      - name: Start M8Flow stack (backend, Keycloak, DB, Redis, MinIO, connector proxy)
+      - name: Start M8Flow stack (backend, Celery worker and beat, Keycloak, DB, Redis, MinIO, connector proxy)
         run: |
+          # Celery beat and worker fire timer events (the backend itself does not poll
+          # timers in Compose), so timer flows such as reminders and publish dates need them.
           docker compose --env-file .env -f docker/m8flow-docker-compose.yml \
-            up -d --build m8flow-backend m8flow-node-wire-proxy
+            up -d --build m8flow-backend m8flow-celery-worker m8flow-celery-beat m8flow-node-wire-proxy
 
       - name: Wait for backend and Keycloak
         run: |
@@ -131,6 +133,22 @@ jobs:
             sleep 10
           done
           echo "Stack did not become ready in 15 minutes"; exit 1
+
+      - name: Check Celery worker and beat are running
+        run: |
+          # Timer flows need both. Fail here, with their logs, instead of later with test timeouts.
+          compose="docker compose --env-file .env -f docker/m8flow-docker-compose.yml"
+          for i in $(seq 1 12); do
+            running=$($compose ps --status running --services)
+            if echo "$running" | grep -qx m8flow-celery-worker && echo "$running" | grep -qx m8flow-celery-beat; then
+              echo "Celery worker and beat are running"; exit 0
+            fi
+            sleep 5
+          done
+          echo "Celery worker or beat is not running"
+          $compose ps
+          $compose logs --tail 50 m8flow-celery-worker m8flow-celery-beat
+          exit 1
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

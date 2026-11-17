@@ -18,8 +18,58 @@ npx playwright install chromium
    - Master realm: `super-admin / super-admin`
 3. Leave SMTP **unset** in the local backend (invitation tests need it).
 
-The UI (`:6853`) starts by itself. Tests create and delete their own data, so no
-seed process models are needed.
+The UI (`:6853`) starts by itself. The seed (below) adds the test data on the
+first run, so nothing has to be set up by hand.
+
+## Test data (seeded catalog)
+
+Before the first test, the seed (`seed/seed.ts`, list in `seed/baseline.json`)
+signs in the users and adds what is missing; running it again changes nothing:
+
+- **Templates** `e2e-<key>`, one per folder in `seed/catalog/templates/<key>/`
+  (diagram, forms, decision table; `paths.json` lists the routes through it):
+  - six use cases (Work From Home, Travel Request, Customer Complaint, Order
+    Fulfilment, Invoice Approval, Content Publishing), each also seeded as a
+    published process in the group **E2E Seed Catalog** (plus one Work From
+    Home process kept **paused**; each seeded process has a status in
+    `baseline.json`: draft, published or paused);
+  - `flow-*`: small approval and task processes for the process-flow and run
+    specs (single and two-step approval, decision buttons, routing by amount,
+    parallel approval, failing step, HTTP call that is refused, a script step
+    and a diagram with its BPMN test file, ...).
+- **Refused files** in `seed/catalog/refused/` (diagrams and a broken BPMN test file), uploaded by the guard tests.
+- The database connection `postgres_v2/e2e` for the templates' database steps. It
+  lets processes run SQL with its login, so it is only made from the repository
+  `.env` (`POSTGRES_USER` / `POSTGRES_PASSWORD`) on a local or CI stack. For any
+  other stack set `M8FLOW_E2E_PG_DSN` (e.g. `host=... dbname=... user=e2e_user
+  password=...`, a user that may only touch the `e2e_*` tables); without it the
+  routes with a database step are skipped.
+
+Tests never change the seeded data: a test that changes something works on its
+own copy (a copy of a seeded process, or a model created from a seeded
+template) and deletes it afterwards. Leftovers of a stopped run are removed by
+the next run.
+
+To change a template, edit `seed/tools/build_catalog.py` (or
+`seed/tools/flow_templates.py`), then run
+`python3 e2e/seed/tools/build_catalog.py` and check every route on the engine
+with `python3 -I e2e/seed/tools/validate_catalog.py` (needs `SpiffWorkflow==3.2.0`).
+The next test run imports the changed template as a new version.
+
+### Baseline check
+
+The seed also checks the baseline before any test starts, and repairs what it can:
+
+| Found | What happens |
+| --- | --- |
+| Keycloak still configuring the realm after a fresh start (no username + password form yet) | The seed waits up to 3 minutes (`M8FLOW_E2E_KEYCLOAK_WAIT_SEC`), then stops with a clear message |
+| A seeded template on the server has other files than its catalog folder | It is imported again from the catalog |
+| A seeded model has another primary file, extra files or another status | It is set back as in `baseline.json` |
+| A test user is still in the second tenant (left by a stopped PAR-03) | The user is removed from the second tenant |
+| A test user is in another tenant (the tenant picker appears at sign-in) | The run stops before the tests: `[seed] <role> (<user>) belongs to more than one tenant ...` |
+
+When the seed stops the run, every spec fails at once with the same `[seed]` message
+(`e2e/reports/<run>/seed-failed.json`); fix what it names and run again.
 
 ## Run
 
@@ -37,6 +87,22 @@ Anything after `--` goes to Playwright. Tests run one at a time.
 Useful environment variables: `M8FLOW_DESIGNER_BASE_URL`, `M8FLOW_BACKEND_BASE_URL`,
 `M8FLOW_E2E_TENANT_SLUG` (default `m8flow`), `E2E_REPORT_KEEP` (keep newest N runs).
 User logins can be overridden with `M8FLOW_E2E_<ROLE>_USERNAME` / `_PASSWORD`.
+
+## Reset the stack to the baseline
+
+A run cleans up after itself, but a stopped run (Ctrl+C, the stack going down) leaves its
+groups, models, instances and templates behind. The next run removes those once they are
+2 hours old (`E2E_LEFTOVER_MAX_AGE_MIN`). To clean everything now:
+
+```
+npx playwright test -c e2e/maintenance/reset.config.ts
+```
+
+It signs in as the tenant admin and removes every E2E group, model, instance and template
+that carries a run time stamp, plus all instances of the seeded catalog models. It keeps the
+seeded baseline (users, tenants, catalog templates and models) and checks that it is still
+there. Running it twice changes nothing the second time. Do not run it while a test run is
+going on the same stack. It is not part of the suite.
 
 ## Reports
 
@@ -58,14 +124,14 @@ Every spec must be listed there.
 | --- | --- | --- |
 | `auth` | `login.spec.ts`, `identity-auth-parity.spec.ts` | Covered |
 | `processes` | `processes.spec.ts`, `process-models.spec.ts` | Covered |
-| `process-flow` | `e2e-flow*.spec.ts` (FLW-01..58) | Covered |
-| `modeler` | `modeler*.spec.ts` | Covered |
+| `process-flow` | `e2e-flow*.spec.ts` (FLW-01..59), `run-user-task.spec.ts`, `run-service-task.spec.ts` | Covered |
+| `modeler` | `modeler*.spec.ts`, `run-seeded-processes.spec.ts` (every route of the use cases) | Covered |
 | `home`, `task-review`, `process-instances`, `templates` | `e2e-flow*.spec.ts` | Partly covered |
 | `configuration`, `monitoring` | – | Planned |
 
 ### Process-flow tests
 
-- Each test creates its own models and instances through the API and cleans up afterwards.
+- Each spec file creates its models from the seeded `flow-*` templates in a group of its own, and deletes them with their instances afterwards.
 - Setup is done through the API; the UI is used only for the step being checked.
 - No fixed waits: tasks and statuses are polled.
 - A possible product defect uses `expect.soft` with a message starting `POSSIBLE DEFECT`.

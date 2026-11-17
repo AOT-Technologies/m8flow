@@ -35,9 +35,9 @@ export type DroppedConstructKind = 'dataStore' | 'eventSubprocess' | 'message' |
 const NOTICE: Record<DroppedConstructKind, string> = {
   dataStore: 'Data stores are not supported in this host.',
   eventSubprocess:
-    'Only non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.',
+    'Only error, escalation and non-interrupting timer event subprocesses are supported. The catalog rejects other event subprocesses on save.',
   message: 'Message events and correlation are not supported. The catalog rejects this construct on save.',
-  compensate: 'Compensation events are not supported. The catalog rejects this construct on save.',
+  compensate: 'Compensation start events are not supported. The catalog rejects this construct on save.',
 };
 
 function elementType(element: any): string | undefined {
@@ -49,16 +49,24 @@ function hasEventDefinition(element: any, type: string): boolean {
   return Array.isArray(definitions) && definitions.some((definition: any) => definition?.$type === type);
 }
 
-/** Core runs an event subprocess only when it starts from non-interrupting
- * timer events (M8F-667); the catalog rejects the rest on save. */
+/** Mirrors catalog `_event_subprocess_start_supported`: every start event has
+ * exactly one definition, either error or escalation (M8F-665) or a timer on a
+ * non-interrupting start (M8F-667). The catalog rejects the rest on save. */
 function isSupportedEventSubprocess(businessObject: any): boolean {
   const starts = (businessObject?.flowElements ?? []).filter((el: any) => el?.$type === 'bpmn:StartEvent');
   return (
     starts.length > 0 &&
-    starts.every(
-      (start: any) =>
-        start.isInterrupting === false && hasEventDefinition({ businessObject: start }, 'bpmn:TimerEventDefinition'),
-    )
+    starts.every((start: any) => {
+      const definitions: any[] = start.eventDefinitions ?? [];
+      if (definitions.length !== 1) {
+        return false;
+      }
+      const type = definitions[0]?.$type;
+      if (type === 'bpmn:ErrorEventDefinition' || type === 'bpmn:EscalationEventDefinition') {
+        return true;
+      }
+      return type === 'bpmn:TimerEventDefinition' && start.isInterrupting === false;
+    })
   );
 }
 
@@ -80,7 +88,7 @@ export function classifyDroppedConstruct(element: any): DroppedConstructKind | n
   if (hasEventDefinition(element, 'bpmn:MessageEventDefinition')) {
     return 'message';
   }
-  if (hasEventDefinition(element, 'bpmn:CompensateEventDefinition')) {
+  if (type === 'bpmn:StartEvent' && hasEventDefinition(element, 'bpmn:CompensateEventDefinition')) {
     return 'compensate';
   }
   return null;

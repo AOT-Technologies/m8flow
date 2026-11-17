@@ -39,7 +39,9 @@ import { seedBaselineOnce } from './seed/seed';
  */
 test.describe('Login, tenants and invitations', () => {
   test.beforeAll(async ({ browser }) => {
-    // The seed puts the editor in Designers and removes leftover invited users.
+    // The seed puts the editor in Designers and removes leftover invited users. When this
+    // file runs first (or alone), the whole seed runs here: allow it as long as the other files do.
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
   });
 

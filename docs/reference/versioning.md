@@ -20,13 +20,14 @@ steps to take.
 
 ## Tags and images
 
-Every release is a git tag on `main`, and every container image is published
-with the same tag:
+Every release is a git tag on `main`, and its container images carry the same
+tag. Images are also published per `main` commit:
 
 | Tag | Meaning |
 |---|---|
-| `X.Y.Z` | A final release. The tag is signed by the maintainer who cut it, and it has a GitHub Release with notes, SBOMs, checksums, and signatures. |
+| `X.Y.Z` | A final release. It marks the commit of the release candidate it promotes, its images are that candidate's images, and it has a GitHub Release with notes, SBOMs, checksums, and signatures. |
 | `X.Y.Z-rc` | A release candidate for testing. It has images but no GitHub Release, and carries no compatibility promise. |
+| `sha-<commit>` | Image only: the build of one `main` commit. Every `X.Y.Z-rc` and `X.Y.Z` image is one of these, tagged again. It carries no compatibility promise. |
 
 Tags have no `v` prefix. [Release and roll back m8flow](../how-to/release-and-roll-back.md)
 describes how releases are cut.

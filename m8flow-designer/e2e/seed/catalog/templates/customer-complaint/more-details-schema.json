@@ -1,0 +1,20 @@
+{
+  "title": "More details",
+  "description": "E2E seed form: details added after asking the customer.",
+  "type": "object",
+  "required": [
+    "details",
+    "info_complete"
+  ],
+  "properties": {
+    "details": {
+      "type": "string",
+      "title": "Details"
+    },
+    "info_complete": {
+      "type": "boolean",
+      "title": "Details are now complete",
+      "default": false
+    }
+  }
+}

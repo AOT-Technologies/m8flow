@@ -1,39 +1,21 @@
-import { readFileSync } from 'node:fs';
-
 import type { Browser, Page, TestType } from '@playwright/test';
 
 import { editorCredentials, tenantAdminCredentials, useSession } from './auth';
 import { backendFetch } from './backendApi';
-import {
-  SEED_GROUP_ID,
-  SEED_GROUP_NAME,
-  SEED_MODEL_ID,
-  SEED_MODEL_NAME,
-  SEED_MODEL_ROUTE_ID,
-  SEED_PRIMARY_FILE,
-} from './fixtures';
 import { seedBaselineOnce } from '../seed/seed';
-import { seedProcessModelFile } from './seedFixture';
+import { modelFromSeededTemplate } from './seedCatalog';
 
 /**
- * Mock catalog data for the Processes and Modeler specs.
+ * Groups, models and instances that a spec creates for itself (API helpers).
  *
  * Tests must not depend on, or change, the process groups/models that happen
- * to exist on an instance (it may have none, only groups, or groups with
- * models). Each spec creates the mock group/model it needs through the
- * backend API, works only on that, and deletes it afterwards.
+ * to exist on an instance. Each spec creates the group/models it needs through
+ * the backend API (models with files come from the seeded catalog templates,
+ * helpers/seedCatalog.ts), works only on that, and deletes it afterwards.
  */
 
-const MOCK_FILES = [
-  SEED_PRIMARY_FILE,
-  'wfh-form-schema.json',
-  'wfh-review-form-schema.json',
-  'wfh-form-uischema.json',
-];
-
-function mockFile(name: string): string {
-  return readFileSync(new URL(`../fixtures/mock-model/${name}`, import.meta.url), 'utf-8');
-}
+/** Description of every group and model a test creates (the seeded catalog has its own). */
+export const E2E_DESCRIPTION = 'E2E mock data -- safe to delete';
 
 function groupPath(groupId: string): string {
   return `/v1.0/m8flow/process-groups/${groupId.split('/').map(encodeURIComponent).join(':')}`;
@@ -53,7 +35,7 @@ export async function createMockGroup(
 ): Promise<void> {
   const result = await backendFetch(page, '/v1.0/m8flow/process-groups', {
     method: 'POST',
-    data: { description: 'E2E mock data -- safe to delete', ...group },
+    data: { description: E2E_DESCRIPTION, ...group },
   });
   if (!ok(result.status, [409])) {
     throw new Error(`createMockGroup(${group.id}) failed: ${result.status} ${JSON.stringify(result.body)}`);
@@ -67,7 +49,7 @@ export async function createMockModel(
 ): Promise<string> {
   const result = await backendFetch(page, '/v1.0/m8flow/process-models', {
     method: 'POST',
-    data: { description: 'E2E mock data -- safe to delete', ...model },
+    data: { description: E2E_DESCRIPTION, ...model },
   });
   if (!ok(result.status, [409])) {
     throw new Error(`createMockModel(${model.id}) failed: ${result.status} ${JSON.stringify(result.body)}`);
@@ -145,26 +127,6 @@ export async function deleteMockGroup(page: Page, groupId: string): Promise<void
   }
 }
 
-/**
- * The shared mock model the Modeler specs use (SEED_* in fixtures.ts):
- * group "E2E Mock Catalog" / model "E2E Mock Model" with a user-task BPMN
- * (primary) and mock form schema files. Re-uploading the files resets any
- * edit a previous run left behind.
- */
-export async function ensureMockProcessModel(page: Page): Promise<void> {
-  await createMockGroup(page, { id: SEED_GROUP_ID, display_name: SEED_GROUP_NAME });
-  await createMockModel(page, { group_id: SEED_GROUP_ID, id: SEED_MODEL_ID, display_name: SEED_MODEL_NAME });
-  await seedMockModelFiles(page, SEED_MODEL_ROUTE_ID);
-}
-
-/** Uploads the mock files (user-task BPMN + form schemas) and sets the BPMN as primary. */
-export async function seedMockModelFiles(page: Page, routeId: string): Promise<void> {
-  for (const name of MOCK_FILES) {
-    await seedProcessModelFile(page, name, mockFile(name), routeId);
-  }
-  await setPrimaryFile(page, routeId, SEED_PRIMARY_FILE);
-}
-
 export type MockModelStatus = 'draft' | 'published' | 'paused';
 
 /** Moves a model through its lifecycle (new models start as draft). */
@@ -219,9 +181,62 @@ export async function deleteMockTemplate(page: Page, templateId: number): Promis
   }
 }
 
-export async function removeMockProcessModel(page: Page): Promise<void> {
-  await removeMockModelCompletely(page, SEED_MODEL_ROUTE_ID);
-  await deleteMockGroup(page, SEED_GROUP_ID);
+/**
+ * The shared "E2E Mock Catalog" / "E2E Mock Model" that the Modeler specs used
+ * before the seeded catalog (M8F-677). The seed removes it from older stacks.
+ */
+const LEGACY_MOCK_GROUP_ID = 'e2e-mock-catalog';
+
+/** Rows of a list answer: a plain array, or a paginated { results: [...] } body. */
+export function listRows<T>(body: unknown): T[] {
+  if (Array.isArray(body)) return body as T[];
+  const results = (body as { results?: unknown } | null)?.results;
+  return Array.isArray(results) ? (results as T[]) : [];
+}
+
+export type ListAnswer = { status: number; body: unknown };
+
+/**
+ * All rows of a paged list: asks page 1, 2, ... and stops at the answer's pagination.pages.
+ * Without pagination data it keeps asking while a page comes back full (perPage rows), so a
+ * missing or changed pagination block cannot stop the read early. A plain array is one page.
+ */
+export async function collectPages<T>(
+  fetchPage: (n: number) => Promise<ListAnswer>,
+  perPage: number,
+  maxPages = 200,
+): Promise<T[]> {
+  const rows: T[] = [];
+  for (let n = 1; n <= maxPages; n += 1) {
+    const answer = await fetchPage(n);
+    if (answer.status !== 200) throw new Error(`list page ${n} answered ${answer.status}`);
+    const pageRows = listRows<T>(answer.body);
+    rows.push(...pageRows);
+    if (Array.isArray(answer.body)) break;
+    const pages = (answer.body as { pagination?: { pages?: number } } | null)?.pagination?.pages;
+    if (typeof pages === 'number' ? n >= pages : pageRows.length < perPage) break;
+  }
+  return rows;
+}
+
+export type TemplateListRow = { id: number; templateKey?: string };
+
+/** The templates list answers at most 100 rows a page. */
+export const TEMPLATE_PAGE_SIZE = 100;
+
+/**
+ * Every template of the tenant, every version (the list answers 100 per page at most and only
+ * the latest version unless latest_only=false).
+ */
+export async function listAllTemplates(page: Page): Promise<TemplateListRow[]> {
+  return collectPages<TemplateListRow>((n) => backendFetch(page, `/v1.0/m8flow/templates?latest_only=false&per_page=${TEMPLATE_PAGE_SIZE}&page=${n}`), TEMPLATE_PAGE_SIZE);
+}
+
+export async function removeLegacyMockCatalog(page: Page): Promise<void> {
+  const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${LEGACY_MOCK_GROUP_ID}`).catch(() => null);
+  if (!list || list.status !== 200) return;
+  for (const m of listRows<{ id: string }>(list.body)) await removeMockModelCompletely(page, m.id.replace(/\//g, ':'));
+  await deleteMockGroup(page, LEGACY_MOCK_GROUP_ID);
 }
 
 // ---------------------------------------------------------------------------
@@ -229,60 +244,88 @@ export async function removeMockProcessModel(page: Page): Promise<void> {
 // Every spec deletes its own data in afterAll, but a run that is stopped
 // (Ctrl+C, the stack going down, a crashed worker) never gets there. The
 // baseline seed (seed/seed.ts) deletes E2E data that earlier runs left behind
-// (once per worker process; the suite runs one worker, so once per run): process groups (with their models and instances) and templates whose
-// id starts with "e2e-" and carries a run time stamp older than
-// E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). Recent data, data without a
-// time stamp, and the shared "E2E Mock Catalog" are never touched, so another
-// run that is still going on the same server is safe. Best effort: problems
-// are logged, never fail a test.
+// (once per worker process; the suite runs one worker, so once per run):
+// process groups (with their models and instances) and templates whose id
+// starts with "e2e-" and carries a run time stamp older than
+// E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). Old copies inside the seeded
+// catalog are removed the same way (helpers/seedCatalog.ts). Recent data and
+// data without a time stamp (the seeded catalog itself) are never touched, so
+// another run that is still going on the same server is safe. Best effort:
+// problems are logged, never fail a test.
 // ---------------------------------------------------------------------------
 
 const OLDEST_STAMP_MS = Date.UTC(2024, 0, 1);
 
+/**
+ * Run stamp for E2E ids: the time in base 36 (8 characters) and 3 random digits.
+ * The digits make it tell apart from a word (e2eStampTime relies on that).
+ */
+export function newStamp(): string {
+  return `${Date.now().toString(36)}${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+}
+
 /** Run time encoded in an e2e id (base-36 or decimal Date.now()), or undefined. */
 export function e2eStampTime(id: string): number | undefined {
   if (!/^e2e-/i.test(id)) return undefined;
-  for (const token of id.toLowerCase().split(/[-/:_]/)) {
+  const tokens = id.toLowerCase().split(/[-/:_]/);
+  for (const [index, token] of tokens.entries()) {
     let ms: number | undefined;
     if (/^\d{13}$/.test(token)) ms = Number(token);
     // Base-36 stamps mix letters and digits; plain words (e.g. "approval") are skipped.
     else if (/^[0-9a-z]{8,12}$/.test(token) && /[a-z]/.test(token) && /\d/.test(token)) ms = parseInt(token.slice(0, 8), 36);
+    // Older stamps could be letters only ("mwbxmrahexu"): accepted only as the id's last
+    // part and in the two stamp lengths (8, or 8 + 3), so a word inside an id is not read as one.
+    else if (index === tokens.length - 1 && index > 1 && /^[a-z]{8}([a-z]{3})?$/.test(token)) ms = parseInt(token.slice(0, 8), 36);
     if (ms !== undefined && ms >= OLDEST_STAMP_MS && ms <= Date.now() + 86_400_000) return ms;
   }
   return undefined;
 }
 
-function isOldE2eId(id: string): boolean {
-  if (id === SEED_GROUP_ID || id.startsWith(`${SEED_GROUP_ID}/`)) return false;
+/** Age limit for leftovers: E2E_LEFTOVER_MAX_AGE_MIN minutes (default 120). */
+export function leftoverMaxAgeMin(): number {
+  return Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
+}
+
+function isOldE2eId(id: string, maxAgeMin: number): boolean {
+  // Ids without a time stamp (e.g. the seed catalog group) are never old.
   const stamp = e2eStampTime(id);
-  const maxAgeMin = Number(process.env.E2E_LEFTOVER_MAX_AGE_MIN ?? 120);
   return stamp !== undefined && Date.now() - stamp > maxAgeMin * 60_000;
+}
+
+export type E2eDataRemoved = { groups: number; models: number; templates: number };
+
+/**
+ * Deletes E2E groups (with their models and instances) and templates whose id carries a
+ * run time stamp older than `maxAgeMin` minutes (0 = every stamped one). Seeded data has no
+ * stamp and is never touched. Errors are thrown; sweepLeftoverE2eData only logs them.
+ */
+export async function removeStampedE2eData(page: Page, maxAgeMin: number): Promise<E2eDataRemoved> {
+  const groups = await backendFetch(page, '/v1.0/m8flow/process-groups');
+  if (groups.status !== 200) throw new Error(`listing process groups failed: ${groups.status}`);
+  const groupIds = listRows<{ id: string }>(groups.body)
+    .map((g) => g.id)
+    .filter((id) => isOldE2eId(id.split('/')[0], maxAgeMin));
+  // Children first, so a parent group is empty when it is deleted.
+  groupIds.sort((a, b) => b.split('/').length - a.split('/').length);
+  let models = 0;
+  for (const groupId of groupIds) {
+    const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
+    for (const m of list.status === 200 ? listRows<{ id: string }>(list.body) : []) {
+      if (await removeMockModelCompletely(page, m.id.replace(/\//g, ':'))) models += 1;
+    }
+    await deleteMockGroup(page, groupId);
+  }
+  const oldTemplates = (await listAllTemplates(page)).filter((t) => isOldE2eId(t.templateKey ?? '', maxAgeMin));
+  for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
+  return { groups: groupIds.length, models, templates: oldTemplates.length };
 }
 
 /** Deletes old E2E groups, models, instances and templates left by stopped runs. */
 export async function sweepLeftoverE2eData(page: Page): Promise<void> {
   try {
-    const groups = await backendFetch(page, '/v1.0/m8flow/process-groups');
-    const groupIds = ((groups.status === 200 ? (groups.body as { id: string }[]) : []) ?? [])
-      .map((g) => g.id)
-      .filter((id) => isOldE2eId(id.split('/')[0]));
-    // Children first, so a parent group is empty when it is deleted.
-    groupIds.sort((a, b) => b.split('/').length - a.split('/').length);
-    let models = 0;
-    for (const groupId of groupIds) {
-      const list = await backendFetch(page, `/v1.0/m8flow/process-models?group=${encodeURIComponent(groupId)}`);
-      for (const m of list.status === 200 ? (list.body as { id: string }[]) : []) {
-        const routeId = m.id.replace(/\//g, ':');
-        if (await removeMockModelCompletely(page, routeId)) models += 1;
-      }
-      await deleteMockGroup(page, groupId);
-    }
-    const templates = await backendFetch(page, '/v1.0/m8flow/templates?per_page=200');
-    const rows = templates.status === 200 ? ((templates.body as { results?: { id: number; templateKey: string }[] }).results ?? []) : [];
-    const oldTemplates = rows.filter((t) => isOldE2eId(t.templateKey ?? ''));
-    for (const t of oldTemplates) await deleteMockTemplate(page, t.id);
-    if (groupIds.length || oldTemplates.length) {
-      console.log(`[cleanup] Removed leftovers of earlier runs: ${groupIds.length} group(s), ${models} model(s), ${oldTemplates.length} template(s).`);
+    const removed = await removeStampedE2eData(page, leftoverMaxAgeMin());
+    if (removed.groups || removed.templates) {
+      console.log(`[cleanup] Removed leftovers of earlier runs: ${removed.groups} group(s), ${removed.models} model(s), ${removed.templates} template(s).`);
     }
   } catch (error) {
     console.warn(`[cleanup] leftover sweep skipped: ${String(error).slice(0, 200)}`);
@@ -317,7 +360,7 @@ export async function sweepLeftoversOnce(page: Page): Promise<void> {
   }
 }
 
-async function withAdminPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
+export async function withAdminPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
   const page = await browser.newPage();
   try {
     await useSession(page, tenantAdminCredentials());
@@ -327,7 +370,7 @@ async function withAdminPage(browser: Browser, action: (page: Page) => Promise<v
   }
 }
 
-async function withEditorPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
+export async function withEditorPage(browser: Browser, action: (page: Page) => Promise<void>): Promise<void> {
   const page = await browser.newPage();
   try {
     await useSession(page, editorCredentials());
@@ -337,29 +380,15 @@ async function withEditorPage(browser: Browser, action: (page: Page) => Promise<
   }
 }
 
-/**
- * Call once at the top of a spec file: creates the mock process model before
- * the file's tests and deletes it after them.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useMockProcessModel(test: TestType<any, any>): void {
-  test.beforeAll(async ({ browser }) => {
-    await seedBaselineOnce(browser);
-    await withEditorPage(browser, async (page) => {
-      await ensureMockProcessModel(page);
-    });
-  });
-  test.afterAll(async ({ browser }) => {
-    await withAdminPage(browser, removeMockProcessModel);
-  });
-}
-
 export type ActiveCatalogModel = {
   id: string;
   name: string;
   status: MockModelStatus;
-  /** Upload the mock user-task BPMN + form files and set the BPMN as primary. */
-  files: boolean;
+  /**
+   * Create the model from a seeded catalog template (its files; the template is not changed):
+   * true = the work-from-home template, a string = that template key. false = an empty model.
+   */
+  files: boolean | string;
   /** Start one process instance (the model must be published). */
   instance: boolean;
 };
@@ -374,8 +403,8 @@ export type ActiveCatalogTracker = {
 
 /**
  * A tenant with data: call once at the top of a spec file. Before the file's
- * tests it creates one mock group with the given models (status, files and an
- * optional running instance); after them it removes those models, anything
+ * tests it creates one group with the given models (from seeded catalog
+ * templates, or empty; status and an optional running instance); after them it removes those models, anything
  * recorded in the returned tracker, and the group.
  */
 export function useActiveCatalog(
@@ -388,13 +417,17 @@ export function useActiveCatalog(
   const route = (m: { id: string }) => `${group.id}:${m.id}`;
 
   test.beforeAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     await seedBaselineOnce(browser);
     await withEditorPage(browser, async (page) => {
       await createMockGroup(page, { id: group.id, display_name: group.name });
       for (const m of models) {
-        await createMockModel(page, { group_id: group.id, id: m.id, display_name: m.name });
-        if (m.files) await seedMockModelFiles(page, route(m));
+        if (m.files) {
+          const template = typeof m.files === 'string' ? m.files : 'work-from-home';
+          await modelFromSeededTemplate(page, template, { groupId: group.id, id: m.id, name: m.name, publish: false });
+        } else {
+          await createMockModel(page, { group_id: group.id, id: m.id, display_name: m.name });
+        }
         if (m.status !== 'draft') await setModelStatus(page, route(m), 'published');
         if (m.status === 'paused') await setModelStatus(page, route(m), 'paused');
         if (m.instance) tracker.instances.push(await startMockInstance(page, route(m)));
@@ -403,7 +436,7 @@ export function useActiveCatalog(
   });
 
   test.afterAll(async ({ browser }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
     // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
     // an instance. Each model loses all its instances, is unpublished, then deleted.
     await withAdminPage(browser, async (page) => {

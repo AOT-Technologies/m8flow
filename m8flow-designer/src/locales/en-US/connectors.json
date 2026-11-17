@@ -61,7 +61,30 @@
     "notAllowedBody": "Your role can open Connectors but cannot create or edit a profile.",
     "backToProfiles": "Back to profiles",
     "subtitleAdd": "Secret values are encrypted when saved and are never shown again.",
-    "subtitleEdit": "Credentials are never shown. Use Replace to change one.",
+    "subtitleEdit": "Passwords and tokens are never shown after saving. Use Replace to change one.",
+    "status": {
+      "configured": "Configured",
+      "notSet": "Not set"
+    },
+    "notSetOff": "Not set (default: Off)",
+    "starttlsHelp": "Upgrade the connection with STARTTLS.",
+    "keepSavedSetting": "Leave blank to keep the saved value. Use × to clear it.",
+    "willClear": "Will be cleared on save",
+    "actions": {
+      "clear": "Clear {{label}}",
+      "replace": "Replace {{label}}",
+      "replaceLabel": "Replace",
+      "cancel": "Cancel {{label}} replacement",
+      "cancelLabel": "Cancel",
+      "remove": "Remove {{label}}",
+      "removeLabel": "Remove",
+      "undo": "Undo {{label}} removal",
+      "undoLabel": "Undo"
+    },
+    "removeSecret": {
+      "title": "Remove {{label}}?",
+      "description": "This saved credential will be removed when you save changes."
+    },
     "loading": "Loading profile…",
     "requiredNote": "Fields marked <req>*</req> are required.",
     "optional": "(optional)",
@@ -73,7 +96,6 @@
     "identifierPlaceholder": "Generated from the display name",
     "descriptionPlaceholder": "What this profile is for, e.g. which environment it targets.",
     "valueSaved": "Leave blank to keep the saved value.",
-    "keepCurrentSetting": "Keep current setting",
     "offDefault": "Off (default)",
     "on": "On",
     "off": "Off",
@@ -83,6 +105,7 @@
     "saveChanges": "Save changes",
     "saveProfile": "Save profile",
     "unsaved": {
+      "saving": "Wait for the save to finish before leaving.",
       "title": "Discard unsaved changes?",
       "description": "You have changes to this profile that have not been saved.",
       "keepEditing": "Keep editing",

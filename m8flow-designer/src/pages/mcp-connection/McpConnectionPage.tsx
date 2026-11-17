@@ -13,7 +13,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-const MCP_SERVER_URL = import.meta.env.VITE_MCP_SERVER_URL ?? '';
+// Users paste this into an MCP client outside the browser, so a relative build value
+// (e.g. "/mcp") is resolved against the current host; absolute values pass through.
+const MCP_SERVER_URL = import.meta.env.VITE_MCP_SERVER_URL
+  ? new URL(import.meta.env.VITE_MCP_SERVER_URL, window.location.origin).href
+  : '';
 const SERVER_NAME = 'm8flow';
 
 // Outline pill used by every client-card action (matches the MCP Connection mockup).

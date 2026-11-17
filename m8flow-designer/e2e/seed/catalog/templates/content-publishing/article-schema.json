@@ -1,0 +1,32 @@
+{
+  "title": "Article",
+  "description": "E2E seed form: the article draft and where it goes.",
+  "type": "object",
+  "required": [
+    "headline",
+    "body",
+    "website",
+    "newsletter"
+  ],
+  "properties": {
+    "headline": {
+      "type": "string",
+      "title": "Headline",
+      "minLength": 3
+    },
+    "body": {
+      "type": "string",
+      "title": "Body"
+    },
+    "website": {
+      "type": "boolean",
+      "title": "Publish on the website",
+      "default": true
+    },
+    "newsletter": {
+      "type": "boolean",
+      "title": "Include in the newsletter",
+      "default": false
+    }
+  }
+}

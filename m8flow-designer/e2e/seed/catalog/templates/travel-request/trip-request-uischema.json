@@ -1,0 +1,9 @@
+{
+  "ui:order": [
+    "destination",
+    "purpose",
+    "nights",
+    "estimated_cost",
+    "international"
+  ]
+}

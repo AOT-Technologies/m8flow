@@ -15,6 +15,9 @@ from typing import Any
 from defusedxml import ElementTree as SafeElementTree
 from sqlalchemy.orm import Session
 
+from m8flow_core import api
+from m8flow_core.errors import ValidationError
+
 from m8flow_backend.errors import ApiError
 from m8flow_backend.catalog.collaboration import (
     BPMN,
@@ -1215,11 +1218,19 @@ def _reject_unsupported_constructs(xml: str) -> None:
 
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
-    # runs only non-interrupting timer ones (M8F-667).
+    # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).
     if not _event_subprocesses_supported(root):
         raise ApiError(
-            "unsupported_bpmn", "Only non-interrupting timer event subprocesses are supported", 400
+            "unsupported_bpmn",
+            "Only error, escalation and non-interrupting timer event subprocesses are supported",
+            400,
         )
+
+    if any(
+        event.find(BPMN + "compensateEventDefinition") is not None
+        for event in root.iter(BPMN + "startEvent")
+    ):
+        raise ApiError("unsupported_bpmn", "Compensation start events are not supported", 400)
 
     unsupported = set(UNSUPPORTED_CONSTRUCTS)
     supported_messages = set()
@@ -1242,8 +1253,28 @@ def _reject_unsupported_constructs(xml: str) -> None:
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]
-            if construct in unsupported and element not in supported_messages:
+            if (
+                construct in unsupported
+                and element not in supported_messages
+                and element.tag != BPMN + "compensateEventDefinition"
+            ):
                 raise ApiError("unsupported_bpmn", f"Unsupported BPMN construct: {construct}", 400)
+
+    feature_tags = {BPMN + "compensateEventDefinition", BPMN + "cancelEventDefinition"}
+    for element in root.iter():
+        if not isinstance(element.tag, str):
+            continue
+        if element.tag in feature_tags or (
+            element.tag.startswith(BPMN) and element.get("isForCompensation") in {"true", "1"}
+        ):
+            validate = getattr(api, "validate_compensation_bpmn", None)
+            if validate is None:
+                raise ApiError("unsupported_bpmn", "The installed core does not support compensation or Cancel Events", 400)
+            try:
+                validate(xml)
+            except ValidationError as exc:
+                raise ApiError("unsupported_bpmn", str(exc), 400) from exc
+            break
 
 
 def _xml_boolean_is_true(value: str | None) -> bool:
@@ -1326,20 +1357,33 @@ def _validate_multi_instance_features(root) -> None:
 
 
 def _event_subprocesses_supported(root) -> bool:
-    """True when every event subprocess starts only from non-interrupting timer events."""
+    """True when every start event of every event subprocess has a trigger core runs."""
     for sub in root.iter():
         if _xml_local_name(sub.tag) != "subProcess" or not _xml_boolean_is_true(
             sub.get("triggeredByEvent")
         ):
             continue
         starts = [el for el in sub if _xml_local_name(el.tag) == "startEvent"]
-        if not starts or not all(
-            not _xml_boolean_is_true(start.get("isInterrupting", "true"))
-            and any(_xml_local_name(d.tag) == "timerEventDefinition" for d in start)
-            for start in starts
-        ):
+        if not starts or not all(_event_subprocess_start_supported(start) for start in starts):
             return False
     return True
+
+
+def _event_subprocess_start_supported(start) -> bool:
+    """Exactly one event definition: error or escalation (M8F-665), or a timer on a
+    non-interrupting start (M8F-667)."""
+    definitions = [
+        _xml_local_name(child.tag)
+        for child in start
+        if _xml_local_name(child.tag).endswith("EventDefinition")
+    ]
+    if len(definitions) != 1:
+        return False
+    if definitions[0] in {"errorEventDefinition", "escalationEventDefinition"}:
+        return True
+    return definitions[0] == "timerEventDefinition" and not _xml_boolean_is_true(
+        start.get("isInterrupting", "true")
+    )
 
 
 def _tenant_models_root(tenant_id: str) -> Path:

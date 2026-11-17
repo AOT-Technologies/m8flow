@@ -5,6 +5,7 @@ import type { Browser, Page } from '@playwright/test';
 
 import {
   editorCredentials,
+  gotoExpectingRedirect,
   integratorCredentials,
   reviewerCredentials,
   signInAsPlatformAdmin,
@@ -27,10 +28,12 @@ import {
   findTenantGroup,
   getSeedTenant,
   keycloakUserExists,
+  removeTenantMember,
   type SeedUser,
 } from '../helpers/backendApi';
 import { TEST_TENANT_SLUG } from '../helpers/fixtures';
-import { ensureMockProcessModel, sweepLeftoversOnce } from '../helpers/mockCatalog';
+import { removeLegacyMockCatalog, sweepLeftoversOnce } from '../helpers/mockCatalog';
+import { ensureConnectorProfiles, ensureSeedCatalog, sweepCatalogLeftovers } from '../helpers/seedCatalog';
 
 /**
  * E2E baseline seed (see baseline.json).
@@ -41,7 +44,8 @@ import { ensureMockProcessModel, sweepLeftoversOnce } from '../helpers/mockCatal
  *   2. the platform admin signs in;
  *   3. the second tenant exists, with its own test users (editor, submitter,
  *      reviewer): each in a test group that carries that one role, signed in once;
- *   4. the shared mock process model exists, with its files.
+ *   4. leftovers of stopped runs are removed, and the seeded process catalog
+ *      (baseline.json "catalog", files in seed/catalog/) is in place.
  * Every step checks before it writes, so running it again changes nothing.
  * A step that fails is tried once more before the seed stops (see step()).
  *
@@ -58,26 +62,34 @@ type Baseline = {
   users: { role: string; groups?: string[] }[];
   platformAdmins: { role: string }[];
   secondTenant: { enabled: boolean; users?: { username: string; role: string; group: string }[] };
-  mockModel: { enabled: boolean };
+  catalog: { group: { id: string; name: string }; templates?: CatalogTemplate[]; models: CatalogModel[] };
+  connectorProfiles?: { connector_type: string; profile_name: string; display_name: string; description?: string }[];
 };
 
-const PERSONAS: Record<string, () => DesignerPersona> = {
-  editor: editorCredentials,
-  submitter: submitterCredentials,
-  reviewer: reviewerCredentials,
-  tenantAdmin: tenantAdminCredentials,
-  viewer: viewerCredentials,
-  integrator: integratorCredentials,
-  superAdmin: superAdminCredentials,
-};
+/** A template: its files are everything in e2e/seed/catalog/templates/<key>/ (imported as key e2e-<key>). */
+export type CatalogTemplate = { key: string; name: string; category?: string };
+
+/** A seeded process model: its files are everything in e2e/seed/catalog/<id>/. */
+export type CatalogModelStatus = 'draft' | 'published' | 'paused';
+export type CatalogModel = { id: string; name: string; primary: string; status: CatalogModelStatus; template?: string };
+
+const PERSONAS = new Map<string, () => DesignerPersona>([
+  ['editor', editorCredentials],
+  ['submitter', submitterCredentials],
+  ['reviewer', reviewerCredentials],
+  ['tenantAdmin', tenantAdminCredentials],
+  ['viewer', viewerCredentials],
+  ['integrator', integratorCredentials],
+  ['superAdmin', superAdminCredentials],
+]);
 
 export function loadBaseline(): Baseline {
   return JSON.parse(readFileSync(new URL('./baseline.json', import.meta.url), 'utf-8')) as Baseline;
 }
 
 function persona(role: string): DesignerPersona {
-  const make = PERSONAS[role];
-  if (!make) throw new Error(`[seed] baseline.json: unknown role "${role}" (known: ${Object.keys(PERSONAS).join(', ')})`);
+  const make = PERSONAS.get(role);
+  if (!make) throw new Error(`[seed] baseline.json: unknown role "${role}" (known: ${[...PERSONAS.keys()].join(', ')})`);
   return make();
 }
 
@@ -132,12 +144,21 @@ async function seedUsers(browser: Browser, baseline: Baseline): Promise<string[]
   for (const { role } of baseline.users) {
     const user = persona(role);
     await step(browser, `sign-in of ${role} (${user.username})`, async (page) => {
+      let pickerShown: boolean;
       try {
-        await signInAsSharedRealmUser(page, user, baseline.tenant);
+        pickerShown = await signInAsSharedRealmUser(page, user, baseline.tenant);
       } catch (error) {
         throw new Error(
           `[seed] ${role} (${user.username}) cannot sign in to tenant "${baseline.tenant}". ` +
             `Is the user in the Keycloak realm import and a member of the tenant? ${String(error).slice(0, 300)}`,
+        );
+      }
+      // The tests expect every test user in one tenant: they sign in straight to Home.
+      if (pickerShown) {
+        throw new Error(
+          `[seed] ${role} (${user.username}) belongs to more than one tenant (the tenant picker appeared at sign-in). ` +
+            `The tests need each test user in "${baseline.tenant}" only: remove them from the other tenant(s) ` +
+            '(super admin > Tenants > the tenant > Members), then run again.',
         );
       }
       const result = await backendFetch(page, '/v1.0/onboarding');
@@ -186,6 +207,14 @@ async function seedPlatform(browser: Browser, baseline: Baseline): Promise<strin
     if (!baseline.secondTenant.enabled) return undefined;
     const tenant = await ensureSecondParityTenant(page);
     detail(`second tenant "${tenant.slug}" is in place`);
+    // The test users belong to the tenant under test only. PAR-03 adds the integrator to the
+    // second tenant for one test and removes it afterwards; a stopped run leaves it there.
+    for (const { role } of baseline.users) {
+      const user = persona(role);
+      if (await removeTenantMember(page, tenant.id, user.username)) {
+        log(`${role} (${user.username}) was still in the second tenant "${tenant.slug}" (left by a stopped run): removed`);
+      }
+    }
     for (const user of baseline.secondTenant.users ?? []) {
       const groupCreated = await ensureTenantGroup(page, tenant.id, user.group, [user.role]);
       const userCreated = await ensureKeycloakUser(page, secondTenantUser(user.username, user.role));
@@ -242,22 +271,73 @@ async function signInSecondTenantUsers(browser: Browser, baseline: Baseline, slu
   return done;
 }
 
-/** Step 4: the shared mock model exists, with its files. */
-async function seedCatalog(browser: Browser, baseline: Baseline): Promise<{ mockModel: boolean }> {
-  return step(browser, 'leftover clean-up and shared mock model', async (page) => {
-    await useSession(page, editorCredentials());
+/**
+ * Step 4: leftovers of stopped runs are removed (as tenant admin, who may
+ * delete every instance), then the seeded process catalog is made to match
+ * baseline.json and e2e/seed/catalog/ (as editor).
+ */
+async function seedCatalog(browser: Browser): Promise<{ catalog: string[]; catalogFilesWritten: number; catalogTemplatesImported: string[]; catalogLeftovers: { copies: number; instances: number } }> {
+  const catalogLeftovers = await step(browser, 'leftover clean-up', async (page) => {
+    await useSession(page, tenantAdminCredentials());
     await sweepLeftoversOnce(page);
-    if (baseline.mockModel.enabled) {
-      await ensureMockProcessModel(page);
-      detail('shared mock model is in place');
-    }
-    return { mockModel: baseline.mockModel.enabled };
+    await removeLegacyMockCatalog(page);
+    const leftovers = await sweepCatalogLeftovers(page);
+    const profiles = await ensureConnectorProfiles(page);
+    if (profiles.created.length) detail(`connector profile(s) created: ${profiles.created.join(', ')}`);
+    if (profiles.skipped.length) detail(`connector profile(s) NOT created, their routes are skipped: ${profiles.skipped.join('; ')}`);
+    return leftovers;
+  });
+  return step(browser, 'seeded process catalog', async (page) => {
+    await useSession(page, editorCredentials());
+    const { models, filesWritten, templatesImported } = await ensureSeedCatalog(page);
+    detail(`seeded catalog: ${models.join(', ')} in place (${filesWritten} file(s) written, template(s) imported: ${templatesImported.join(', ') || 'none'})`);
+    return { catalog: models, catalogFilesWritten: filesWritten, catalogTemplatesImported: templatesImported, catalogLeftovers };
   });
 }
 
 function markerFile(): string | undefined {
   const runId = process.env.E2E_RUN_ID;
   return runId ? join('e2e', 'reports', runId, 'seed.json') : undefined;
+}
+
+const KEYCLOAK_READY_WAIT_MS = Number(process.env.M8FLOW_E2E_KEYCLOAK_WAIT_SEC ?? 180) * 1000;
+
+/**
+ * Step 0: the sign-in page is ready. Right after a fresh stack start, Keycloak answers
+ * while its entrypoint is still configuring the realm, and serves the "sign-in form did
+ * not fully load" page instead of the username + password form. The E2E gate waits for
+ * that itself; a local run started early waits here (up to M8FLOW_E2E_KEYCLOAK_WAIT_SEC,
+ * default 180 s) instead of failing every sign-in.
+ */
+async function waitForKeycloakSignIn(browser: Browser): Promise<void> {
+  const started = Date.now();
+  let waited = false;
+  for (;;) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await gotoExpectingRedirect(page, '/');
+      const form = page.locator('#password');
+      const fallback = page.locator('#m8f-return-to-full-sign-in');
+      await form.or(fallback).first().waitFor({ state: 'visible', timeout: 30_000 }).catch(() => undefined);
+      if (await form.isVisible()) {
+        if (waited) log(`Keycloak sign-in page ready after ${Math.round((Date.now() - started) / 1000)} s`);
+        return;
+      }
+    } finally {
+      await context.close();
+    }
+    if (Date.now() - started > KEYCLOAK_READY_WAIT_MS) {
+      throw new Error(
+        `[seed] the Keycloak sign-in page is not ready after ${KEYCLOAK_READY_WAIT_MS / 1000} s (no username + password form). ` +
+          'After a fresh stack start Keycloak needs a few minutes to configure the realm: wait for ' +
+          '"[keycloak-entrypoint] Realm configuration complete." in the keycloak logs, then run again.',
+      );
+    }
+    if (!waited) log('Keycloak sign-in page not ready yet (realm still being configured?); waiting...');
+    waited = true;
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+  }
 }
 
 /** Runs the whole seed now (also usable on its own, e.g. from a script). */
@@ -270,12 +350,13 @@ export async function seedBaseline(browser: Browser): Promise<void> {
   }
   const started = Date.now();
   detail(`seeding the baseline for tenant "${baseline.tenant}"`);
+  await waitForKeycloakSignIn(browser);
   const secondTenant = await seedPlatform(browser, baseline);
   const users = await seedUsers(browser, baseline);
   const secondTenantUsers = secondTenant ? await signInSecondTenantUsers(browser, baseline, secondTenant) : [];
-  const catalog = await seedCatalog(browser, baseline);
+  const catalog = await seedCatalog(browser);
   const seconds = Math.round((Date.now() - started) / 100) / 10;
-  const extras = [secondTenant ? 'second tenant' : '', catalog.mockModel ? 'mock model' : ''].filter(Boolean);
+  const extras = [secondTenant ? 'second tenant' : '', catalog.catalog.length ? 'seed catalog' : ''].filter(Boolean);
   log(`baseline ready in ${seconds} s (${users.length + secondTenantUsers.length} users${extras.map((e) => `, ${e}`).join('')})`);
 
   const file = markerFile();

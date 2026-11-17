@@ -1,39 +1,28 @@
 import type { Page } from '@playwright/test';
 
-import { BACKEND_BASE_URL, SEED_MODEL_ROUTE_ID } from './fixtures';
+import { BACKEND_BASE_URL } from './fixtures';
 
 /**
- * Seeds a phase-dedicated BPMN/DMN file into the seed process model, via the
- * same `PUT /process-models/{id}/files/{file_name}` route BpmnCanvas's own
- * Save button calls (processes_controller.put_process_model_file — writes a
- * new file into an *existing* model directory, it isn't restricted to file
- * names that already exist there).
+ * Reads, writes and deletes single files of a process model through the
+ * same routes the modeler uses (GET/PUT/DELETE
+ * /process-models/{id}/files/{file_name}). PUT also adds a file that does
+ * not exist yet.
  *
- * Deliberately never targets SEED_PRIMARY_FILE: each phase's coverage
- * diagram gets its own file name (see e2e/fixtures/*.bpmn), so seeding one
- * phase's fixture can never corrupt another phase's, or CHK-06..09's,
- * expectations of wfh-approval.bpmn's own *content*. Re-running a phase's
- * spec just overwrites its own fixture back to the known-good XML, so no
- * cleanup is needed for that file's own tests.
- *
- * Stable phase fixtures (phase2-*.bpmn, etc.) are overwritten in place and
- * left on disk. Unique per-run files should call `deleteProcessModelFile`
- * in an after-hook so they do not accumulate. Any assertion that counts
- * this model's files must tolerate leftover fixtures (>=, not ===).
+ * Used by the seed (helpers/seedCatalog.ts) to keep the seeded models equal
+ * to the files in e2e/seed/catalog/, and by tests that add a file to their
+ * own copy of a seeded model. Never call it on a seeded model from a test.
  *
  * Uses `page.request` (not a fresh APIRequestContext) so it fires from the
- * page's own already-authenticated session — call this after
- * `signInAsSharedRealmUser`, not before.
+ * page's own already-authenticated session -- call it after signing in.
  */
 export async function seedProcessModelFile(
   page: Page,
   fileName: string,
   xmlContent: string,
-  modelRouteId: string = SEED_MODEL_ROUTE_ID,
+  modelRouteId: string,
 ): Promise<void> {
   const accessToken = await readAccessTokenCookie(page);
-  const encodedId = modelRouteId.split(':').map(encodeURIComponent).join(':');
-  const url = `${BACKEND_BASE_URL}/v1.0/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
+  const url = fileUrl(modelRouteId, fileName);
 
   const response = await page.request.put(url, {
     data: xmlContent,
@@ -54,11 +43,10 @@ export async function seedProcessModelFile(
 export async function deleteProcessModelFile(
   page: Page,
   fileName: string,
-  modelRouteId: string = SEED_MODEL_ROUTE_ID,
+  modelRouteId: string,
 ): Promise<void> {
   const accessToken = await readAccessTokenCookie(page);
-  const encodedId = modelRouteId.split(':').map(encodeURIComponent).join(':');
-  const url = `${BACKEND_BASE_URL}/v1.0/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
+  const url = fileUrl(modelRouteId, fileName);
 
   const response = await page.request.delete(url, {
     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
@@ -69,6 +57,28 @@ export async function deleteProcessModelFile(
       `deleteProcessModelFile: DELETE ${fileName} failed with ${response.status()} — ${await response.text()}`,
     );
   }
+}
+
+/** Content of a process-model file, or undefined when it does not exist. */
+export async function readProcessModelFile(
+  page: Page,
+  fileName: string,
+  modelRouteId: string,
+): Promise<string | undefined> {
+  const accessToken = await readAccessTokenCookie(page);
+  const response = await page.request.get(fileUrl(modelRouteId, fileName), {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  });
+  if (response.status() === 404) return undefined;
+  if (!response.ok()) {
+    throw new Error(`readProcessModelFile: GET ${fileName} failed with ${response.status()} — ${await response.text()}`);
+  }
+  return response.text();
+}
+
+function fileUrl(modelRouteId: string, fileName: string): string {
+  const encodedId = modelRouteId.split(':').map(encodeURIComponent).join(':');
+  return `${BACKEND_BASE_URL}/v1.0/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
 }
 
 /** Same cookie api.ts's apiGet/saveProcessModelFileContent read to build the Bearer header. */

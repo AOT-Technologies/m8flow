@@ -1,0 +1,14 @@
+{
+  "title": "Purchasing",
+  "description": "E2E seed form: the purchase order raised for the backorder.",
+  "type": "object",
+  "required": [
+    "po_number"
+  ],
+  "properties": {
+    "po_number": {
+      "type": "string",
+      "title": "Purchase order number"
+    }
+  }
+}

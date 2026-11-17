@@ -2,9 +2,15 @@ name: m8flow-mcp-server CI/CD
 # =============================================================================
 # Triggers:
 #   PR to main / next-gen        → CI only (lint, test, SAST, Trivy, image build)
-#   Push to main / next-gen      → CI only (the image is built, not published)
-#   release.yaml                 → publishes X.Y.Z-rc images to Docker Hub (m8flow/*)
-#   workflow_dispatch            → CD only (deploy a released image to dev, qa or demo)
+#   Push to main                 → CI, then publishes the image as sha-<commit>
+#                                  (the only build of that commit; built once)
+#   Push to next-gen             → CI only (the image is built, not published)
+#   release.yaml                 → retags existing images (sha-<commit> → X.Y.Z-rc
+#                                  → X.Y.Z); builds only an image that is missing
+#   workflow_dispatch            → CD only (deploy a published image to dev, qa or demo)
+#
+# The push paths below are also what release.yaml reads to find which commit's
+# image a release ships, so they must list every file the image is built from.
 # =============================================================================
 
 on:
@@ -38,7 +44,7 @@ on:
           - qa
           - demo
       image_uri:
-        description: "Pre-built image URI to deploy (e.g. docker.io/m8flow/m8flow-mcp:a1b2c3d)"
+        description: "Published image URI to deploy (e.g. docker.io/m8flow/m8flow-mcp:sha-<commit> or :2.0.0)"
         required: true
         type: string
       dry_run:
@@ -74,16 +80,29 @@ jobs:
     with:
       config_path: m8flow-mcp/devx-ci.yaml
       auto_merge: false
-      # Never publishes, as on main: a PR or a merge runs the full CI and
-      # discards the image. release.yaml is the only workflow that pushes
-      # images (X.Y.Z-rc, to Docker Hub); deploys are the manual dispatch below.
-      push: false
+      # Build once: a merge to main publishes its image as sha-<commit>, and
+      # every deploy and release reuses that image by digest. Pull requests
+      # and other branches build and discard. Main only, because the Docker
+      # Hub OIDC connection trusts main only.
+      push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      image_tag: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('sha-{0}', github.sha) || '' }}
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       GOOGLE_CHAT_WEBHOOK: ${{ secrets.GOOGLE_CHAT_WEBHOOK }}
 
+  # Stops a deploy before it touches the cluster when image_uri is not this
+  # component's image, or does not exist on Docker Hub.
+  verify-image:
+    name: Verify Deploy Image
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/verify-image.yml
+    with:
+      image_uri: ${{ github.event.inputs.image_uri }}
+      config_path: m8flow-mcp/devx-ci.yaml
+
   cd-dev:
     name: Deploy MCP Server → DEV
+    needs: verify-image
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
@@ -99,6 +118,7 @@ jobs:
 
   cd-qa:
     name: Deploy MCP Server → QA
+    needs: verify-image
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'qa'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:
@@ -114,6 +134,7 @@ jobs:
 
   cd-demo:
     name: Deploy MCP Server → DEMO
+    needs: verify-image
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'demo'
     uses: AOT-Technologies/devx-reusable-workflows/.github/workflows/cd-orchestrator.yaml@8c34de8ae4f1df16c8bfa0ba484a33982d29a4ed # v1.4.0
     with:

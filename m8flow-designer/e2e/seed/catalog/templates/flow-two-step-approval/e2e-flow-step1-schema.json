@@ -1,0 +1,14 @@
+{
+  "title": "First approval",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "step1_note"
+  ],
+  "properties": {
+    "step1_note": {
+      "type": "string",
+      "title": "Reviewer note"
+    }
+  }
+}

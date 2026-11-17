@@ -16,7 +16,8 @@
     "apiKeys": "Chaves de API",
     "system": "Sistema",
     "celery": "Celery",
-    "nats": "NATS"
+    "nats": "NATS",
+    "configurationVariables": "Configuration variables"
   },
   "locale": {
     "label": "Idioma",
@@ -65,6 +66,7 @@
     "nats": "Carregando NATS…",
     "celery": "Carregando Celery…",
     "apiKeys": "Carregando chaves de API…",
-    "invitation": "Carregando convite…"
+    "invitation": "Carregando convite…",
+    "namedValues": "Loading configuration variables…"
   }
 }

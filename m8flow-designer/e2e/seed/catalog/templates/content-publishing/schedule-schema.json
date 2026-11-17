@@ -1,0 +1,15 @@
+{
+  "title": "Schedule",
+  "description": "E2E seed form: when to publish.",
+  "type": "object",
+  "required": [
+    "publish_on"
+  ],
+  "properties": {
+    "publish_on": {
+      "type": "string",
+      "title": "Publish on",
+      "format": "date"
+    }
+  }
+}

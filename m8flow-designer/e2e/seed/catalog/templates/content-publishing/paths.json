@@ -1,0 +1,180 @@
+{
+  "$comment": "Routes through this process, as data. Each path lists the answers given at each human task (by BPMN id; a list is used once per loop round), the tasks left alone (a timer takes over), what it must reach and the data it must end with. Used by e2e/seed/tools/validate_catalog.py (engine only) and by run-seeded-processes.spec.ts (the running app). expect_end / expect_completed / expect_not_reached / expect_data.at use top-level element ids (the app lists top-level elements only). \"@now+5s\" becomes a date-time; \"@date+5s\" / \"@time+5s\" its date and its time (UTC, with offset).",
+  "paths": [
+    {
+      "id": "PUB-01",
+      "title": "Publishing: approved first time, website only",
+      "answers": {
+        "draft_article": {
+          "headline": "E2E Product Launch",
+          "body": "We are launching a new product next week for all customers.",
+          "website": true,
+          "newsletter": false
+        },
+        "editorial_review": {
+          "outcome": "publish"
+        },
+        "schedule_article": {
+          "publish_on": "@date+0s"
+        }
+      },
+      "expect_tasks": [
+        "draft_article",
+        "editorial_review",
+        "schedule_article"
+      ],
+      "expect_end": [
+        "end_published"
+      ],
+      "expect_completed": [
+        "count_words",
+        "wait_publish",
+        "post_website",
+        "cool_down",
+        "notify_subscribers"
+      ],
+      "expect_not_reached": [
+        "revise_article",
+        "prepare_newsletter"
+      ],
+      "expect_data": {
+        "at": "end_published",
+        "values": {
+          "published_url": "/news/e2e-product-launch",
+          "word_count": 11
+        }
+      }
+    },
+    {
+      "id": "PUB-02",
+      "title": "Publishing: sent back once for changes, then website and newsletter",
+      "answers": {
+        "draft_article": {
+          "headline": "E2E Product Launch",
+          "body": "We are launching a new product next week for all customers.",
+          "website": true,
+          "newsletter": true
+        },
+        "editorial_review": [
+          {
+            "outcome": "changes",
+            "notes": "Shorter please"
+          },
+          {
+            "outcome": "publish"
+          }
+        ],
+        "revise_article": {
+          "body": "New product launch next week."
+        },
+        "schedule_article": {
+          "publish_on": "@date+0s"
+        },
+        "prepare_newsletter": {}
+      },
+      "expect_tasks": [
+        "draft_article",
+        "editorial_review",
+        "revise_article",
+        "editorial_review",
+        "schedule_article",
+        "prepare_newsletter"
+      ],
+      "expect_end": [
+        "end_published"
+      ],
+      "expect_completed": [
+        "revise_article",
+        "post_website",
+        "prepare_newsletter"
+      ],
+      "expect_data": {
+        "at": "end_published",
+        "values": {
+          "word_count": 5,
+          "newsletter": true
+        }
+      }
+    },
+    {
+      "id": "PUB-03",
+      "title": "Publishing: newsletter only",
+      "answers": {
+        "draft_article": {
+          "headline": "E2E Product Launch",
+          "body": "We are launching a new product next week for all customers.",
+          "website": false,
+          "newsletter": true
+        },
+        "editorial_review": {
+          "outcome": "publish"
+        },
+        "schedule_article": {
+          "publish_on": "@date+0s"
+        },
+        "prepare_newsletter": {}
+      },
+      "expect_tasks": [
+        "draft_article",
+        "editorial_review",
+        "schedule_article",
+        "prepare_newsletter"
+      ],
+      "expect_end": [
+        "end_published"
+      ],
+      "expect_not_reached": [
+        "post_website"
+      ],
+      "expect_data": {
+        "at": "end_published",
+        "values": {
+          "website": false
+        },
+        "absent": [
+          "published_url"
+        ]
+      }
+    },
+    {
+      "id": "PUB-04",
+      "title": "Publishing: no channel ticked, nothing is posted (inclusive gateway default)",
+      "answers": {
+        "draft_article": {
+          "headline": "E2E Internal Note",
+          "body": "Only for the archive.",
+          "website": false,
+          "newsletter": false
+        },
+        "editorial_review": {
+          "outcome": "publish"
+        },
+        "schedule_article": {
+          "publish_on": "@date+0s"
+        }
+      },
+      "expect_tasks": [
+        "draft_article",
+        "editorial_review",
+        "schedule_article"
+      ],
+      "expect_end": [
+        "end_published"
+      ],
+      "expect_not_reached": [
+        "post_website",
+        "prepare_newsletter"
+      ],
+      "expect_data": {
+        "at": "end_published",
+        "values": {
+          "website": false,
+          "newsletter": false
+        },
+        "absent": [
+          "published_url"
+        ]
+      }
+    }
+  ]
+}

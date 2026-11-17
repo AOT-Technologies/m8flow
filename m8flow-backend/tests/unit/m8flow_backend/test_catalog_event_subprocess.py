@@ -1,8 +1,7 @@
-"""Event subprocess support in the catalog save guard (M8F-667).
+"""Event subprocess support in the catalog save guard (M8F-667, M8F-665).
 
-m8flow-core schedules a non-interrupting timer event subprocess as a timer of
-the running instance. Other event subprocesses aren't supported yet, so the
-catalog still rejects them on save.
+The catalog accepts event subprocesses whose start events are non-interrupting
+timers (M8F-667) or error or escalation events (M8F-665), and rejects the rest.
 """
 
 from __future__ import annotations
@@ -40,9 +39,14 @@ NON_INTERRUPTING_TIMER = f'<bpmn:startEvent id="EspStart" isInterrupting="false"
             + f'<bpmn:startEvent id="EspStart2" isInterrupting="false">{TIMER}</bpmn:startEvent>',
             id="two-timers",
         ),
+        pytest.param(
+            NON_INTERRUPTING_TIMER
+            + '<bpmn:startEvent id="EspStart2" isInterrupting="false"><bpmn:errorEventDefinition /></bpmn:startEvent>',
+            id="timer-and-error",
+        ),
     ],
 )
-def test_non_interrupting_timer_event_subprocess_is_accepted(start_event):
+def test_supported_event_subprocess_is_accepted(start_event):
     catalog._reject_unsupported_constructs(_bpmn(start_event))
 
 
@@ -51,12 +55,7 @@ def test_non_interrupting_timer_event_subprocess_is_accepted(start_event):
     [
         pytest.param(f'<bpmn:startEvent id="EspStart">{TIMER}</bpmn:startEvent>', id="interrupting-timer"),
         pytest.param(
-            '<bpmn:startEvent id="EspStart"><bpmn:errorEventDefinition /></bpmn:startEvent>', id="error"
-        ),
-        pytest.param(
-            NON_INTERRUPTING_TIMER
-            + '<bpmn:startEvent id="EspStart2" isInterrupting="false"><bpmn:errorEventDefinition /></bpmn:startEvent>',
-            id="timer-and-error",
+            '<bpmn:startEvent id="EspStart"><bpmn:signalEventDefinition /></bpmn:startEvent>', id="signal"
         ),
         pytest.param("", id="no-start-event"),
     ],

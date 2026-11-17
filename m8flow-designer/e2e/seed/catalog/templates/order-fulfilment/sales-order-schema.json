@@ -1,0 +1,33 @@
+{
+  "title": "Sales order",
+  "description": "E2E seed form: the order to fulfil. Put 'backorder' in the items to test the purchasing escalation.",
+  "type": "object",
+  "required": [
+    "customer",
+    "item_list",
+    "payment_ok",
+    "dispatch_on"
+  ],
+  "properties": {
+    "customer": {
+      "type": "string",
+      "title": "Customer",
+      "minLength": 2
+    },
+    "item_list": {
+      "type": "string",
+      "title": "Items (comma separated)",
+      "default": "laptop,mouse"
+    },
+    "payment_ok": {
+      "type": "boolean",
+      "title": "Payment succeeds",
+      "default": true
+    },
+    "dispatch_on": {
+      "type": "string",
+      "title": "Dispatch on",
+      "format": "date"
+    }
+  }
+}

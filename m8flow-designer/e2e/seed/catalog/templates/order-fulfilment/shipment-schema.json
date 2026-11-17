@@ -1,0 +1,24 @@
+{
+  "title": "Shipment",
+  "description": "E2E seed form: how the order was shipped.",
+  "type": "object",
+  "required": [
+    "carrier",
+    "tracking"
+  ],
+  "properties": {
+    "carrier": {
+      "type": "string",
+      "title": "Carrier",
+      "enum": [
+        "DHL",
+        "FedEx",
+        "BlueDart"
+      ]
+    },
+    "tracking": {
+      "type": "string",
+      "title": "Tracking number"
+    }
+  }
+}

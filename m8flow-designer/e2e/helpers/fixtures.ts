@@ -1,42 +1,24 @@
 /**
- * Mock process model used by the Processes and Modeler specs. It is NOT real
- * instance data: helpers/mockCatalog.ts creates it (with the mock files in
- * e2e/fixtures/mock-model/) before a spec runs and deletes it afterwards, so
- * the tests work on any instance -- empty, groups only, or groups with models
- * -- and never change the instance's own process models.
- * The constant names keep the old SEED_ prefix so the specs did not need to
- * change; the values now point at the mock model.
+ * Shared constants for the E2E specs.
+ *
+ * The SEED_PRIMARY_FILE / SEED_USER_TASK_* values describe wfh-approval.bpmn
+ * (e2e/seed/catalog/templates/work-from-home/): the primary diagram of the
+ * seeded "E2E Work From Home Request" model and of the mock models the
+ * Processes specs create. Modeler specs open
+ * their own copy of the seeded model (helpers/seedCatalog.ts).
  */
+
 /** Slug of the seed tenant: used for /tenants/slug/{slug} and the tenant picker
  * (organization-option-{alias}; the Keycloak organization alias is the tenant slug). */
 export const SEED_TENANT_SLUG = 'm8flow';
 /** Tenant the tests work in. A user who belongs to several tenants is put in
  * this one whenever the "Select a Tenant" page appears (see continueInTenant). */
 export const TEST_TENANT_SLUG = process.env.M8FLOW_E2E_TENANT_SLUG ?? SEED_TENANT_SLUG;
-export const SEED_GROUP_ID = 'e2e-mock-catalog';
-export const SEED_GROUP_NAME = 'E2E Mock Catalog';
-export const SEED_MODEL_ID = 'e2e-mock-model';
-export const SEED_MODEL_ROUTE_ID = `${SEED_GROUP_ID}:${SEED_MODEL_ID}`;
-export const SEED_MODEL_NAME = 'E2E Mock Model';
 export const SEED_PRIMARY_FILE = 'wfh-approval.bpmn';
-export const SEED_MODEL_DETAIL_PATH = `/processes/${SEED_MODEL_ROUTE_ID}`;
-export const SEED_MODELER_PATH = `/processes/${SEED_MODEL_ROUTE_ID}/modeler/${SEED_PRIMARY_FILE}`;
 
 /** A real task in the seed diagram, stable across runs (not a synthesized id). */
 export const SEED_USER_TASK_ELEMENT_ID = 'Activity_submit_wfh';
 export const SEED_USER_TASK_NAME = 'Submit WFH Request';
-
-/**
- * A second real, always-present seed process model (from the earlier
- * Process Modeler visual fidelity work's own coverage diagram) — used where
- * a test needs to prove *cross*-model navigation (e.g. Call Activity's
- * "Launch Editor"), since navigating a Call Activity to the model it's
- * already open in wouldn't prove real navigation happened.
- */
-export const SECOND_SEED_MODEL_ROUTE_ID = 'element-coverage-sample:all-elements-sample';
-export const SECOND_SEED_MODEL_NAME = 'All Elements Sample';
-export const SECOND_SEED_PRIMARY_FILE = 'all-elements-sample.bpmn';
-export const SECOND_SEED_MODELER_PATH = `/processes/${SECOND_SEED_MODEL_ROUTE_ID}/modeler/${SECOND_SEED_PRIMARY_FILE}`;
 
 /**
  * m8flow-backend origin for direct API calls from e2e setup code (seeding
@@ -50,16 +32,6 @@ export const BACKEND_BASE_URL =
 /** Second organization used only by Identity + Auth parity e2e (ticket 06). */
 export const PARITY_SECOND_TENANT_SLUG = 'e2e-identity-auth-second';
 export const PARITY_SECOND_TENANT_NAME = 'E2E Identity Auth Second';
-
-/**
- * Builds the modeler route for an arbitrary file name inside the seeded
- * process model — used by phase-dedicated fixtures seeded via
- * `helpers/seedFixture.ts` so each phase's coverage diagram lives
- * side-by-side with (and never overwrites) SEED_PRIMARY_FILE.
- */
-export function seedModelerPath(fileName: string): string {
-  return `/processes/${SEED_MODEL_ROUTE_ID}/modeler/${fileName}`;
-}
 
 /**
  * Keycloak origin and shared realm, used only by e2e cleanup to delete the

@@ -4,31 +4,30 @@ import {
   editorCredentials,
   useSession,
 } from './helpers/auth';
-import { useMockProcessModel } from './helpers/mockCatalog';
+import { catalogDiagramIds, seededModel, useSeededModelCopy } from './helpers/seedCatalog';
+import { loadBaseline } from './seed/seed';
 import { dragShape } from './helpers/diagram';
-import {
-  SEED_MODEL_DETAIL_PATH,
-  SEED_MODEL_NAME,
-  SEED_MODELER_PATH,
-  SEED_PRIMARY_FILE,
-  seedModelerPath,
-} from './helpers/fixtures';
+import { SEED_PRIMARY_FILE } from './helpers/fixtures';
 import { deleteProcessModelFile, seedProcessModelFile } from './helpers/seedFixture';
+import { logResult } from './helpers/processesPage';
 import { urlPathEndsWith, urlPathHas } from './helpers/urls';
+
+// Works on its own copy of the seeded "E2E Work From Home Request" model (deleted after the tests).
+const model = useSeededModelCopy(test, 'modeler', 'work-from-home');
+
+/** The seeded template models: each diagram must open with all its elements drawn (read only, nothing saved). */
+const TEMPLATE_MODELS = loadBaseline().catalog.models.filter((m) => m.status === 'published').map((m) => m.id);
 
 /** A real task in the seed diagram, stable across runs (not a synthesized id). */
 const DRAG_TARGET_ELEMENT_ID = 'Activity_submit_wfh';
 
 async function gotoModeler(page: import('@playwright/test').Page) {
-  await page.goto(SEED_MODELER_PATH);
+  await page.goto(model.modelerPath());
   // Readiness gate, not a hard wait: dirty-tracking only attaches once
   // BpmnCanvas's importXML() resolves and the pill flips to Saved.
   await expect(page.getByText('Saved', { exact: true })).toBeVisible();
   await expect(page.locator('.djs-container')).toBeVisible();
 }
-
-// Creates the mock process model before these tests and deletes it after.
-useMockProcessModel(test);
 
 /**
  * CHK-06..09 — Process Modeler journeys through the live designer → backend
@@ -41,8 +40,8 @@ test.describe('Process Modeler: open, edit and save', () => {
     page,
   }) => {
     await useSession(page, editorCredentials());
-    await page.goto(SEED_MODEL_DETAIL_PATH);
-    await expect(page.getByRole('heading', { name: SEED_MODEL_NAME, exact: true })).toBeVisible();
+    await page.goto(model.detailPath);
+    await expect(page.getByRole('heading', { name: model.name, exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Open in modeler' }).click();
 
@@ -60,7 +59,7 @@ test.describe('Process Modeler: open, edit and save', () => {
   }) => {
     await useSession(page, editorCredentials());
 
-    await page.goto(SEED_MODELER_PATH.replace(SEED_PRIMARY_FILE, 'does-not-exist.bpmn'));
+    await page.goto(model.modelerPath('does-not-exist.bpmn'));
 
     await expect(page.getByText('File not found.', { exact: true })).toBeVisible();
     await expect(page.locator('.djs-container')).toHaveCount(0);
@@ -93,8 +92,8 @@ test.describe('Process Modeler: open, edit and save', () => {
     expect(movedBox!.x).not.toBeCloseTo(originalBox!.x, 0);
     expect(movedBox!.y).not.toBeCloseTo(originalBox!.y, 0);
 
-    // No restore step: the mock model is created per run and deleted in afterAll,
-    // and a drag-back cannot land on the exact original pixel (bpmn-js snapping).
+    // No restore step: this spec works on its own copy of the seeded model,
+    // which is deleted after the tests.
     console.log('[CHK-08] Diagram change was saved and kept after reload.');
   });
 
@@ -181,23 +180,42 @@ test.describe('Process Modeler: open, edit and save', () => {
     const deleteDialog = page.getByRole('alertdialog', { name: 'Delete file' });
     await expect(deleteDialog).toContainText(`${stem}.md`);
     await deleteDialog.getByRole('button', { name: 'Delete' }).click();
-    await expect(page).toHaveURL(SEED_MODEL_DETAIL_PATH);
+    await expect(page).toHaveURL(model.detailPath);
     console.log('New text (Markdown) file was created, opened and deleted.');
   });
 
   test('A data (JSON) file opens in the text editor, not the diagram editor', async ({ page }) => {
     await useSession(page, editorCredentials());
     const fileName = `e2e-generic-${Date.now()}.json`;
-    await seedProcessModelFile(page, fileName, '{"ok":true}');
+    await seedProcessModelFile(page, fileName, '{"ok":true}', model.route);
     try {
-      await page.goto(seedModelerPath(fileName));
+      await page.goto(model.modelerPath(fileName));
       await expect(page.getByText('Saved', { exact: true })).toBeVisible();
       await expect(page.locator('.djs-container')).toHaveCount(0);
       await expect(page.locator('.monaco-editor')).toBeVisible();
       await expect(page.locator('.monaco-editor')).toContainText('"ok"');
     } finally {
-      await deleteProcessModelFile(page, fileName);
+      await deleteProcessModelFile(page, fileName, model.route);
     }
     console.log('Data (JSON) file opened in the text editor, not the diagram editor.');
   });
+
+  for (const modelId of TEMPLATE_MODELS) {
+    test(`MOD-ALL ${modelId}: the seeded template diagram opens with every element drawn`, async ({ page }) => {
+      const seeded = seededModel(modelId);
+      const ids = catalogDiagramIds(modelId);
+      await useSession(page, editorCredentials());
+      await page.goto(seeded.modelerPath());
+      await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+      for (const id of ids) {
+        await expect(page.locator(`[data-element-id="${id}"]`), `${id} is drawn`).toHaveCount(1);
+      }
+      logResult(`MOD-ALL ${modelId}`, {
+        scenario: `Open the seeded "${seeded.name}" diagram in the modeler`,
+        actions: [`Open ${seeded.primaryFile} of the seeded model (nothing is changed)`],
+        expected: 'The diagram loads and every shape and line of it is drawn',
+        actual: `${ids.length} elements drawn`,
+      });
+    });
+  }
 });

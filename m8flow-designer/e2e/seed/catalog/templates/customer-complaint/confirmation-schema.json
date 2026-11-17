@@ -1,0 +1,19 @@
+{
+  "title": "Customer confirmation",
+  "description": "E2E seed form: did the customer accept the resolution?",
+  "type": "object",
+  "required": [
+    "customer_satisfied"
+  ],
+  "properties": {
+    "customer_satisfied": {
+      "type": "boolean",
+      "title": "Customer is satisfied",
+      "default": true
+    },
+    "feedback": {
+      "type": "string",
+      "title": "Feedback"
+    }
+  }
+}

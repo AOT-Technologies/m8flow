@@ -67,7 +67,7 @@ regexes = [
 ]
 
 [[allowlists]]
-description = "Made-up API keys and tokens in unit-test fixtures"
+description = "Made-up API keys, tokens, and IDs in unit-test fixtures"
 regexTarget = "secret"
 regexes = [
   # NATS API keys (m8f_<id>.<secret>).
@@ -82,6 +82,8 @@ regexes = [
   # Keycloak realm IDs in the removed extensions/ tenancy tests (history only).
   '''^a1b2c3d4-e5f6-7890-abcd-ef1234567890$''',
   '''^b2c3d4e5-f6a7-8901-bcde-f23456789012$''',
+  # Connector document UUID used only by the backfill command regression test.
+  '''^f668fa7d-08fb-4fa4-a567-052ea2424f6c$''',
 ]
 
 [[allowlists]]

@@ -1,0 +1,19 @@
+{
+  "title": "Purchase request",
+  "description": "E2E test form (test data only).",
+  "type": "object",
+  "required": [
+    "purchase_item",
+    "purchase_amount"
+  ],
+  "properties": {
+    "purchase_item": {
+      "type": "string",
+      "title": "Item"
+    },
+    "purchase_amount": {
+      "type": "number",
+      "title": "Amount"
+    }
+  }
+}

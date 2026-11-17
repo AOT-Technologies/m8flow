@@ -1,0 +1,12 @@
+{
+  "title": "Editorial review",
+  "description": "E2E seed form: notes; publish or send back with the buttons.",
+  "type": "object",
+  "required": [],
+  "properties": {
+    "notes": {
+      "type": "string",
+      "title": "Notes"
+    }
+  }
+}

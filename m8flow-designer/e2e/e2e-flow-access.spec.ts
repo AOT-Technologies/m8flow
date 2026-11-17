@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
 import {
@@ -19,21 +17,17 @@ import { addTenantMember, backendFetch, getSeededSecondTenant, removeTenantMembe
 import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures';
 import {
   createMockGroup,
-  createMockModel,
   deleteMockGroup,
   removeMockModelCompletely,
-  setModelStatus,
-  setPrimaryFile,
 } from './helpers/mockCatalog';
 import {
-  LANE,
   asOrgAdmin,
   completeTask,
-  flowBpmn,
   homeStats,
   instanceDetail,
-  processIdFor,
+  startInUi,
   startInstance,
+  submitInUi,
   startStatus,
   statValue,
   tableRows,
@@ -46,7 +40,7 @@ import {
   type FlowModel,
 } from './helpers/processFlow';
 import { logResult } from './helpers/processesPage';
-import { seedProcessModelFile } from './helpers/seedFixture';
+import { modelFromSeededTemplate } from './helpers/seedCatalog';
 import { urlPathEndsWith } from './helpers/urls';
 
 /**
@@ -64,12 +58,9 @@ import { urlPathEndsWith } from './helpers/urls';
  * again (same pattern as PAR-03).
  */
 
-const APPROVAL_FORM = 'e2e-flow-review-schema.json';
-const approvalForm = readFileSync(new URL(`./fixtures/e2e-flow/${APPROVAL_FORM}`, import.meta.url), 'utf-8');
-const approve = { id: 'Activity_approve_request', name: 'E2E Approve Request', lane: LANE.approvers, form: APPROVAL_FORM };
-
+// Seeded template flow-single-approval: "E2E Approve Request" (Approvers lane, field approval_note).
 const flow = useFlowCatalog(test, 'flowa', {
-  approval: { name: 'E2E Access', bpmn: { steps: [approve] }, files: { [APPROVAL_FORM]: approvalForm } },
+  approval: { name: 'E2E Access', template: 'flow-single-approval' },
 });
 
 async function start(browser: Browser, persona: DesignerPersona = submitterCredentials(), model?: FlowModel): Promise<number> {
@@ -146,9 +137,17 @@ test.describe('Process flow: permissions and tenants', { tag: ['@permissions'] }
       ['tenant admin', tenantAdminCredentials()],
       ['editor', editorCredentials()],
     ] as const) {
-      const id = await start(browser, persona);
+      // The admin / editor clicks "Start process" on the model page.
+      const id = await withPage(browser, persona, (p) => startInUi(p, flow, flow.model('approval').route));
       const startedBy = await withPage(browser, persona, async (p) => (await instanceDetail(p, id)).started_by);
-      const task = await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: `Started by ${label}` }));
+      // The reviewer sees "Submitted by" in Task Review, then approves there.
+      const task = await withPage(browser, reviewerCredentials(), async (r) => {
+        const t = await waitForTask(r, id);
+        await r.goto('/task-review');
+        await expect(tableRows(r, flow.model('approval').name).filter({ hasText: t.submitted_by ?? '' }).first()).toBeVisible();
+        await submitInUi(r, t.id, { 'Approval note': `Started by ${label}` });
+        return t;
+      });
       // started_by is the username; "Submitted by" is the display name (e.g. "Editor M8Flow").
       expect(startedBy).toBe(persona.username);
       expect(task.submitted_by?.toLowerCase() ?? '').toContain(persona.username.toLowerCase());
@@ -157,7 +156,7 @@ test.describe('Process flow: permissions and tenants', { tag: ['@permissions'] }
 
     logResult('FLW-51', {
       scenario: 'Authorized roles other than the submitter start the process',
-      actions: ['Tenant admin starts', 'Editor starts', 'Reviewer completes both'],
+      actions: ['Tenant admin clicks Start process', 'Editor clicks Start process', 'Reviewer checks Submitted by in Task Review and approves both there'],
       expected: 'Both starts work; each task shows the right "Submitted by"',
       actual: results.join('; '),
     });
@@ -282,7 +281,7 @@ test.describe('Process flow: reliability', { tag: ['@reliability'] }, () => {
     await expect(page).toHaveURL(urlPathEndsWith('/task-review'));
     const data = await withPage(browser, editorCredentials(), async (ed) => {
       await waitForStatus(ed, id, 'complete');
-      return taskData(ed, id, approve.id);
+      return taskData(ed, id, 'Activity_approve_request');
     });
     expect(data.approval_note).toBe('Submitted after refresh');
 
@@ -301,16 +300,7 @@ test.describe('Process flow: reliability', { tag: ['@reliability'] }, () => {
     const modelId = `e2e-cleanup-model-${stamp}`;
     const route = `${groupId}:${modelId}`;
     await createMockGroup(page, { id: groupId, display_name: `E2E Cleanup ${stamp}` });
-    await createMockModel(page, { group_id: groupId, id: modelId, display_name: `E2E Cleanup ${stamp}` });
-    await seedProcessModelFile(page, APPROVAL_FORM, approvalForm, route);
-    await seedProcessModelFile(
-      page,
-      'cleanup.bpmn',
-      flowBpmn({ processId: processIdFor('flowa', 'cleanup', stamp), name: 'cleanup', steps: [approve] }),
-      route,
-    );
-    await setPrimaryFile(page, route, 'cleanup.bpmn');
-    await setModelStatus(page, route, 'published');
+    await modelFromSeededTemplate(page, 'flow-single-approval', { groupId, id: modelId, name: `E2E Cleanup ${stamp}` });
     const id = await withPage(browser, submitterCredentials(), (sub) => startInstance(sub, flow, route));
     await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: 'cleanup' }));
     await waitForStatus(page, id, 'complete');

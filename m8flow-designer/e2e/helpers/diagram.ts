@@ -30,8 +30,34 @@ export async function dragShape(page: Page, shape: Locator, dx: number, dy: numb
  */
 export async function selectElement(page: Page, elementId: string): Promise<Locator> {
   const shape = page.locator(`[data-element-id="${elementId}"]`);
-  await shape.click();
-  return shape;
+  await shape.waitFor({ state: 'visible' });
+  // In larger diagrams the palette (left) or a line drawn over the shape (an
+  // association, a crossing flow) can cover the middle of it. Hide the palette
+  // while clicking, and click the first point of the shape that is not covered.
+  const style = await page.addStyleTag({ content: '.djs-palette { visibility: hidden !important; }' });
+  try {
+    const box = await shape.boundingBox();
+    const w = box?.width ?? 0;
+    const h = box?.height ?? 0;
+    const points = [
+      { x: w / 2, y: h / 2 },
+      { x: Math.min(12, w / 2), y: Math.min(12, h / 2) },
+      { x: Math.max(w - 12, w / 2), y: Math.min(12, h / 2) },
+      { x: Math.min(12, w / 2), y: Math.max(h - 12, h / 2) },
+      { x: Math.max(w - 12, w / 2), y: Math.max(h - 12, h / 2) },
+    ];
+    for (const position of points) {
+      const free = await shape.click({ position, trial: true, timeout: 1_500 }).then(() => true, () => false);
+      if (free) {
+        await shape.click({ position });
+        return shape;
+      }
+    }
+    await shape.click();
+    return shape;
+  } finally {
+    await style.evaluate((el) => (el as Element).remove()).catch(() => undefined);
+  }
 }
 
 /**
