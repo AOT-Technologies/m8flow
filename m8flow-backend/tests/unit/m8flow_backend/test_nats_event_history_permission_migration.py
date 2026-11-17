@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
@@ -26,9 +27,9 @@ def _migration_module():
     return module
 
 
-def _schema(engine):
+def _schema(engine, group_table: str = "group"):
     metadata = sa.MetaData()
-    sa.Table("group", metadata, sa.Column("id", sa.Integer, primary_key=True), sa.Column("identifier", sa.String))
+    sa.Table(group_table, metadata, sa.Column("id", sa.Integer, primary_key=True), sa.Column("identifier", sa.String))
     sa.Table("principal", metadata, sa.Column("id", sa.Integer, primary_key=True), sa.Column("group_id", sa.Integer))
     sa.Table(
         "permission_target",
@@ -55,22 +56,25 @@ def _insert(connection, table: str, rows: list[dict]):
     connection.execute(sa.table(table, *(sa.column(name) for name in rows[0])).insert(), rows)
 
 
-def test_upgrade_removes_only_tenant_admin_event_history_grants_and_is_idempotent():
+# Hosts on the renamed authorization table must get the same cleanup.
+@pytest.mark.parametrize("group_table", ["group", "m8f_group"])
+def test_upgrade_removes_only_tenant_admin_event_history_grants_and_is_idempotent(group_table):
     engine = sa.create_engine("sqlite://")
-    _schema(engine)
+    _schema(engine, group_table)
     with engine.begin() as connection:
         _insert(
             connection,
-            "group",
+            group_table,
             [
                 {"id": 1, "identifier": "tenant-a:tenant-admin"},
                 {"id": 2, "identifier": "super-admin"},
                 {"id": 3, "identifier": "custom:tenant-admin"},  # not a real tenant
                 {"id": 4, "identifier": "tenant-a:editor"},
+                {"id": 5, "identifier": "tenant-admin"},  # legacy global group
             ],
         )
         _insert(connection, "m8flow_tenant", [{"id": "tenant-a"}])
-        _insert(connection, "principal", [{"id": n * 11, "group_id": n} for n in (1, 2, 3, 4)])
+        _insert(connection, "principal", [{"id": n * 11, "group_id": n} for n in (1, 2, 3, 4, 5)])
         _insert(
             connection,
             "permission_target",
@@ -89,6 +93,8 @@ def test_upgrade_removes_only_tenant_admin_event_history_grants_and_is_idempoten
             (5, 22, 103),  # super-admin monitoring wildcard -> kept
             (6, 33, 101),  # namespaced, not a tenant -> kept
             (7, 44, 101),  # another role -> kept
+            (8, 55, 101),  # legacy global tenant-admin events list -> revoked
+            (9, 55, 102),  # legacy global tenant-admin event by id -> revoked
         ]
         _insert(
             connection,
