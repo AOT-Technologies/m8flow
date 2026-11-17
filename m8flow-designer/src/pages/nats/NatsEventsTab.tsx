@@ -47,11 +47,10 @@ const GRID =
   'grid grid-cols-[40px_minmax(180px,1.2fr)_minmax(160px,1.1fr)_minmax(150px,1.3fr)_minmax(100px,0.9fr)_minmax(180px,1.8fr)_minmax(70px,0.5fr)_minmax(160px,1.2fr)] items-center gap-3 px-5';
 
 /**
- * Event history from the audit trail. ``allowCrossTenant`` (super-admin's broker grant)
- * adds the tenant filter and the all-tenants default; everyone else sends no scope and
- * the backend pins them to their own tenant.
+ * Event history from the audit trail, across all tenants by default with an optional
+ * tenant filter. Only reachable with the super-admin broker grant (M8F-700).
  */
-export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: number; allowCrossTenant: boolean }) {
+export function NatsEventsTab({ refreshKey }: { refreshKey: number }) {
   const { t } = useTranslation();
   const { tenants } = useTenantRegistry();
   const [params, setParams] = useSearchParams();
@@ -85,7 +84,7 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
 
   useEffect(() => {
     let cancelled = false;
-    const scope: NatsEventScope = { tenantId: allowCrossTenant ? tenantId : null, allTenants: allowCrossTenant };
+    const scope: NatsEventScope = { tenantId, allTenants: true };
     const timer = window.setTimeout(() => {
       fetchNatsEvents({ ...scope, outcome, processIdentifier, eventId, worker, failuresOnly, page, perPage })
         .then((nextEvents) => {
@@ -101,7 +100,7 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [tenantId, allowCrossTenant, outcome, processIdentifier, eventId, worker, failuresOnly, page, perPage, refreshKey]);
+  }, [tenantId, outcome, processIdentifier, eventId, worker, failuresOnly, page, perPage, refreshKey]);
 
   function toggle(id: number) {
     setExpanded((current) => {
@@ -116,6 +115,10 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
     tenantId && !tenants.some((t) => t.id === tenantId) ? [{ id: tenantId, name: tenantId }, ...tenants] : tenants;
   const rows = events?.results ?? [];
   const inspectionEnabled = Boolean(events?.messageInspectionEnabled);
+  // "match these filters" only makes sense once a filter is set; a first visit has none.
+  const filtered = Boolean(
+    worker || outcome || processIdentifier || eventId || failuresOnly || tenantId,
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -165,21 +168,19 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
           checked={failuresOnly}
           onCheckedChange={(checked) => update({ failures: checked ? 'true' : null })}
         />
-        {allowCrossTenant && (
-          <Select value={tenantId ?? ANY} onValueChange={(value) => update({ tenant: value === ANY ? null : value })}>
-            <SelectTrigger aria-label={t('nats.events.tenant')} className={FILTER_CONTROL}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY}>{t('nats.events.allTenants')}</SelectItem>
-              {tenantOptions.map((tenant) => (
-                <SelectItem key={tenant.id} value={tenant.id}>
-                  {tenant.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
+        <Select value={tenantId ?? ANY} onValueChange={(value) => update({ tenant: value === ANY ? null : value })}>
+          <SelectTrigger aria-label={t('nats.events.tenant')} className={FILTER_CONTROL}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ANY}>{t('nats.events.allTenants')}</SelectItem>
+            {tenantOptions.map((tenant) => (
+              <SelectItem key={tenant.id} value={tenant.id}>
+                {tenant.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {error && <Alert tone="error">{error}</Alert>}
@@ -205,7 +206,7 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
             </div>
             {rows.length === 0 ? (
               <p className="px-5 py-6 text-sm text-muted-foreground">
-                {events ? t('nats.events.empty') : t('common.loading')}
+                {!events ? t('common.loading') : filtered ? t('nats.events.empty') : t('nats.events.noEventsYet')}
               </p>
             ) : (
               rows.map((event) => (
@@ -214,7 +215,7 @@ export function NatsEventsTab({ refreshKey, allowCrossTenant }: { refreshKey: nu
                   event={event}
                   expanded={expanded.has(event.id)}
                   onToggle={() => toggle(event.id)}
-                  scope={{ tenantId: allowCrossTenant ? event.tenantId : null, allTenants: allowCrossTenant }}
+                  scope={{ tenantId: event.tenantId, allTenants: true }}
                   inspectionEnabled={inspectionEnabled}
                 />
               ))

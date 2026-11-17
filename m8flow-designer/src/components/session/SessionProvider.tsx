@@ -98,7 +98,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canExecuteMcpTools, setCanExecuteMcpTools] = useState(false);
   const [canReadMessages, setCanReadMessages] = useState(false);
   const [canReadNatsMonitoring, setCanReadNatsMonitoring] = useState(false);
-  const [canReadNatsEvents, setCanReadNatsEvents] = useState(false);
   const [canReadCeleryMonitoring, setCanReadCeleryMonitoring] = useState(false);
   const [canManageCelery, setCanManageCelery] = useState(false);
   const [canReadTemplates, setCanReadTemplates] = useState(false);
@@ -135,7 +134,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanReadMcpConnection(hasPermission(permissions, 'readMcpConnection'));
           setCanReadMessages(hasPermission(permissions, 'readMessages'));
           setCanReadNatsMonitoring(hasPermission(permissions, 'readNatsMonitoring'));
-          setCanReadNatsEvents(hasPermission(permissions, 'readNatsEvents'));
           setCanReadCeleryMonitoring(hasPermission(permissions, 'readCeleryMonitoring'));
           setCanManageCelery(hasPermission(permissions, 'manageCelery'));
           setCanReadTemplates(hasPermission(permissions, 'readTemplates'));
@@ -237,7 +235,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanExecuteMcpTools(false);
           setCanReadMessages(false);
           setCanReadNatsMonitoring(false);
-          setCanReadNatsEvents(false);
           setCanReadCeleryMonitoring(false);
           setCanManageCelery(false);
           setCanReadTemplates(false);
@@ -340,7 +337,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         canExecuteMcpTools,
         canReadMessages,
         canReadNatsMonitoring,
-        canReadNatsEvents,
         canReadCeleryMonitoring,
         canManageCelery,
         canReadTemplates,
@@ -381,7 +377,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canExecuteMcpTools,
       canReadMessages,
       canReadNatsMonitoring,
-      canReadNatsEvents,
       canReadCeleryMonitoring,
       canManageCelery,
       canReadTemplates,

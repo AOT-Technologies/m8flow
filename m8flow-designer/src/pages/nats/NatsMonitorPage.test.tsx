@@ -137,13 +137,6 @@ const SUPER_ADMIN: SessionFixtureContext = {
   selectedTenantId: null,
   isSuperAdmin: true,
   canReadNatsMonitoring: true,
-  canReadNatsEvents: true,
-};
-const TENANT_ADMIN: SessionFixtureContext = {
-  scopedTenantId: 't-1',
-  selectedTenantId: 't-1',
-  isSuperAdmin: false,
-  canReadNatsEvents: true,
 };
 const NO_ACCESS: SessionFixtureContext = { scopedTenantId: 't-1', selectedTenantId: 't-1', isSuperAdmin: false };
 
@@ -210,7 +203,7 @@ describe('NatsMonitorPage', () => {
   it('shows the headline stats above the tabs and opens on Streams & consumers', async () => {
     renderPage();
 
-    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(await screen.findByText('Status: Active')).toBeInTheDocument();
     expect(screen.getByText('4,024')).toBeInTheDocument();
     await vi.waitFor(() => expect(screen.getByTitle(/never became a process instance/)).toHaveTextContent('Failed3'));
     expect(api.fetchNatsEventSummary).toHaveBeenCalledWith({ tenantId: null, allTenants: true });
@@ -224,7 +217,7 @@ describe('NatsMonitorPage', () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
-      await screen.findByText('Connected');
+      await screen.findByText('Status: Active');
       expect(api.fetchNatsStreams).toHaveBeenCalledTimes(1);
 
       await user.click(screen.getByRole('combobox', { name: 'Auto refresh' }));
@@ -244,7 +237,7 @@ describe('NatsMonitorPage', () => {
   it('makes one broker call per refresh and reads health from it', async () => {
     renderPage();
 
-    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(await screen.findByText('Status: Active')).toBeInTheDocument();
     expect(api.fetchNatsStreams).toHaveBeenCalledTimes(1);
   });
 
@@ -255,7 +248,7 @@ describe('NatsMonitorPage', () => {
     try {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       renderPage();
-      await screen.findByText('Connected');
+      await screen.findByText('Status: Active');
       await user.click(screen.getByRole('combobox', { name: 'Auto refresh' }));
       await user.click(await screen.findByRole('option', { name: 'Every 5 seconds' }));
 
@@ -342,6 +335,22 @@ describe('NatsMonitorPage', () => {
     expect(value('Duplicate window')).toBe('2m');
     expect(value('Protections')).toBe('Deny delete');
     expect(value('Sequence range')).toBe('1–54');
+  });
+
+  it('says no events exist yet on an unfiltered first visit, and blames filters once one is set', async () => {
+    api.fetchNatsEvents.mockResolvedValue({
+      messageInspectionEnabled: false,
+      results: [],
+      pagination: { page: 1, perPage: 25, total: 0, pages: 0 },
+    });
+    renderPage('/system/nats?tab=events');
+
+    expect(await screen.findByText(/No NATS events yet/)).toBeInTheDocument();
+    expect(screen.queryByText('No NATS events match these filters.')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Failures only'));
+
+    expect(await screen.findByText('No NATS events match these filters.')).toBeInTheDocument();
   });
 
   it('omits the payload action when inspection is disabled', async () => {
@@ -496,34 +505,21 @@ describe('NatsMonitorPage', () => {
     );
     await userEvent.click(screen.getByRole('button', { name: /refresh/i }));
 
-    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+    expect(await screen.findByText('Status: Inactive')).toBeInTheDocument();
     expect(screen.queryByText('11.9 GB')).not.toBeInTheDocument();
     expect(screen.queryByText('legacy-export')).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('NATS unavailable. The NATS server is not reachable.');
   });
 
-  it('shows Disconnected with the error when the broker is unreachable', async () => {
+  it('shows Inactive with the error when the broker is unreachable', async () => {
     api.fetchNatsStreams.mockRejectedValue(new ApiError('/v1.0/m8flow/nats/streams', 503));
     renderPage();
 
-    expect(await screen.findByText('Disconnected')).toBeInTheDocument();
+    expect(await screen.findByText('Status: Inactive')).toBeInTheDocument();
     expect(screen.getAllByRole('alert')[0]).toHaveTextContent(/NATS unavailable\. The NATS server is not reachable/);
     // No stale broker numbers shown as live; the Streams tab explains why it is empty.
     expect(screen.queryByText('11.9 GB')).not.toBeInTheDocument();
     expect(screen.getByText(/can.t be shown until it is reachable/)).toBeInTheDocument();
-  });
-
-  it('shows a tenant-admin only their own event history', async () => {
-    renderPage('/system/nats', TENANT_ADMIN);
-
-    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Event history']);
-    // Broker-wide state is super-admin only: no badge, no stat card, no broker calls.
-    expect(await screen.findByText('Process not found')).toBeInTheDocument();
-    expect(screen.queryByText('Connected')).not.toBeInTheDocument();
-    expect(api.fetchNatsStreams).not.toHaveBeenCalled();
-    // No cross-tenant filter, and no scope sent -- the backend pins them to their tenant.
-    expect(screen.queryByRole('combobox', { name: 'Tenant' })).not.toBeInTheDocument();
-    expect(api.fetchNatsEvents).toHaveBeenLastCalledWith(expect.objectContaining({ tenantId: null, allTenants: false }));
   });
 
   it('does not call the API without the backend read permission', () => {

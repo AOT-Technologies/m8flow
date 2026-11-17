@@ -115,9 +115,8 @@ def tenants() -> tuple:
 def list_events() -> tuple:
     """Paged event history.
 
-    Also reports whether payload inspection is enabled, so clients (including
-    tenant-admins, who cannot read the broker overview) can omit a payload action that
-    would predictably fail with nats_message_inspection_disabled."""
+    Also reports whether payload inspection is enabled, so clients can omit a payload
+    action that would predictably fail with nats_message_inspection_disabled."""
     tenant_id, all_tenants = _audit_scope()
     page = NatsEventAuditQueryService.list_events(
         tenant_id=tenant_id,

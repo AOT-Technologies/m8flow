@@ -29,7 +29,6 @@ export function AppShell() {
     canReadMcpTools,
     canReadMessages,
     canReadNatsMonitoring,
-    canReadNatsEvents,
     canReadCeleryMonitoring,
     canReadTemplates,
     canAccessTenantManagement,
@@ -44,8 +43,8 @@ export function AppShell() {
   // task-review/:taskId; '/task-review//' is the inbox.
   const canOpenTaskReview = canSubmitTaskReviews || canReadTaskReview;
   const { pathname } = useLocation();
-  // NATS page: broker monitoring (super-admin) and own-tenant event history (tenant-admin).
-  const canUseNats = canReadNatsMonitoring || canReadNatsEvents;
+  // NATS page, event history included, follows the broker-monitoring grant (super-admin only, M8F-700).
+  const canUseNats = canReadNatsMonitoring;
   const routePermission = /^\/task-review\/[^/]+\/*$/.test(pathname)
     ? canOpenTaskReview
     : pathname.startsWith('/task-review')
