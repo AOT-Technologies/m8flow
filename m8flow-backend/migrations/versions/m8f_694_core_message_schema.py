@@ -82,8 +82,7 @@ def upgrade() -> None:
         if not any(index["name"] == name for index in inspector.get_indexes(table)):
             op.create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
     _upgrade_journal_instance_keys()
-    # The host baseline creates tables from installed core metadata on an empty
-    # database. Existing baseline databases get only these additive tables.
+    # Some deployments already have the signal or message schema from core.
     for name in TABLES:
         Base.metadata.tables[name].create(bind, checkfirst=True)
         _enable_rls(name)

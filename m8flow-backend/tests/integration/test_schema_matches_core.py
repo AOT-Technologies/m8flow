@@ -19,6 +19,9 @@ KNOWN_DIFFERENCES = {
     ("remove_index", "permission_target", ("resource_type", "resource_id", "<expr>")),
     # The host enforces one task completion event per tenant, instance, and task GUID.
     ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
+    # Host and core name the same unique process GUID constraint differently.
+    ("remove_constraint", "bpmn_process", ("guid",)),
+    ("add_constraint", "bpmn_process", ("guid",)),
     # Host keeps the pre-0.2.1 (username, service) uniqueness the core ORM omits.
     ("remove_constraint", "user", ("username", "service")),
     # Core declares UniqueConstraint(work_item_id, user_id); the host schema
@@ -60,6 +63,19 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         diffs = compare_metadata(context, CoreBase.metadata)
 
+    # The host journal retains its legacy FK, tenant index, and ownership
+    # check alongside core's tenant-qualified FK. The two index names describe
+    # the same key. The PK already enforces the ownership check's predicate.
+    known_differences = KNOWN_DIFFERENCES.copy()
+    for journal in ("compensation_scope", "compensation_run", "compensation_record"):
+        if journal in core_tables:
+            known_differences.update({
+                ("remove_fk", journal, ("process_instance_id",)),
+                ("remove_index", journal, ("m8f_tenant_id",)),
+                ("add_index", journal, ("m8f_tenant_id",)),
+                ("remove_constraint", journal, ()),
+            })
+
     found = set()
     unexplained = []
     for diff in diffs:
@@ -70,14 +86,14 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
                 continue
             if signature[1] not in core_tables:
                 continue  # host-owned tables are not described by core metadata
-            if signature in KNOWN_DIFFERENCES:
+            if signature in known_differences:
                 found.add(signature)
             else:
                 unexplained.append(f"{signature}: {item!r}")
 
     assert unexplained == [], "core ORM and migrated schema differ:\n" + "\n".join(unexplained)
     # A known difference that disappears means the allowlist entry is stale.
-    assert found == KNOWN_DIFFERENCES
+    assert found == known_differences
 
 
 def test_runtime_role_cannot_bypass_rls(migrated_database):
