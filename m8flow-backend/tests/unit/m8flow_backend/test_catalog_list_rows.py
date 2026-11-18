@@ -151,3 +151,17 @@ def test_list_rows_read_status_name_and_group_once(tmp_path, monkeypatch):
         "ops/process_group.json",
         "restart/process_model.json",
     ]
+
+
+def test_list_rows_keep_an_unparseable_published_bpmn_listable(tmp_path, monkeypatch):
+    """PR review: a published model whose BPMN does not parse still lists, with no processes."""
+    root = tmp_path / "bpmn" / "t1"
+    _write(root / "ops" / "broken" / "broken.bpmn", "<not-xml")
+    _write(root / "ops" / "broken" / "process_model.json", json.dumps({"status": "published"}))
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+
+    rows = catalog.list_model_rows(tenant_id="t1")
+
+    assert [(row["id"], row["status"], row["bpmn_processes"]) for row in rows] == [
+        ("ops/broken", "published", [])
+    ]

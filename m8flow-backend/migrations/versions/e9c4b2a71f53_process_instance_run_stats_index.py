@@ -6,8 +6,12 @@ Postgres reads every instance row of the tenant; this composite index serves
 the filter, the grouping and both aggregates. Measured with the real schema:
 16.4 -> 6.8 ms at 50k instances per tenant, 47.7 -> 15.3 ms at 200k.
 
-Adds an index only; no data changes. Guarded so reruns and downgrades are
-idempotent.
+Adds an index only; no data changes. On PostgreSQL it is built and dropped
+CONCURRENTLY, so the backend's startup upgrade never blocks writes to
+process_instance. CONCURRENTLY cannot run inside a transaction, so that step
+commits the migrations before it first (``autocommit_block``). An interrupted
+concurrent build leaves an INVALID index behind; the next upgrade drops and
+rebuilds it. Guarded so reruns and downgrades are idempotent.
 """
 
 from __future__ import annotations
@@ -29,14 +33,35 @@ def _index_names() -> set[str]:
     return {index["name"] for index in sa.inspect(op.get_bind()).get_indexes(TABLE_NAME)}
 
 
+def _postgres_index_is_valid() -> bool | None:
+    """True/False for an existing index's validity; None when it does not exist."""
+    return op.get_bind().execute(
+        sa.text(
+            "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+            "WHERE c.relname = :name"
+        ),
+        {"name": INDEX_NAME},
+    ).scalar()
+
+
 def upgrade() -> None:
-    # ponytail: a plain CREATE INDEX briefly blocks writes to process_instance;
-    # fine at today's volumes. Use postgresql_concurrently in an autocommit_block
-    # if a tenant ever holds millions of instances at upgrade time.
-    if INDEX_NAME not in _index_names():
-        op.create_index(INDEX_NAME, TABLE_NAME, COLUMNS, unique=False)
+    if op.get_bind().dialect.name != "postgresql":
+        if INDEX_NAME not in _index_names():
+            op.create_index(INDEX_NAME, TABLE_NAME, COLUMNS, unique=False)
+        return
+    with op.get_context().autocommit_block():
+        valid = _postgres_index_is_valid()
+        if valid is False:
+            op.drop_index(INDEX_NAME, table_name=TABLE_NAME, postgresql_concurrently=True)
+        if valid is not True:
+            op.create_index(INDEX_NAME, TABLE_NAME, COLUMNS, unique=False, postgresql_concurrently=True)
 
 
 def downgrade() -> None:
-    if INDEX_NAME in _index_names():
+    if INDEX_NAME not in _index_names():
+        return
+    if op.get_bind().dialect.name != "postgresql":
         op.drop_index(INDEX_NAME, table_name=TABLE_NAME)
+        return
+    with op.get_context().autocommit_block():
+        op.drop_index(INDEX_NAME, table_name=TABLE_NAME, postgresql_concurrently=True)

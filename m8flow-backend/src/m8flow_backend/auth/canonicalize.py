@@ -18,7 +18,7 @@ from m8flow_backend.auth.tenant_context import get_context_tenant_id, is_concret
 _REQUEST_MEMO_ATTR = "_m8flow_request_memo"
 
 
-def request_memo(name: str, session) -> dict | None:
+def request_memo(name: str, session: Session | None) -> dict | None:
     """Per-request cache bucket for a read-only lookup, or None when caching is unsafe.
 
     None outside a request, or while ``session`` holds unflushed writes (a fresh

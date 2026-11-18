@@ -225,3 +225,28 @@ def test_multi_org_editor_reaches_onboarding_and_tasks_in_each_org(client, db_se
     assert _get_onboarding_and_tasks(client, editor, "t1") == (200, 200)
     assert _get_onboarding_and_tasks(client, editor, "t2") == (200, 200)
     assert _get_onboarding_and_tasks(client, editor, "t1") == (200, 200)
+
+
+def test_snapshot_follows_a_tenant_switch_inside_one_request(app, db_session):
+    """PR review: grants depend only on the user and their active-tenant groups,
+    so switching tenant mid-request changes the key and recomputes."""
+    user = _user_with_roles(db_session, "snapshot-switch", {"t1": ["editor"], "t2": ["viewer"]})
+
+    def decisions() -> tuple[bool, bool]:
+        return (
+            allow_uri(user, "POST", "/v1.0/process-models", session=db_session),
+            allow_uri(user, "GET", "/v1.0/secrets", session=db_session),
+        )
+
+    with app.test_request_context("/v1.0/permissions-check"):
+        g.db_session = db_session
+        g.m8flow_tenant_id = "t1"
+        as_t1 = decisions()
+        g.m8flow_tenant_id = "t2"
+        as_t2 = decisions()
+        g.m8flow_tenant_id = "t1"
+        back_to_t1 = decisions()
+
+    assert as_t1 == (True, False)
+    assert as_t2 == (False, True)
+    assert back_to_t1 == (True, False)
