@@ -9,8 +9,11 @@ must exist before the host runs on core 1.0.
 
 A database the baseline revision built against core 1.0 already has them (the
 baseline runs ``create_all`` over the live ORM), so every step checks first.
-Each new table gets the same tenant-isolation and super-admin read policies as
-the other tenant-scoped tables.
+The tables and tenant/id indexes this revision creates are recorded in
+``m8flow_a3f4e5d6c7b8_ownership``, and downgrade drops only those: a table that
+already existed keeps its rows, and indexes added to it stay. Each new table
+gets the same tenant-isolation and super-admin read policies as the other
+tenant-scoped tables.
 
 The core marker in ``m8flow_core_alembic_version`` stays at ``k2l3m4n5o6p7``:
 host migrations own the core schema after that handoff, and the earlier host
@@ -22,13 +25,21 @@ Revises: e9c4b2a71f53
 
 from __future__ import annotations
 
+import logging
+
 import sqlalchemy as sa
 from alembic import op
+
+LOGGER = logging.getLogger("alembic.runtime.migration")
 
 revision = "a3f4e5d6c7b8"
 down_revision = "e9c4b2a71f53"
 branch_labels = None
 depends_on = None
+
+# Tables the signal registry references, all created by the baseline revision.
+_PARENT_TABLES = ("m8flow_tenant", "process_instance", "bpmn_process_definition")
+_OWNERSHIP = sa.table(f"m8flow_{revision}_ownership", sa.column("object_name", sa.String(63)))
 
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_RLS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
@@ -55,9 +66,14 @@ def _has_index(table: str, name: str) -> bool:
     return any(index["name"] == name for index in sa.inspect(op.get_bind()).get_indexes(table))
 
 
+def _record_created(name: str) -> None:
+    op.get_bind().execute(_OWNERSHIP.insert().values(object_name=name))
+
+
 def _create_table(name: str, *elements: sa.SchemaItem) -> None:
     if not _has_table(name):
         op.create_table(name, *elements)
+        _record_created(name)
 
 
 def _create_index(name: str, table: str, columns: list[str], *, unique: bool = False) -> None:
@@ -206,18 +222,38 @@ def _ensure_tenant_rls(table_name: str) -> None:
     op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_RLS_PREDICATE}"))
 
 
+def _require_parent_tables() -> None:
+    missing = [name for name in _PARENT_TABLES if not _has_table(name)]
+    if missing:
+        raise RuntimeError(
+            f"Migration {revision} cannot add the signal registry: missing table(s) "
+            f"{', '.join(missing)}, which the baseline revision creates. Restore them, "
+            "or migrate an empty database from base, then rerun the upgrade."
+        )
+
+
 def upgrade() -> None:
+    _require_parent_tables()
+    if not _has_table(_OWNERSHIP.name):
+        op.create_table(_OWNERSHIP.name, sa.Column("object_name", sa.String(63), primary_key=True))
     for name, table in _TENANT_ID_KEYS:
-        _create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
+        if not _has_index(table, name):
+            op.create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
+            _record_created(name)
     _create_signal_tables()
     for table in _NEW_TABLES:
         _ensure_tenant_rls(table)
 
 
 def downgrade() -> None:
+    if not _has_table(_OWNERSHIP.name):
+        LOGGER.warning("Leaving the signal registry in place: %s has no record of what it created.", revision)
+        return
+    created = set(op.get_bind().scalars(sa.select(_OWNERSHIP.c.object_name)))
     for table in reversed(_NEW_TABLES):
-        if _has_table(table):
+        if table in created and _has_table(table):
             op.drop_table(table)
     for name, table in _TENANT_ID_KEYS:
-        if _has_index(table, name):
+        if name in created and _has_index(table, name):
             op.drop_index(name, table_name=table)
+    op.drop_table(_OWNERSHIP.name)

@@ -615,8 +615,8 @@ _PARALLEL_REVIEW = """<?xml version="1.0" encoding="UTF-8"?>
 
 def test_parallel_review_keeps_each_iteration_apart():
     """M8F-640 on Postgres and RLS: each form shows its own item, the completion
-    condition cancels the last review, outputs keep input order, and no
-    iteration value becomes process metadata."""
+    condition cancels the unfinished review for good, outputs keep input order,
+    and no iteration value becomes process metadata."""
     pytest.importorskip(
         "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with M8F-640"
     )
@@ -678,3 +678,20 @@ def test_parallel_review_keeps_each_iteration_apart():
             )
         )
         assert not keys & {"it", "res", "loopCounter"}
+
+    # Review b was cancelled; its work item can't be claimed or completed later.
+    from m8flow_backend.errors import ApiError
+
+    cancelled_id = review_ids[1]
+    with tenant_session(tenant_id) as session, pytest.raises(ApiError) as claim_error:
+        workflow.claim(session, tenant_id=tenant_id, work_item_id=cancelled_id, user_id=editor.id)
+    with tenant_session(tenant_id) as session, pytest.raises(ApiError) as complete_error:
+        workflow.complete(
+            session,
+            tenant_id=tenant_id,
+            work_item_id=cancelled_id,
+            user_id=editor.id,
+            task_payload={"it": "b", "res": "B"},
+        )
+    for error in (claim_error, complete_error):
+        assert (error.value.status_code, error.value.error_code) == (409, "invalid_state")
