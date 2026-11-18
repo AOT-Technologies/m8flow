@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -95,13 +96,16 @@ def test_upgrade_removes_only_tenant_admin_event_history_grants_and_is_idempoten
             (7, 44, 101),  # another role -> kept
             (8, 55, 101),  # legacy global tenant-admin events list -> revoked
             (9, 55, 102),  # legacy global tenant-admin event by id -> revoked
+            (10, 11, 101, "deny"),  # an operator's explicit deny -> kept
+            (11, 11, 101, "permit", "update"),  # not the seeded read -> kept
         ]
         _insert(
             connection,
             "permission_assignment",
             [
-                {"id": i, "principal_id": p, "permission_target_id": t, "grant_type": "permit", "permission": "read"}
-                for i, p, t in grants
+                {"id": i, "principal_id": p, "permission_target_id": t, "grant_type": grant_type, "permission": action}
+                # (id, principal, target[, grant_type[, permission]]), defaulting to the seeded permit/read.
+                for i, p, t, grant_type, action in ((*row, *("permit", "read")[len(row) - 3 :]) for row in grants)
             ],
         )
 
@@ -112,7 +116,7 @@ def test_upgrade_removes_only_tenant_admin_event_history_grants_and_is_idempoten
 
         remaining = connection.execute(sa.text("SELECT id FROM permission_assignment ORDER BY id")).scalars().all()
 
-    assert remaining == [3, 4, 5, 6, 7]
+    assert remaining == [3, 4, 5, 6, 7, 10, 11]
 
 
 def test_tenant_admin_group_query_quotes_reserved_group_identifier_for_postgresql():
@@ -124,3 +128,74 @@ def test_tenant_admin_group_query_quotes_reserved_group_identifier_for_postgresq
         sql = str(migration._tenant_admin_principals_query(connection).compile(dialect=postgresql.dialect()))
 
     assert 'JOIN "group"' in sql
+
+
+# The rows above are hand-built; this runs the real migration chain on PostgreSQL, the
+# production dialect, against grants written by the real seed. Skipped unless
+# M8FLOW_TEST_POSTGRES_URI points at a disposable database (CI's test matrix sets it).
+_PRE_M8F_700_GRANTS = """
+permissions:
+  read-nats-monitoring: {groups: [super-admin], actions: [read], uri: /m8flow/nats/*}
+  read-nats-events: {groups: [tenant-admin, super-admin], actions: [read], uri: /m8flow/nats/events}
+  read-nats-events-by-id: {groups: [tenant-admin, super-admin], actions: [read], uri: /m8flow/nats/events/*}
+  read-nats-tokens: {groups: [tenant-admin, super-admin], actions: [read], uri: /m8flow/nats-tokens}
+"""
+
+
+def _nats_grants(engine) -> set[tuple[str, str]]:
+    from m8flow_core.models.group import GroupModel
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+    from m8flow_core.models.permission_target import PermissionTargetModel
+    from m8flow_core.models.principal import PrincipalModel
+
+    query = (
+        sa.select(GroupModel.identifier, PermissionTargetModel.resource_id)
+        .join(PrincipalModel, PrincipalModel.group_id == GroupModel.id)
+        .join(PermissionAssignmentModel, PermissionAssignmentModel.principal_id == PrincipalModel.id)
+        .join(PermissionTargetModel, PermissionTargetModel.id == PermissionAssignmentModel.permission_target_id)
+        .where(PermissionTargetModel.resource_id.like("/m8flow/nats%"))
+    )
+    with engine.connect() as connection:
+        return set(connection.execute(query).all())
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to a disposable database to run the migration on PostgreSQL.",
+)
+def test_upgrade_on_postgres_revokes_seeded_tenant_admin_event_history(tmp_path, monkeypatch):
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend import identity
+
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", database_uri)
+    monkeypatch.delenv("M8FLOW_DATABASE_URI", raising=False)
+    cfg = Config()
+    cfg.set_main_option("script_location", str(_MIGRATION_PATH.parents[1]))
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, _migration_module().down_revision)
+
+    engine = sa.create_engine(database_uri)
+    old_seed = tmp_path / "pre-m8f-700.yml"
+    old_seed.write_text(_PRE_M8F_700_GRANTS, encoding="utf-8")
+    with Session(engine) as session:
+        identity.ensure_tenant(session, tenant_id="m8f700", slug="m8f700")
+        identity.import_yaml(session, tenant_id="m8f700", yaml_path=str(old_seed))
+        session.commit()
+    events = {("m8f700:tenant-admin", "/m8flow/nats/events"), ("m8f700:tenant-admin", "/m8flow/nats/events/%")}
+    assert events <= _nats_grants(engine)
+
+    command.upgrade(cfg, "head")
+
+    remaining = _nats_grants(engine)
+    assert not events & remaining
+    assert {
+        ("m8f700:tenant-admin", "/m8flow/nats-tokens"),
+        ("super-admin", "/m8flow/nats/%"),
+        ("super-admin", "/m8flow/nats/events"),
+        ("super-admin", "/m8flow/nats/events/%"),
+    } <= remaining
+    engine.dispose()

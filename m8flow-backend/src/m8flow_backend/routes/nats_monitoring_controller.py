@@ -1,14 +1,15 @@
 """Read-only NATS monitoring endpoints. Super-admin only.
 
 Every endpoint is gated by ``@require_permission`` against the ``/m8flow/nats/*`` grant in
-``config/permissions/m8flow.yml`` (super-admin only, no group fallback). On top of that:
+``config/permissions/m8flow.yml`` (super-admin only, no group fallback). That grant is the
+only authority here, with no role check of its own (M8F-700): broker-wide state and raw
+streams are reported per NATS account, not per tenant, so holding it already means seeing
+every tenant's traffic.
 
-- Broker-wide state (``/varz``, ``/jsz``) and raw stream browsing are reported per NATS
-  account, not per tenant, so those handlers additionally require super-admin outright.
-- Event history comes from ``m8flow_nats_event_audit``, which carries a tenant per row.
-  ``_audit_scope`` pins a non-super-admin caller to their active tenant, so the scoping
-  stays correct should the YAML grant ever be widened; a super-admin may ask for
-  ``allTenants`` or a specific ``tenantId``.
+Event history comes from ``m8flow_nats_event_audit``, which carries a tenant per row. A
+caller with the grant may ask for ``allTenants`` or one ``tenantId``; with neither, the
+read stays on their active tenant. On PostgreSQL, row-level security still limits
+cross-tenant rows to sessions the request marked super-admin.
 
 Payload inspection is additionally gated on ``M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED``
 (off by default) because m8flow's streams retain every payload indefinitely.
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 from flask import request
 
-from m8flow_backend.auth import is_super_admin_request, require_current_user
 from m8flow_backend.auth.canonicalize import current_tenant_id_or_none
 from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.config import (
@@ -34,16 +34,6 @@ from m8flow_backend.services.nats_monitoring_service import NatsMonitoringServic
 _gate = require_permission(group_fallback=False)
 
 
-def _require_super_admin() -> None:
-    require_current_user()
-    if not is_super_admin_request():
-        raise ApiError(
-            error_code="forbidden",
-            message="Broker-wide NATS monitoring is restricted to super-admins.",
-            status_code=403,
-        )
-
-
 def _bool_arg(name: str) -> bool:
     """Same vocabulary as the env flags; anything unrecognised is false, so a typo scopes
     the request *down* rather than widening it."""
@@ -53,17 +43,15 @@ def _bool_arg(name: str) -> bool:
 def _audit_scope() -> tuple[str | None, bool]:
     """Resolve (tenant_id, all_tenants) for an event-history read.
 
-    A super-admin may opt into a cross-tenant view with ``?allTenants=true`` or filter to
-    one tenant with ``?tenantId=``. Everyone else is pinned to their active tenant, and
-    ``all_tenants`` is never inferred.
+    The ``/m8flow/nats/*`` grant the route gate already checked is what allows a
+    cross-tenant view, with ``?allTenants=true``, or one tenant, with ``?tenantId=``.
+    Without either the read stays on the active tenant; ``all_tenants`` is never inferred.
     """
-    require_current_user()
-    if is_super_admin_request():
-        if _bool_arg("allTenants"):
-            return None, True
-        requested = (request.args.get("tenantId") or "").strip()
-        if requested:
-            return requested, False
+    if _bool_arg("allTenants"):
+        return None, True
+    requested = (request.args.get("tenantId") or "").strip()
+    if requested:
+        return requested, False
     return current_tenant_id_or_none(), False
 
 
@@ -90,7 +78,6 @@ def _require_inspection_enabled() -> None:
 @_gate
 def overview() -> tuple:
     """Server health and throughput, plus JetStream totals."""
-    _require_super_admin()
     return success_response(NatsMonitoringService.overview())
 
 
@@ -98,7 +85,6 @@ def overview() -> tuple:
 @_gate
 def streams() -> tuple:
     """Streams and consumers with derived pending / lag / delivery figures."""
-    _require_super_admin()
     return success_response(NatsMonitoringService.streams())
 
 
@@ -106,7 +92,6 @@ def streams() -> tuple:
 @_gate
 def tenants() -> tuple:
     """Backlog and outcome counts per tenant."""
-    _require_super_admin()
     return success_response({"results": NatsEventAuditQueryService.per_tenant()})
 
 
@@ -169,7 +154,6 @@ def get_event(audit_id: int) -> tuple:
 @_gate
 def stream_messages(stream_name: str) -> tuple:
     """Browse raw messages in a stream by sequence. Never acknowledges them."""
-    _require_super_admin()
     _require_inspection_enabled()
     return success_response(
         {
