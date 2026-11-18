@@ -691,6 +691,68 @@ def test_caught_service_task_error_row_is_not_shown_on_a_completed_instance(db_s
     assert detail["error_message"] is None
 
 
+def test_caught_service_task_error_is_not_shown_for_a_later_failure(db_session):
+    """A boundary caught `lookup`'s connector error, so its row exists but core
+    logged no task_failed for it. The run later failed at another task that
+    left no message: neither the banner nor the Error event may show the
+    caught error as the failure (M8F-675 review). Once that failure has its
+    own message, that one is shown."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/caught-then-failed",
+        process_model_display_name="Caught then failed",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    workflow._record_process_instance_error(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        task_guid="g-lookup",
+        message="proxy said 404 Not Found",
+    )
+    for event_type, task_guid in (("task_failed", "g-later"), ("process_instance_error", None)):
+        db_session.add(
+            ProcessInstanceEventModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                event_type=event_type,
+                occurred_at=datetime.now(UTC),
+                task_guid=task_guid,
+            )
+        )
+    db_session.flush()
+
+    def shown_errors():
+        detail = workflow.get_instance_detail_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id
+        )
+        events = workflow.list_instance_events_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id
+        )["results"]
+        (error_event,) = [e for e in events if e["event_type"] == "process_instance_error"]
+        return detail["error_message"], error_event["error_message"]
+
+    assert shown_errors() == (None, None)
+
+    workflow._record_process_instance_error(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        task_guid="g-later",
+        message="later step failed",
+    )
+    db_session.flush()
+
+    assert shown_errors() == ("later step failed", "later step failed")
+
+
 def test_instance_detail_drills_into_called_child_process(db_session, tmp_path, monkeypatch):
     from m8flow_backend.errors import ApiError
 

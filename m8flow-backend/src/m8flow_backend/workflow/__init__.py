@@ -1577,6 +1577,33 @@ def list_instance_errors(
     ]
 
 
+def _unhandled_error_message(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> str | None:
+    """Why the instance is in Error: the newest message recorded for the task
+    of its latest ``task_failed`` event, or one recorded without a task. A
+    caught connector error has a row but no ``task_failed`` event, so a later,
+    unrelated failure never shows it (M8F-675)."""
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    failed_task_guid = session.scalar(
+        select(ProcessInstanceEventModel.task_guid)
+        .where(
+            ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
+            ProcessInstanceEventModel.process_instance_id == process_instance_id,
+            ProcessInstanceEventModel.event_type == "task_failed",
+            ProcessInstanceEventModel.task_guid.is_not(None),
+        )
+        .order_by(ProcessInstanceEventModel.id.desc())
+        .limit(1)
+    )
+    errors = list_instance_errors(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
+    return next(
+        (message for task_guid, message in reversed(errors) if task_guid in (None, failed_task_guid)),
+        None,
+    )
+
+
 def suspend_instance(
     session: Session,
     *,
@@ -2597,8 +2624,9 @@ def get_instance_detail_for_designer(
 
     `to_task_guid` keeps only tasks that finished at or before that task
     (Spiff `last_state_change`); ApiError 404 if unknown, 400 unless it is
-    COMPLETED/ERROR. `error_message` is the latest recorded failure message,
-    set only while the instance status is "error".
+    COMPLETED/ERROR. `error_message` is the recorded message of the failure
+    that put the instance in Error (see `_unhandled_error_message`), set only
+    while the instance status is "error".
 
     Call activities: each CallActivity task carries `called_process_identifier`
     (its calledElement). Core stores the called child's tasks in this instance
@@ -2764,10 +2792,9 @@ def get_instance_detail_for_designer(
         has_failed_compensation = _has_failed_compensation(
             session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
         )
-        errors = list_instance_errors(
+        error_message = _unhandled_error_message(
             session, tenant_id=scope_tenant_id, process_instance_id=process_instance_id
         )
-        error_message = errors[-1][1] if errors else None
         if error_message is None and has_failed_compensation:
             error_message = "A compensation handler failed. Resolve the cause before retrying."
 
@@ -3141,7 +3168,9 @@ def list_instance_events_for_designer(
 
     errors = list_instance_errors(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
     error_by_guid = dict(errors)
-    latest_error = errors[-1][1] if errors else None
+    latest_error = _unhandled_error_message(
+        session, tenant_id=tenant_id, process_instance_id=process_instance_id
+    )
 
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str | None, str]] = set()
