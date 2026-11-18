@@ -165,3 +165,20 @@ def test_list_rows_keep_an_unparseable_published_bpmn_listable(tmp_path, monkeyp
     assert [(row["id"], row["status"], row["bpmn_processes"]) for row in rows] == [
         ("ops/broken", "published", [])
     ]
+
+
+def test_list_rows_skip_bpmn_entries_that_escape_the_tenant_or_are_not_files(tmp_path, monkeypatch):
+    """PR review: listing .bpmn names directly keeps read_model_file's guard. A
+    symlink out of the tenant root and a folder named *.bpmn add no processes."""
+    _seed_catalog(tmp_path, monkeypatch)
+    outside = tmp_path / "elsewhere" / "secret.bpmn"
+    _write(outside, VALID_BPMN.replace("simple_approval", "outside_process"))
+    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "approve"
+    (model_dir / "escape.bpmn").symlink_to(outside)
+    (model_dir / "folder.bpmn").mkdir()
+
+    rows = {row["id"]: row for row in catalog.list_model_rows(tenant_id="t1")}
+
+    assert rows["finance/approve"]["bpmn_processes"] == [
+        {"id": "simple_approval", "file_name": "approve.bpmn"}
+    ]

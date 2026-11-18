@@ -250,3 +250,66 @@ def test_snapshot_follows_a_tenant_switch_inside_one_request(app, db_session):
     assert as_t1 == (True, False)
     assert as_t2 == (False, True)
     assert back_to_t1 == (True, False)
+
+
+def test_writes_through_any_session_refresh_grants_and_raw_writes_land_next_request(app, db_session):
+    """PR review: the cache listeners are on the Session class, so a grant written
+    through *another* ORM session in the same request is seen at once. A write that
+    bypasses SQLAlchemy sessions (raw connection, another process) is seen from the
+    next request: grants are a per-request snapshot for those."""
+    from sqlalchemy.orm import Session
+
+    from m8flow_core.models.permission_assignment import PermissionAssignmentModel
+
+    user = _user_with_roles(db_session, "snapshot-other-session", {"t1": ["editor"]})
+
+    with app.test_request_context("/v1.0/permissions-check"):
+        g.db_session = db_session
+        g.m8flow_tenant_id = "t1"
+        before = allow_uri(user, "GET", "/v1.0/secrets", session=db_session)
+        db_session.commit()  # end this transaction so the other writers can commit
+
+        with Session(bind=db_session.get_bind()) as other:
+            granted = identity.grant(
+                other, principal=_group_principal(other, "t1:editor"), uri="/secrets", permission="read"
+            )
+            other.commit()
+            granted_id = granted.id
+        after_other_session = allow_uri(user, "GET", "/v1.0/secrets", session=db_session)
+        db_session.commit()
+
+        with db_session.get_bind().begin() as raw:
+            raw.execute(
+                PermissionAssignmentModel.__table__.delete().where(
+                    PermissionAssignmentModel.__table__.c.id == granted_id
+                )
+            )
+        after_raw_write = allow_uri(user, "GET", "/v1.0/secrets", session=db_session)
+
+    with app.test_request_context("/v1.0/permissions-check"):
+        g.db_session = db_session
+        g.m8flow_tenant_id = "t1"
+        next_request = allow_uri(user, "GET", "/v1.0/secrets", session=db_session)
+
+    assert (before, after_other_session, after_raw_write, next_request) == (False, True, True, False)
+
+
+def test_tenant_identifiers_are_looked_up_again_after_a_rollback(app, db_session):
+    """PR review: a rollback drops the tenant-identifier memo too."""
+    from m8flow_backend.auth.canonicalize import current_tenant_identifiers
+
+    _user_with_roles(db_session, "snapshot-rollback", {"t1": ["editor"]})
+
+    def tenant_selects(call) -> int:
+        _, selects = _selects(db_session, call)
+        return sum("from m8flow_tenant" in sql for sql in selects)
+
+    with app.test_request_context("/v1.0/permissions-check"):
+        g.db_session = db_session
+        g.m8flow_tenant_id = "t1"
+        first = tenant_selects(current_tenant_identifiers)
+        cached = tenant_selects(current_tenant_identifiers)
+        db_session.rollback()
+        after_rollback = tenant_selects(current_tenant_identifiers)
+
+    assert (first, cached, after_rollback) == (1, 0, 1)
