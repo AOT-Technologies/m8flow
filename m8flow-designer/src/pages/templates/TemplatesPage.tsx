@@ -6,6 +6,7 @@ import {
   exportTemplate,
   fetchTemplates,
   restoreTemplate,
+  templateErrorMessage,
   type Template,
   type TemplatePagination,
 } from '@/lib/templatesApi';
@@ -123,7 +124,7 @@ export default function TemplatesPage() {
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : i18n.t('templates.errors.loadTemplates'));
+          setError(templateErrorMessage(err, i18n.t('templates.errors.loadTemplates')));
           setTemplates([]);
           setPagination(null);
         }
@@ -145,7 +146,7 @@ export default function TemplatesPage() {
       const blob = await exportTemplate(template.id);
       downloadBlob(`${template.templateKey}-v${template.version}.zip`, blob);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : i18n.t('templates.errors.exportTemplate'));
+      setActionError(templateErrorMessage(err, i18n.t('templates.errors.exportTemplate')));
     }
   }, []);
 
@@ -168,7 +169,7 @@ export default function TemplatesPage() {
       setDeleteTarget(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : i18n.t('templates.errors.deleteTemplate'));
+      setActionError(templateErrorMessage(err, i18n.t('templates.errors.deleteTemplate')));
     } finally {
       setActionBusy(false);
     }
@@ -183,7 +184,7 @@ export default function TemplatesPage() {
       setRestoreTarget(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : i18n.t('templates.errors.restoreTemplate'));
+      setActionError(templateErrorMessage(err, i18n.t('templates.errors.restoreTemplate')));
     } finally {
       setActionBusy(false);
     }

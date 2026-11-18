@@ -12,6 +12,7 @@ import {
   fetchTemplate,
   fetchTemplateFileContent,
   saveTemplateFileContent,
+  templateErrorMessage,
   templateModelerFilePath,
   type Template,
 } from '@/lib/templatesApi';
@@ -107,7 +108,7 @@ export default function TemplateFileModelerPage() {
         if (err instanceof ApiError && err.status === 404) {
           setNotFound(true);
         } else {
-          setError(err instanceof Error ? err.message : i18n.t('templates.errors.loadFile'));
+          setError(templateErrorMessage(err, i18n.t('templates.errors.loadFile')));
         }
       })
       .finally(() => {
