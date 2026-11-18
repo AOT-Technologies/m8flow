@@ -198,3 +198,30 @@ def test_snapshot_still_applies_deny_rows(app, db_session):
         second = allow_uri(user, "GET", "/v1.0/process-models", session=db_session, group_fallback=False)
 
     assert (first, second) == (False, False)
+
+
+def _get_onboarding_and_tasks(client, user, tenant_id: str) -> tuple[int, int]:
+    headers = _headers(client, user, tenant_id)
+    onboarding = client.get("/v1.0/onboarding", headers=headers)
+    tasks = client.get("/v1.0/tasks", headers=headers)
+    return onboarding.status_code, tasks.status_code
+
+
+def test_editor_and_reviewer_still_reach_onboarding_and_tasks(client, db_session):
+    """AGENTS.md: non-admin shared-realm users keep their protected-route access."""
+    editor = _user_with_roles(db_session, "snapshot-route-editor", {"t1": ["editor"]})
+    reviewer = _user_with_roles(db_session, "snapshot-route-reviewer", {"t1": ["reviewer"]})
+
+    assert _get_onboarding_and_tasks(client, editor, "t1") == (200, 200)
+    assert _get_onboarding_and_tasks(client, reviewer, "t1") == (200, 200)
+
+
+def test_multi_org_editor_reaches_onboarding_and_tasks_in_each_org(client, db_session):
+    """An editor who joins a second organization keeps access after selecting either."""
+    editor = _user_with_roles(
+        db_session, "snapshot-route-multi", {"t1": ["editor"], "t2": ["editor"]}
+    )
+
+    assert _get_onboarding_and_tasks(client, editor, "t1") == (200, 200)
+    assert _get_onboarding_and_tasks(client, editor, "t2") == (200, 200)
+    assert _get_onboarding_and_tasks(client, editor, "t1") == (200, 200)
