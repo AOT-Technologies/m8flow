@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
+from alembic import command
+from alembic.config import Config
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 
@@ -75,3 +79,116 @@ def test_downgrade_drops_only_the_run_stats_index_and_is_idempotent():
 def test_migration_follows_the_current_head():
     assert _migration().down_revision == "c7e9a1b3d5f7"
     assert _migration().revision == "e9c4b2a71f53"
+
+
+# PostgreSQL path: CONCURRENTLY, invalid-index recovery, schema scoping. Runs only
+# against a disposable database, like test_migration_bootstrap.py's RLS checks.
+_PG_URI = os.environ.get("M8FLOW_TEST_POSTGRES_URI")
+_needs_postgres = pytest.mark.skipif(
+    not _PG_URI, reason="Set M8FLOW_TEST_POSTGRES_URI to a disposable database."
+)
+_PREVIOUS = "fbcad9e02138"
+_HEAD = "e9c4b2a71f53"
+
+
+def _alembic(monkeypatch) -> Config:
+    monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", _PG_URI)
+    monkeypatch.delenv("M8FLOW_DATABASE_URI", raising=False)
+    cfg = Config()
+    cfg.set_main_option("script_location", str(_MIGRATION_PATH.parents[1]))
+    return cfg
+
+
+def _index_state(engine, schema: str = "public") -> bool | None:
+    """indisvalid of the run-stats index in `schema`; None when absent."""
+    with engine.connect() as connection:
+        return connection.execute(
+            sa.text(
+                "SELECT i.indisvalid FROM pg_index i "
+                "JOIN pg_class c ON c.oid = i.indexrelid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE c.relname = :name AND n.nspname = :schema"
+            ),
+            {"name": _INDEX, "schema": schema},
+        ).scalar()
+
+
+def _ddl_seen(call) -> list[str]:
+    seen: list[str] = []
+
+    def _before(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if _INDEX in statement and statement.lstrip().upper().startswith(("CREATE", "DROP")):
+            seen.append(" ".join(statement.split()))
+
+    sa.event.listen(sa.engine.Engine, "before_cursor_execute", _before)
+    try:
+        call()
+    finally:
+        sa.event.remove(sa.engine.Engine, "before_cursor_execute", _before)
+    return seen
+
+
+@_needs_postgres
+def test_postgres_builds_and_drops_concurrently_and_is_idempotent(monkeypatch):
+    cfg = _alembic(monkeypatch)
+    engine = sa.create_engine(_PG_URI)
+    command.upgrade(cfg, "head")
+
+    dropped = _ddl_seen(lambda: command.downgrade(cfg, _PREVIOUS))
+    assert _index_state(engine) is None
+    command.stamp(cfg, _HEAD)
+    command.downgrade(cfg, _PREVIOUS)  # index already gone: the guard makes this a no-op
+    created = _ddl_seen(lambda: command.upgrade(cfg, "head"))
+    again = _ddl_seen(lambda: command.upgrade(cfg, "head"))
+
+    assert dropped == [f"DROP INDEX CONCURRENTLY {_INDEX}"]
+    assert [sql.split(" ON ")[0] for sql in created] == [f"CREATE INDEX CONCURRENTLY {_INDEX}"]
+    assert again == []
+    assert _index_state(engine) is True
+
+
+@_needs_postgres
+def test_postgres_rebuilds_an_invalid_index(monkeypatch):
+    """An interrupted CONCURRENTLY build leaves an INVALID index; upgrade replaces it."""
+    cfg = _alembic(monkeypatch)
+    engine = sa.create_engine(_PG_URI)
+    command.upgrade(cfg, "head")
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass(:name)"),
+            {"name": _INDEX},
+        )
+    command.stamp(cfg, _PREVIOUS)
+    assert _index_state(engine) is False
+
+    command.upgrade(cfg, "head")
+
+    assert _index_state(engine) is True
+
+
+@_needs_postgres
+def test_postgres_validity_check_ignores_a_same_named_index_in_another_schema(monkeypatch):
+    """PR review: the validity lookup must be scoped to this schema's process_instance."""
+    cfg = _alembic(monkeypatch)
+    engine = sa.create_engine(_PG_URI)
+    command.upgrade(cfg, "head")
+    with engine.begin() as connection:
+        connection.execute(sa.text("DROP SCHEMA IF EXISTS m8f703_decoy CASCADE"))
+        connection.execute(sa.text("CREATE SCHEMA m8f703_decoy"))
+        connection.execute(sa.text("CREATE TABLE m8f703_decoy.process_instance (m8f_tenant_id text)"))
+        connection.execute(sa.text(f"CREATE INDEX {_INDEX} ON m8f703_decoy.process_instance (m8f_tenant_id)"))
+        connection.execute(
+            sa.text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass(:name)"),
+            {"name": f"m8f703_decoy.{_INDEX}"},
+        )
+    try:
+        command.downgrade(cfg, _PREVIOUS)
+        assert _index_state(engine) is None
+
+        command.upgrade(cfg, "head")
+
+        assert _index_state(engine) is True
+        assert _index_state(engine, schema="m8f703_decoy") is False  # left alone
+    finally:
+        with engine.begin() as connection:
+            connection.execute(sa.text("DROP SCHEMA IF EXISTS m8f703_decoy CASCADE"))

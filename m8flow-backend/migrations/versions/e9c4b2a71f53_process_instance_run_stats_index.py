@@ -34,13 +34,20 @@ def _index_names() -> set[str]:
 
 
 def _postgres_index_is_valid() -> bool | None:
-    """True/False for an existing index's validity; None when it does not exist."""
+    """True/False for the index's validity; None when it does not exist.
+
+    Scoped to this migration's own index on its own process_instance table:
+    to_regclass resolves both names through the search_path, exactly as the
+    unqualified CREATE/DROP below do, so a same-named index in another schema
+    is never mistaken for this one.
+    """
     return op.get_bind().execute(
         sa.text(
-            "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
-            "WHERE c.relname = :name"
+            "SELECT i.indisvalid FROM pg_index i "
+            "WHERE i.indexrelid = to_regclass(:index_name) "
+            "AND i.indrelid = to_regclass(:table_name)"
         ),
-        {"name": INDEX_NAME},
+        {"index_name": INDEX_NAME, "table_name": TABLE_NAME},
     ).scalar()
 
 
