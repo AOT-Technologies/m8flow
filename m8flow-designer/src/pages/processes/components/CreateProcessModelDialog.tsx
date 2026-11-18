@@ -169,12 +169,15 @@ export function CreateProcessModelDialog({
             </div>
           ) : (
             <Select value={processGroupId} onValueChange={setProcessGroupId}>
-              <SelectTrigger id="cpm-group" className="[&>span]:min-w-0 [&>span]:line-clamp-none [&>span]:truncate">
+              <SelectTrigger
+                id="cpm-group"
+                title={groups.find((group) => group.id === processGroupId)?.display_name || processGroupId}
+              >
                 <SelectValue placeholder={t('processes.create.selectGroup')} />
               </SelectTrigger>
               <SelectContent className="w-[var(--radix-select-trigger-width)]">
                 {groups.map((g) => (
-                  <SelectItem key={g.id} value={g.id} className="[overflow-wrap:anywhere]">
+                  <SelectItem key={g.id} value={g.id} title={g.display_name || g.id}>
                     {g.display_name || g.id}
                   </SelectItem>
                 ))}

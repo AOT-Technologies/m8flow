@@ -272,7 +272,9 @@ export function ProcessesModelsList({
             className="mt-1 flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-muted-foreground"
           >
             <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
-            <span className="truncate">{model.group_display_name || model.group_id}</span>
+            <span title={model.group_display_name || model.group_id} className="truncate">
+              {model.group_display_name || model.group_id}
+            </span>
           </button>
         </div>
       ),
@@ -439,15 +441,16 @@ export function ProcessesModelsList({
         <button
           type="button"
           onClick={onBrowseGroups}
+          title={scopeLabel ?? t('processes.allGroups')}
           className={cn(
-            'inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-[13.5px] font-semibold text-foreground',
+            'inline-flex min-w-0 max-w-[min(100%,32rem)] items-center gap-2 rounded-full border px-3 py-1.5 text-[13.5px] font-semibold text-foreground',
             groupFilterOn
               ? 'border-nav-active/40 bg-nav-active/15'
               : 'border-border bg-card',
           )}
         >
           <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
-          <span className="min-w-0 truncate">{scopeLabel ?? t('processes.allGroups')}</span>
+          <span className="min-w-0 flex-1 truncate">{scopeLabel ?? t('processes.allGroups')}</span>
           <svg
             width="13"
             height="13"
