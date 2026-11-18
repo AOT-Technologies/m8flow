@@ -148,6 +148,7 @@ instances also include `collaboration_correlation_key` in the response.
 
 | HTTP status | Error code | Cause |
 |---|---|---|
+| 400 | `validation_error` | The request body is invalid JSON, is not an object, or lacks a nonblank string `process_model_identifier` |
 | 400 | `validation_error` | Invalid option value or collaboration options supplied for a single-process model |
 | 400 | `collaboration_participant_required` | No participant was selected |
 | 404 | `collaboration_participant_not_found` | The selected process is outside the executable participants |

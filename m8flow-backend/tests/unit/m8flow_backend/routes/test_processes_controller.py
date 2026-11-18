@@ -1122,6 +1122,51 @@ def test_v1_start_collaboration_contract(client, db_session, monkeypatch, option
         assert response.get_json() == {"id": 123, "status": "running", "collaboration_correlation_key": response_key}
 
 
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        pytest.param("null", "Request body must be a JSON object.", id="null-body"),
+        pytest.param("[]", "Request body must be a JSON object.", id="non-object"),
+        pytest.param("{", "Request body must be a JSON object.", id="invalid-json"),
+        pytest.param("{}", "process_model_identifier must be a nonblank string.", id="missing-identifier"),
+        pytest.param(
+            '{"process_model_identifier": null}',
+            "process_model_identifier must be a nonblank string.",
+            id="null-identifier",
+        ),
+        pytest.param(
+            '{"process_model_identifier": 42}',
+            "process_model_identifier must be a nonblank string.",
+            id="non-string-identifier",
+        ),
+        pytest.param(
+            '{"process_model_identifier": "  "}',
+            "process_model_identifier must be a nonblank string.",
+            id="blank-identifier",
+        ),
+    ],
+)
+def test_v1_start_rejects_invalid_request_body(client, db_session, monkeypatch, body, message):
+    from m8flow_backend import workflow
+
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    start = Mock()
+    monkeypatch.setattr(workflow, "start", start)
+
+    response = client.post(
+        "/v1.0/process-instances",
+        headers={"Authorization": f"Bearer {token}"},
+        data=body,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json() == {"error_code": "validation_error", "message": message}
+    start.assert_not_called()
+
+
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):
     """Pausing blocks new starts (M8F-508). Guarded in workflow.start, so the
     thin/MCP start path is covered by the same rule, not just this route."""

@@ -146,12 +146,18 @@ def register_v1_routes(app: Flask) -> None:
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            raise ApiError("validation_error", "Request body must be a JSON object.", 400)
+        process_model_identifier = body.get("process_model_identifier")
+        if not isinstance(process_model_identifier, str) or not process_model_identifier.strip():
+            raise ApiError("validation_error", "process_model_identifier must be a nonblank string.", 400)
+
         instance = workflow.start(
             session,
             tenant_id=tenant_id,
             user_id=user.id,
-            process_model_identifier=body["process_model_identifier"],
+            process_model_identifier=process_model_identifier,
             bpmn_process_id=body.get("bpmn_process_id"),
             collaboration_correlation_key=body.get("collaboration_correlation_key"),
         )
