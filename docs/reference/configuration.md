@@ -59,6 +59,7 @@ every value in the following table:
 | `M8FLOW_KEYCLOAK_DEFAULT_ORGANIZATION_ALIAS` | The shared realm name | Organization that the Keycloak bootstrap creates in the shared realm |
 | `M8FLOW_APP_PUBLIC_BASE_URL` | Unset | Public app URL, when the app and Keycloak use different hosts |
 | `M8FLOW_AUTH_PROVIDER` | `keycloak` | Which auth provider the backend loads. See [the auth provider guide](../auth-provider/README.md). |
+| `M8FLOW_AUTH_MEMBERSHIP_CACHE_TTL_SECONDS` | Unset (off) | Seconds to cache each user's organization and group lookup from the auth provider, at most 60. Keycloak tokens name the active organization but not its groups, so with the cache off every authenticated request makes three Keycloak admin API calls (about 30–75 ms per request locally). Set it to `30` in deployed environments. A group change made directly in Keycloak then takes effect after at most that many seconds. Sign-in, tenant switch, sign-out and member changes made through m8flow refresh it immediately, but only on the backend worker that handled them. |
 
 ## Invitations and email
 
