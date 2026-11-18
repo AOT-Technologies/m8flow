@@ -10,8 +10,46 @@ deep-module map, ticket 03.
 from __future__ import annotations
 
 from flask import g, has_request_context
+from sqlalchemy import event
+from sqlalchemy.orm import Session
 
 from m8flow_backend.auth.tenant_context import get_context_tenant_id, is_concrete_tenant_id
+
+_REQUEST_MEMO_ATTR = "_m8flow_request_memo"
+
+
+def request_memo(name: str, session) -> dict | None:
+    """Per-request cache bucket for a read-only lookup, or None when caching is unsafe.
+
+    None outside a request, or while ``session`` holds unflushed writes (a fresh
+    query would autoflush and see them; a cached answer would not). Any flush or
+    rollback drops every bucket (listener below), so nothing written earlier in
+    the request is ever hidden. M8F-703: authorization ran 3 queries per
+    (uri, method) checked, ~250 per permissions-check.
+    """
+    if session is None or not has_request_context():
+        return None
+    if getattr(session, "new", None) or getattr(session, "dirty", None) or getattr(session, "deleted", None):
+        return None
+    buckets = getattr(g, _REQUEST_MEMO_ATTR, None)
+    if buckets is None:
+        buckets = {}
+        setattr(g, _REQUEST_MEMO_ATTR, buckets)
+    return buckets.setdefault(name, {})
+
+
+@event.listens_for(Session, "after_flush")
+@event.listens_for(Session, "after_soft_rollback")
+def _drop_request_memo(_session, *_args) -> None:
+    if has_request_context():
+        g.pop(_REQUEST_MEMO_ATTR, None)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _drop_request_memo_on_write(orm_execute_state) -> None:
+    # Core writes grants with session.execute(insert(...)), which never flushes.
+    if not orm_execute_state.is_select:
+        _drop_request_memo(orm_execute_state.session)
 
 
 def _find_tenant_row(*identifiers: str | None):
@@ -95,6 +133,10 @@ def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
     if not effective_tenant_id:
         return set()
 
+    memo = request_memo("tenant_identifiers", getattr(g, "db_session", None) if has_request_context() else None)
+    if memo is not None and effective_tenant_id in memo:
+        return set(memo[effective_tenant_id])
+
     identifiers = {effective_tenant_id}
     tenant = _find_tenant_row(effective_tenant_id)
 
@@ -104,6 +146,10 @@ def current_tenant_identifiers(tenant_id: str | None = None) -> set[str]:
                 normalized = value.strip()
                 if normalized:
                     identifiers.add(normalized)
+        # Only hits are cached: a tenant created later in the request must not
+        # be hidden behind a remembered miss.
+        if memo is not None:
+            memo[effective_tenant_id] = frozenset(identifiers)
 
     return identifiers
 
