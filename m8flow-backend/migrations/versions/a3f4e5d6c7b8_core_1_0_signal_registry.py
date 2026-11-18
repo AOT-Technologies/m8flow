@@ -66,6 +66,25 @@ def _has_index(table: str, name: str) -> bool:
     return any(index["name"] == name for index in sa.inspect(op.get_bind()).get_indexes(table))
 
 
+def _index_exists(table: str, name: str, columns: list[str], *, unique: bool) -> bool:
+    """True when ``table`` has ``name`` or an equivalent under another name.
+
+    Equivalent means a full (not partial) index on exactly ``columns``, unique
+    when ``unique`` is required, or a unique or primary key constraint on them.
+    A baseline ``create_all`` or an earlier host revision may have named it.
+    """
+    inspector = sa.inspect(op.get_bind())
+    for index in inspector.get_indexes(table):
+        partial = any(key.endswith("_where") for key in index.get("dialect_options", {}))
+        if index["name"] == name or (
+            index["column_names"] == columns and not partial and (index["unique"] or not unique)
+        ):
+            return True
+    keys = [constraint["column_names"] for constraint in inspector.get_unique_constraints(table)]
+    keys.append(inspector.get_pk_constraint(table)["constrained_columns"])
+    return columns in keys
+
+
 def _record_created(name: str) -> None:
     op.get_bind().execute(_OWNERSHIP.insert().values(object_name=name))
 
@@ -76,9 +95,12 @@ def _create_table(name: str, *elements: sa.SchemaItem) -> None:
         _record_created(name)
 
 
-def _create_index(name: str, table: str, columns: list[str], *, unique: bool = False) -> None:
-    if not _has_index(table, name):
-        op.create_index(name, table, columns, unique=unique)
+def _create_index(name: str, table: str, columns: list[str], *, unique: bool = False) -> bool:
+    """Create the index unless it or an equivalent exists; True if created."""
+    if _index_exists(table, name, columns, unique=unique):
+        return False
+    op.create_index(name, table, columns, unique=unique)
+    return True
 
 
 def _pk(table: str) -> str:
@@ -237,8 +259,7 @@ def upgrade() -> None:
     if not _has_table(_OWNERSHIP.name):
         op.create_table(_OWNERSHIP.name, sa.Column("object_name", sa.String(63), primary_key=True))
     for name, table in _TENANT_ID_KEYS:
-        if not _has_index(table, name):
-            op.create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
+        if _create_index(name, table, ["m8f_tenant_id", "id"], unique=True):
             _record_created(name)
     _create_signal_tables()
     for table in _NEW_TABLES:

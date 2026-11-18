@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.metadata
 import threading
 from typing import Any
 
@@ -27,7 +28,14 @@ def runtime_script_engine_class() -> Any:
         module = importlib.import_module("m8flow_core.services.workflow_engine")
     except ModuleNotFoundError:  # m8flow-core 1.0.0b3
         module = importlib.import_module("m8flow_core.services.workflow_runtime")
-    return module._RuntimeServiceTaskScriptEngine
+    engine = getattr(module, "_RuntimeServiceTaskScriptEngine", None)
+    if engine is None or not callable(getattr(engine, "evaluate", None)):
+        raise RuntimeError(
+            f"m8flow-core {importlib.metadata.version('m8flow-core')} has no "
+            f"{module.__name__}._RuntimeServiceTaskScriptEngine.evaluate, which the Service "
+            "Task literal fallback patches. Update service_task_params for this core version."
+        )
+    return engine
 
 
 def is_service_task(task: object) -> bool:
