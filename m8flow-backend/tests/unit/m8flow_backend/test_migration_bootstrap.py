@@ -1344,6 +1344,44 @@ def test_signal_registry_downgrade_drops_only_what_it_created(tmp_path, monkeypa
     engine.dispose()
 
 
+def test_signal_registry_reuses_an_equivalent_tenant_id_index(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'signals-equivalent-index.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table in reversed(_SIGNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table}"))
+        for index in _SIGNAL_TENANT_ID_KEYS:
+            connection.execute(sa.DDL(f"DROP INDEX IF EXISTS {index}"))
+        # Same columns and unique under another name: counts as the tenant/id key.
+        connection.execute(sa.DDL("CREATE UNIQUE INDEX legacy_pi_key ON process_instance (m8f_tenant_id, id)"))
+        # Neither a non-unique index nor a partial unique one can back a composite foreign key.
+        connection.execute(sa.DDL("CREATE INDEX legacy_def_lookup ON bpmn_process_definition (m8f_tenant_id, id)"))
+        connection.execute(sa.DDL(
+            "CREATE UNIQUE INDEX legacy_def_partial ON bpmn_process_definition (m8f_tenant_id, id) WHERE id > 0"
+        ))
+
+    def index_names() -> set[str]:
+        inspector = sa.inspect(engine)
+        return {
+            index["name"]
+            for table in ("process_instance", "bpmn_process_definition")
+            for index in inspector.get_indexes(table)
+        }
+
+    command.upgrade(cfg, "head")
+    created = index_names()
+    assert "m8f_process_instance_tenant_id_key" not in created
+    assert "m8f_definition_tenant_id_key" in created
+
+    command.downgrade(cfg, previous_revision)
+    assert index_names() >= {"legacy_pi_key", "legacy_def_lookup", "legacy_def_partial"}
+    assert not index_names() & set(_SIGNAL_TENANT_ID_KEYS)
+    engine.dispose()
+
+
 def test_signal_registry_upgrade_names_a_missing_parent_table(tmp_path, monkeypatch):
     database_uri = f"sqlite:///{tmp_path / 'signals-missing-parent.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
