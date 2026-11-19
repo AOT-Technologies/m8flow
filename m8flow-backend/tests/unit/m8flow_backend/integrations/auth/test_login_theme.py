@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 
 import pytest
@@ -77,6 +78,65 @@ def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
     assert "test -f /tmp/m8flow-keycloak-ready" in services["keycloak"]["healthcheck"]["test"][1]
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["restart"] is True
+    assert services["m8flow-backend"]["build"]["target"] == "dev"
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
+def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(tmp_path):
+    mock_bin = tmp_path / "bin"
+    mock_bin.mkdir()
+    child_pid_file = tmp_path / "child.pid"
+    flow_calls = tmp_path / "flow-calls"
+    ready_file = tmp_path / "ready"
+    ready_file.touch()
+    scripts = {
+        "kc.sh": '#!/usr/bin/env bash\n[ "$1" != bootstrap-admin ] || exit 0\n'
+        'printf "%s\\n" "$$" > "$MOCK_KC_CHILD_PID"\nexec sleep 90\n',
+        "kcadm.sh": "#!/usr/bin/env bash\nexit 0\n",
+        "jq": "#!/usr/bin/env bash\nexit 0\n",
+        "keycloak-client-secret.sh": "ensure_shared_realm_spoke_client_secret() { return 0; }\n",
+        "keycloak-login-flow.sh": 'ensure_realm_single_page_login() { '
+        'printf "%s\\n" "$1" >> "$MOCK_KC_FLOW_CALLS"; return 1; }\n',
+    }
+    entrypoint = ENTRYPOINT.read_text()
+    for name, contents in scripts.items():
+        path = mock_bin / name
+        path.write_text(contents)
+        path.chmod(0o755)
+        if name != "jq":
+            entrypoint = entrypoint.replace(f"/opt/keycloak/bin/{name}", str(path))
+    entrypoint = entrypoint.replace("/tmp/m8flow-keycloak-ready", str(ready_file))
+    entrypoint = entrypoint.replace(
+        "/opt/keycloak/data/import/m8flow-tenant-template.json", str(tmp_path / "missing-import.json")
+    )
+    script = tmp_path / "entrypoint.sh"
+    script.write_text(entrypoint)
+    env = {
+        **os.environ,
+        "PATH": f"{mock_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+        "KC_BOOTSTRAP_ADMIN_PASSWORD": "bootstrap-test-only",
+        "KEYCLOAK_SUPER_ADMIN_PASSWORD": "superadmin-test-only",
+        "M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET": "spoke-test-only",
+        "MOCK_KC_CHILD_PID": str(child_pid_file),
+        "MOCK_KC_FLOW_CALLS": str(flow_calls),
+    }
+    try:
+        result = subprocess.run(
+            [shutil.which("bash"), str(script), "start-dev"],
+            env=env, capture_output=True, text=True, timeout=20,
+        )
+        assert result.returncode == 1
+        assert "Single-page login configuration failed for master" in result.stderr
+        assert flow_calls.read_text().splitlines() == ["master"] * 3
+        assert not ready_file.exists()
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(child_pid_file.read_text()), 0)
+    finally:
+        if child_pid_file.exists():
+            try:
+                os.kill(int(child_pid_file.read_text()), signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
 
 @pytest.mark.skipif(

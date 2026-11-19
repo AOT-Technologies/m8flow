@@ -505,6 +505,8 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+      # The E2E gate builds this target; the production override selects prod.
+      target: dev
       args:
         UPSTREAM_TAG: ${UPSTREAM_TAG:-}
         # Shared base image. Override to build/test against a locally-built base.

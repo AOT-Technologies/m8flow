@@ -155,6 +155,12 @@ The proxy waits for that readiness, so new installations cannot expose an
 identity-first login page while organization seeding is still running. Username
 and password are collected together in both the shared and master realms.
 
+The healthcheck allows a 300-second startup grace period, followed by 12 failed
+checks at 10-second intervals before reporting unhealthy (probe duration can
+extend that window). Critical login-flow failures stop Keycloak immediately
+after its bounded retries. Cold startup time depends on CPU and database
+performance; inspect the entrypoint logs before extending these Compose settings.
+
 Normal rebuilds reuse the backend's Python dependency layer and Keycloak's Maven
 cache. Avoid `--no-cache` for routine source changes. For theme-only edits, rebuild
 just the authentication service with

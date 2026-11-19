@@ -877,7 +877,10 @@ else
   echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to enforce organizations and username-only login policy." >&2
 fi
 for realm in master "${SHARED_REALM}"; do
-  ensure_realm_single_page_login "${realm}"
+  if ! ensure_realm_single_page_login "${realm}"; then
+    echo "[keycloak-init-realms] ERROR: Single-page login configuration failed for ${realm}." >&2
+    exit 1
+  fi
 done
 ensure_shared_realm_spoke_client_scope
 remove_shared_realm_legacy_root_group_mappers

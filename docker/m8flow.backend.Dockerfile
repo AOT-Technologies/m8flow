@@ -98,6 +98,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Resolve third-party dependencies from manifests before copying application
 # code. UI/theme/test edits must not rerun Python dependency installation.
+# Telemetry is the only local dependency declared by the backend manifest;
+# its complete source is copied before resolution. The backend is installed
+# after the full source copy in the dev stage below.
 COPY m8flow-backend/pyproject.toml /app/m8flow-backend/pyproject.toml
 COPY m8flow-telemetry /app/m8flow-telemetry
 
