@@ -487,7 +487,7 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
         BpmnProcessDefinitionModel,
         PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
     )
-    from m8flow_core.models.scheduler_job import SchedulerJobModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
@@ -542,20 +542,24 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
                 m8f_tenant_id=tenant_id,
             )
         )
-    # Pending one-shot occurrences must not be advertised as recurring schedules.
-    occurrence_run_at = datetime(2026, 2, 3, 2, 5, tzinfo=UTC)
-    db_session.add(
-        SchedulerJobModel(
-            job_key="timer-occurrence-t1",
-            job_type="timer_start_occurrence",
-            bpmn_process_definition_id=schedule_definitions[0][2].id,
-            run_at=occurrence_run_at,
-            payload_json={},
-            created_at=occurrence_run_at,
-            updated_at=occurrence_run_at,
-            m8f_tenant_id="t1",
+    # Newer core releases distinguish a one-shot timer occurrence from the
+    # recurring schedule. Only create that fixture when this core version
+    # supports the job type; b3 validates job types against its enum.
+    occurrence_type = getattr(SchedulerJobType, "timer_start_occurrence", None)
+    if occurrence_type is not None:
+        occurrence_run_at = datetime(2026, 2, 3, 2, 5, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key="timer-occurrence-t1",
+                job_type=occurrence_type.value,
+                bpmn_process_definition_id=schedule_definitions[0][2].id,
+                run_at=occurrence_run_at,
+                payload_json={},
+                created_at=occurrence_run_at,
+                updated_at=occurrence_run_at,
+                m8f_tenant_id="t1",
+            )
         )
-    )
     db_session.commit()
 
     response = client.get(
