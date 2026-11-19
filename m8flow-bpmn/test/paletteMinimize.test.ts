@@ -79,6 +79,36 @@ describe('paletteMinimizeModule', () => {
     expect(palette.isOpen()).toBe(false);
   });
 
+  it('on leaving expanded view restores the state from before expanding, not changes made while expanded', () => {
+    // Open before expanding; reopened then minimized again while expanded.
+    const first = mountPalette();
+    first.fire('m8flow.expand.changed', { expanded: true });
+    (first.container.querySelector('.djs-palette-toggle') as HTMLElement).click();
+    (first.container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement).click();
+    first.fire('m8flow.expand.changed', { expanded: false });
+    expect(first.palette.isOpen()).toBe(true);
+
+    // Minimized before expanding; reopened while expanded.
+    const second = mountPalette();
+    (second.container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement).click();
+    second.fire('m8flow.expand.changed', { expanded: true });
+    (second.container.querySelector('.djs-palette-toggle') as HTMLElement).click();
+    expect(second.palette.isOpen()).toBe(true);
+    second.fire('m8flow.expand.changed', { expanded: false });
+    expect(second.palette.isOpen()).toBe(false);
+  });
+
+  it('names its icon-only controls with aria-label and translates it', () => {
+    let dictionary: Record<string, string> = {};
+    const { container, fire } = mountPalette((template) => dictionary[template] ?? template);
+    const minimize = container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement;
+    const toggle = container.querySelector('.djs-palette-toggle') as HTMLElement;
+    expect([minimize.getAttribute('aria-label'), toggle.getAttribute('aria-label')]).toEqual(['Minimize', 'Expand']);
+    dictionary = { Minimize: 'Minimieren', Expand: 'Erweitern' };
+    fire('i18n.changed');
+    expect([minimize.getAttribute('aria-label'), toggle.getAttribute('aria-label')]).toEqual(['Minimieren', 'Erweitern']);
+  });
+
   it('keeps aria-expanded on both controls in step with the palette', () => {
     const { container, palette, fire } = mountPalette();
     const minimize = container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement;

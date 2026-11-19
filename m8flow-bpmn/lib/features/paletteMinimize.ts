@@ -13,8 +13,12 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
   let reopen: HTMLElement | null = null;
 
   const setTitles = () => {
-    if (minimize) minimize.title = translate('Minimize');
-    if (reopen) reopen.title = translate('Expand');
+    // aria-label too: these are icon-only, so the label is their name.
+    for (const [control, key] of [[minimize, 'Minimize'], [reopen, 'Expand']] as const) {
+      if (!control) continue;
+      control.title = translate(key);
+      control.setAttribute('aria-label', translate(key));
+    }
   };
 
   eventBus.on('palette.create', ({ container }: { container: HTMLElement }) => {
@@ -58,8 +62,12 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
   };
   eventBus.on('palette.changed', ({ open }: { open: boolean }) => syncExpanded(open));
 
-  // Expanded view (zoomControls): minimize to give the diagram the room; the
-  // user can reopen it, and leaving restores what they had.
+  // Expanded view (zoomControls). Runs only when the view enters or leaves
+  // expanded mode, not on the user's own minimize / reopen clicks:
+  // - entering: remember the current state, then minimize to give the
+  //   diagram the room (the user can still reopen it while expanded);
+  // - leaving: restore the state from *before* expanding. Changes made while
+  //   expanded do not carry over to the normal view.
   let minimizedBeforeExpand = false;
   eventBus.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
     if (expanded) minimizedBeforeExpand = minimized;

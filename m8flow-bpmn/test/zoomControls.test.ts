@@ -176,6 +176,36 @@ describe('zoomControlsModule', () => {
     expect(svg.querySelectorAll('path')).toHaveLength(4);
   });
 
+  it('falls back to the canvas when config.zoomControls.parent is not an element', () => {
+    for (const bad of ['not-an-element', {}, 42]) {
+      const parent = document.createElement('div');
+      const canvas = { getContainer: () => parent, zoom: vi.fn(), resized: vi.fn() };
+      expect(() =>
+        new (ZoomControls as unknown as new (...args: unknown[]) => void)(canvas, { on: vi.fn() }, (t: string) => t, { parent: bad }),
+      ).not.toThrow();
+      const pill = parent.querySelector('.m8flow-bpmn-zoom') as HTMLElement;
+      expect(pill).toBeTruthy();
+      expect(pill.classList.contains('m8flow-bpmn-zoom--inline')).toBe(false);
+    }
+
+    // A detached element is still a valid slot.
+    const detached = document.createElement('div');
+    const parent = document.createElement('div');
+    const canvas = { getContainer: () => parent, zoom: vi.fn(), resized: vi.fn() };
+    new (ZoomControls as unknown as new (...args: unknown[]) => void)(canvas, { on: vi.fn() }, (t: string) => t, { parent: detached });
+    expect(detached.querySelector('.m8flow-bpmn-zoom--inline')).toBeTruthy();
+  });
+
+  it('names the icon-only expand button with an aria-label that follows its state', () => {
+    const { parent } = mountZoomControls();
+    const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
+    expect(expand.getAttribute('aria-label')).toBe('Expand view');
+    expand.click();
+    expect(expand.getAttribute('aria-label')).toBe('Exit expanded view');
+    expand.click();
+    expect(expand.getAttribute('aria-label')).toBe('Expand view');
+  });
+
   it('removes the chrome on diagram.destroy', () => {
     const { parent, fire } = mountZoomControls();
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeTruthy();

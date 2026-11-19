@@ -57,7 +57,7 @@ export function ZoomControls(
   canvas: any,
   eventBus: any,
   translate: (template: string) => string,
-  config?: { parent?: HTMLElement },
+  config?: { parent?: unknown },
 ) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
@@ -87,7 +87,10 @@ export function ZoomControls(
         button.dataset.zoom === 'expand'
           ? expanded ? COLLAPSE_TITLE : EXPAND_TITLE
           : TITLES[button.dataset.zoom as keyof typeof TITLES];
-      if (key) button.title = translate(key);
+      if (!key) return;
+      button.title = translate(key);
+      // The expand button is icon-only; give it a name readers announce.
+      if (button.dataset.zoom === 'expand') button.setAttribute('aria-label', translate(key));
     });
   };
   setTitles();
@@ -141,8 +144,11 @@ export function ZoomControls(
     else if (action === 'expand') setExpanded(!expanded);
   });
 
-  if (config?.parent) root.classList.add('m8flow-bpmn-zoom--inline');
-  (config?.parent ?? parent).appendChild(root);
+  // Use the host slot only if it is a real element; anything else falls
+  // back to floating over the canvas instead of throwing.
+  const slot = config?.parent instanceof Element ? config.parent : null;
+  if (slot) root.classList.add('m8flow-bpmn-zoom--inline');
+  (slot ?? parent).appendChild(root);
 
   eventBus.on('diagram.destroy', () => {
     document.removeEventListener('keydown', onKeydown);

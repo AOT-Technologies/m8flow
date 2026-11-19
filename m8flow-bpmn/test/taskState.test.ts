@@ -213,6 +213,21 @@ describe('task state legend', () => {
     expect(isCollapsed()).toBe(true);
   });
 
+  it('on leaving expanded view restores the state from before expanding, not changes made while expanded', () => {
+    const { container, fire } = mountLegend();
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const isCollapsed = () => legend.classList.contains('m8flow-bpmn-legend--collapsed');
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    // Open before expanding; reopened then minimized again while expanded.
+    fire('m8flow.expand.changed', { expanded: true });
+    toggle().click();
+    toggle().click();
+    expect(isCollapsed()).toBe(true);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(false);
+  });
+
   it('renders translated labels as text, not markup', () => {
     const { container } = mountLegend((template) => (template === 'Completed' ? '<b>x</b>' : template));
     expect(container.querySelector('b')).toBeNull();

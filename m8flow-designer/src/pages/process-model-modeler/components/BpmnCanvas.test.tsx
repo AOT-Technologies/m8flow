@@ -155,6 +155,43 @@ describe('BpmnCanvas properties panel', () => {
     expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
   });
 
+  it('refits through the zoom controls on the next frame, after the panel has changed', async () => {
+    // Let frames earlier tests queued run first, so they can't reach this
+    // test's refit spy.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const panelAtRefit: string[] = [];
+    zoomControlsService = {
+      refit: vi.fn(() => {
+        panelAtRefit.push(screen.queryByTitle('Show properties panel') ? 'hidden' : 'shown');
+      }),
+    };
+    try {
+      render(<BpmnCanvas xml="<definitions />" />);
+      await screen.findByTitle('Hide properties panel');
+      const fire = (expanded: boolean) =>
+        act(() => {
+          for (const handler of listeners.get('m8flow.expand.changed') ?? []) handler({ expanded });
+        });
+      const runFrames = () => act(() => frames.splice(0).forEach((callback) => callback(0)));
+
+      fire(true);
+      expect(zoomControlsService.refit).not.toHaveBeenCalled();
+      runFrames();
+      fire(false);
+      runFrames();
+      // Each refit saw the panel already hidden / restored for its mode.
+      expect(panelAtRefit).toEqual(['hidden', 'shown']);
+    } finally {
+      zoomControlsService = { refit: () => {} };
+      raf.mockRestore();
+    }
+  });
+
   it('survives expand / collapse when the modeler has no zoom controls service', async () => {
     const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       callback(0);

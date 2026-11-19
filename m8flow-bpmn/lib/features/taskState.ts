@@ -131,8 +131,12 @@ function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (temp
   render();
   eventBus.on('i18n.changed', render);
 
-  // Expanded view (zoomControls): minimize so the legend doesn't cover the
-  // diagram; the user can reopen it, and leaving restores what they had.
+  // Expanded view (zoomControls). Runs only when the view enters or leaves
+  // expanded mode, not on the user's own toggle clicks:
+  // - entering: remember the current state, then minimize so the legend
+  //   doesn't cover the diagram (the user can still reopen it);
+  // - leaving: restore the state from *before* expanding. Changes made while
+  //   expanded do not carry over to the normal view.
   let collapsedBeforeExpand = false;
   eventBus.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
     if (expanded) collapsedBeforeExpand = collapsed;
