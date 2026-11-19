@@ -42,6 +42,12 @@
     "loading": "Ladataan käyttöoikeuksia…",
     "loadFailed": "Käyttöoikeuksia ei voitu ladata. Yritä uudelleen päivittämällä sivu."
   },
+  "network": {
+    "unableToConnect": "Yhteyttä ei voitu muodostaa. Tarkista internetyhteytesi.",
+    "offline": "Olet offline-tilassa. Pysy tällä sivulla, jotta tallentamattomat muutokset säilyvät, ja tallenna ne, kun yhteys palaa.",
+    "pageFailed": "Sivun lataamisessa tapahtui virhe.",
+    "retry": "Yritä uudelleen"
+  },
   "routeLoading": {
     "processes": "Ladataan prosesseja…",
     "process": "Ladataan prosessia…",

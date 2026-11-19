@@ -42,6 +42,12 @@
     "loading": "Chargement des autorisations…",
     "loadFailed": "Impossible de charger les autorisations. Rechargez la page pour réessayer."
   },
+  "network": {
+    "unableToConnect": "Connexion impossible. Vérifiez votre connexion internet.",
+    "offline": "Vous êtes hors ligne. Restez sur cette page pour conserver les modifications non enregistrées, puis enregistrez-les une fois la connexion rétablie.",
+    "pageFailed": "Une erreur s'est produite lors du chargement de cette page.",
+    "retry": "Réessayer"
+  },
   "routeLoading": {
     "processes": "Chargement des processus…",
     "process": "Chargement du processus…",

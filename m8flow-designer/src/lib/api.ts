@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import {
   getAccessToken,
   type OrganizationMembership,
@@ -64,6 +65,20 @@ export class ApiError extends Error {
     this.automaticStepErrorMessage = details?.automaticStepErrorMessage;
     this.processInstanceId = details?.processInstanceId;
   }
+}
+
+/** fetch() got no response at all (offline, DNS, server unreachable). Its message is user-facing,
+ * so pages that show `err.message` say "check your connection" instead of "Failed to fetch". */
+export class NetworkError extends Error {
+  constructor() {
+    super(i18n.t('shell.network.unableToConnect'));
+    this.name = 'NetworkError';
+  }
+}
+
+/** fetch() rejects with a TypeError on network failure; an AbortError (caller's own cancel) passes through. */
+export function toNetworkError(error: unknown): never {
+  throw error instanceof TypeError ? new NetworkError() : error;
 }
 
 /** Best-effort read of the backend's `{ error_code, message }` error body so
@@ -176,7 +191,7 @@ async function fetchWithAuthRetry(
     ...init,
     headers,
     credentials: 'include',
-  });
+  }).catch(toNetworkError);
   if (response.status !== 401) {
     return response;
   }

@@ -42,6 +42,12 @@
     "loading": "A carregar permissões…",
     "loadFailed": "Não foi possível carregar as permissões. Recarregue a página para tentar novamente."
   },
+  "network": {
+    "unableToConnect": "Não foi possível ligar. Verifique a sua ligação à internet.",
+    "offline": "Está offline. Permaneça nesta página para manter as alterações não guardadas e guarde-as quando a ligação voltar.",
+    "pageFailed": "Ocorreu um erro ao carregar esta página.",
+    "retry": "Tentar novamente"
+  },
   "routeLoading": {
     "processes": "A carregar processos…",
     "process": "A carregar processo…",

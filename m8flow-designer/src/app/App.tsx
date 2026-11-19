@@ -14,6 +14,7 @@ import { loadPageStrings } from '@/i18n';
 import type { Translation } from '@/locales';
 import { shouldShowTenantSelectionGate } from '@/lib/auth';
 import { AppShell } from '@/components/layout/AppShell';
+import { OfflineBanner, RouteError } from '@/components/layout/NetworkStatus';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import HomePage from '@/pages/home/HomePage';
 
@@ -362,10 +363,15 @@ export function AppRoutes() {
 // incremental-migration pattern (descendant <Routes> are supported; only
 // loaders/actions need routes lifted into this list, and none are used).
 // Exported so App.test builds its memory router from the same list.
-export const appRoutes: RouteObject[] = [{ path: '*', element: <AppRoutes /> }];
+export const appRoutes: RouteObject[] = [{ path: '*', element: <AppRoutes />, errorElement: <RouteError /> }];
 
 const router = createBrowserRouter(appRoutes);
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <>
+      <OfflineBanner />
+      <RouterProvider router={router} />
+    </>
+  );
 }

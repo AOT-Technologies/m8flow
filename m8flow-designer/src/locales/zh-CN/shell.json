@@ -42,6 +42,12 @@
     "loading": "正在加载权限…",
     "loadFailed": "无法加载权限。请重新加载页面后重试。"
   },
+  "network": {
+    "unableToConnect": "无法连接。请检查您的网络连接。",
+    "offline": "您已离线。请留在此页面以保留未保存的更改，并在连接恢复后保存。",
+    "pageFailed": "加载此页面时出错。",
+    "retry": "重试"
+  },
   "routeLoading": {
     "processes": "正在加载流程…",
     "process": "正在加载流程…",

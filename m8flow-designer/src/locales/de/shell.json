@@ -42,6 +42,12 @@
     "loading": "Berechtigungen werden geladen…",
     "loadFailed": "Berechtigungen konnten nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen."
   },
+  "network": {
+    "unableToConnect": "Verbindung nicht möglich. Bitte überprüfen Sie Ihre Internetverbindung.",
+    "offline": "Sie sind offline. Bleiben Sie auf dieser Seite, um ungespeicherte Änderungen zu behalten, und speichern Sie sie, sobald die Verbindung wieder besteht.",
+    "pageFailed": "Beim Laden dieser Seite ist ein Fehler aufgetreten.",
+    "retry": "Erneut versuchen"
+  },
   "routeLoading": {
     "processes": "Prozesse werden geladen…",
     "process": "Prozess wird geladen…",

@@ -5,7 +5,7 @@ vi.mock('./auth', () => ({
   resumeLoginAfterLogout: vi.fn(),
 }));
 
-import { apiGet, ApiError } from './api';
+import { apiGet, ApiError, NetworkError } from './api';
 
 function makeResponse(opts: { ok: boolean; status: number; body?: unknown }) {
   return {
@@ -107,5 +107,21 @@ describe('apiGet', () => {
       expect((error as ApiError).automaticStepErrorMessage).toBe('Connector returned HTTP 503.');
       expect((error as ApiError).processInstanceId).toBe(42);
     }
+  });
+
+  it('turns a dropped connection into a NetworkError with a user-facing message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+
+    const error = await apiGet('/v1.0/tasks').catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(NetworkError);
+    expect((error as Error).message).toBe('Unable to connect. Please check your internet connection.');
+  });
+
+  it('lets a caller abort through unchanged', async () => {
+    const abort = new DOMException('aborted', 'AbortError');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
+
+    await expect(apiGet('/v1.0/tasks')).rejects.toBe(abort);
   });
 });
