@@ -3,10 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { PaletteMinimize, paletteMinimizeModule } from '../lib/features/paletteMinimize';
 
 // diagram-js's palette markup, with its open / close / toggle behaviour.
-function mountPalette(translate: (template: string) => string = (template) => template) {
+function mountPalette(translate: (template: string) => string = (template) => template, toggleTag = 'div') {
   const container = document.createElement('div');
   container.className = 'djs-palette open';
-  container.innerHTML = '<div class="djs-palette-entries"></div><div class="djs-palette-toggle"></div>';
+  const entries = document.createElement('div');
+  entries.className = 'djs-palette-entries';
+  const toggleElement = document.createElement(toggleTag);
+  toggleElement.className = 'djs-palette-toggle';
+  container.append(entries, toggleElement);
   // Like diagram-js, open / close fire palette.changed.
   let notify: (open: boolean) => void = () => {};
   const palette = {
@@ -92,6 +96,24 @@ describe('paletteMinimizeModule', () => {
     fire('m8flow.expand.changed', { expanded: false });
     expect(states()).toEqual(['true', 'true']);
     expect(palette.isOpen()).toBe(true);
+  });
+
+  it('gives a <div> toggle a button role and keyboard access, and leaves a native <button> alone', () => {
+    const { container: divPalette } = mountPalette();
+    const divToggle = divPalette.querySelector('.djs-palette-toggle') as HTMLElement;
+    expect(divToggle.getAttribute('role')).toBe('button');
+    expect(divToggle.tabIndex).toBe(0);
+
+    const { container: buttonPalette, palette } = mountPalette(undefined, 'button');
+    const buttonToggle = buttonPalette.querySelector('.djs-palette-toggle') as HTMLButtonElement;
+    expect(buttonToggle.hasAttribute('role')).toBe(false);
+    expect(buttonToggle.hasAttribute('tabindex')).toBe(false);
+    // Still reopens a minimized palette and keeps its tooltip / state.
+    (buttonPalette.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement).click();
+    buttonToggle.click();
+    expect(palette.isOpen()).toBe(true);
+    expect(buttonToggle.title).toBe('Expand');
+    expect(buttonToggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('builds its chevron as an SVG element, not a markup string', () => {

@@ -334,7 +334,8 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       // The package zoomed before the panel changed width; refit for the
       // mode (fill in expanded view, fit otherwise) once React has hidden /
       // restored it.
-      requestAnimationFrame(() => instance.get('m8flowZoomControls').refit());
+      // Guarded: a Modeler built without the zoom controls has no refit.
+      requestAnimationFrame(() => instance.get('m8flowZoomControls', false)?.refit?.());
     });
 
     // Answer the properties panel's "Launch Editor" buttons inline (docked

@@ -123,7 +123,8 @@ export function ZoomControls(
   const onKeydown = (event: KeyboardEvent) => {
     if (!expanded || event.key !== 'Escape' || event.defaultPrevented) return;
     const target = event.target as HTMLElement;
-    if (target.isContentEditable) return;
+    // Escape in a field (label edit, properties panel input) belongs to it.
+    if (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
     if (target !== document.body && !(expandedElement ?? expandTarget()).contains(target)) return;
     setExpanded(false);
   };

@@ -32,16 +32,20 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
     reopen = container.querySelector<HTMLElement>('.djs-palette-toggle');
     if (reopen) {
       const toggle = reopen;
-      toggle.setAttribute('role', 'button');
-      toggle.tabIndex = 0;
       toggle.addEventListener('click', () => {
         minimized = false;
       });
-      toggle.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        toggle.click();
-      });
+      // diagram-js renders a <div>; only a non-button needs the button role
+      // and Enter / Space handling (a native <button> has both).
+      if (toggle.tagName !== 'BUTTON') {
+        toggle.setAttribute('role', 'button');
+        toggle.tabIndex = 0;
+        toggle.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          toggle.click();
+        });
+      }
     }
     setTitles();
     syncExpanded(palette.isOpen());

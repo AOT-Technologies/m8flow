@@ -113,6 +113,25 @@ describe('zoomControlsModule', () => {
     expect(-box.y).toBeCloseTo(80 + (480 - 100) / 2);
   });
 
+  it('keeps the view expanded when Escape is pressed in a form field inside it', () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-m8flow-expand-root', '');
+    document.body.appendChild(host);
+    const { parent, fire } = mountZoomControls();
+    host.appendChild(parent);
+    (parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement).click();
+
+    for (const tag of ['input', 'textarea', 'select']) {
+      const field = document.createElement(tag);
+      host.appendChild(field);
+      field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(true);
+    }
+
+    fire('diagram.destroy');
+    host.remove();
+  });
+
   it('fillViewbox returns a finite viewbox for empty or negative sizes', () => {
     const cases = [
       { outer: { width: 1000, height: 600 }, inner: { x: 0, y: 0, width: 0, height: 100 } },

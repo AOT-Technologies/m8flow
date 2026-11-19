@@ -19,6 +19,7 @@ const stack = new FakeCommandStack();
 const listeners = new Map<string, Array<(event: unknown) => void>>();
 const constructed: Array<Record<string, unknown>> = [];
 const fakeEventBus = { fire: vi.fn() };
+let zoomControlsService: { refit: () => void } | undefined = { refit: () => {} };
 
 // bpmn-js itself needs a real canvas; only the seams BpmnCanvas touches are
 // stubbed here (command stack, zoom, event bus, import, teardown).
@@ -30,7 +31,7 @@ vi.mock('m8flow-bpmn/lib/Modeler', () => ({
     get(name: string) {
       if (name === 'commandStack') return stack;
       if (name === 'canvas') return { zoom: () => {} };
-      if (name === 'm8flowZoomControls') return { refit: () => {} };
+      if (name === 'm8flowZoomControls') return zoomControlsService;
       if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }
@@ -152,6 +153,30 @@ describe('BpmnCanvas properties panel', () => {
     fire('m8flow.expand.changed', { expanded: true });
     fire('m8flow.expand.changed', { expanded: false });
     expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+  });
+
+  it('survives expand / collapse when the modeler has no zoom controls service', async () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 0;
+    });
+    zoomControlsService = undefined;
+    try {
+      render(<BpmnCanvas xml="<definitions />" />);
+      await screen.findByTitle('Hide properties panel');
+      const fire = (expanded: boolean) =>
+        act(() => {
+          for (const handler of listeners.get('m8flow.expand.changed') ?? []) handler({ expanded });
+        });
+
+      expect(() => fire(true)).not.toThrow();
+      expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+      expect(() => fire(false)).not.toThrow();
+      expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+    } finally {
+      zoomControlsService = { refit: () => {} };
+      raf.mockRestore();
+    }
   });
 
   it('keeps the properties panel visible while making the modeler read-only', async () => {
