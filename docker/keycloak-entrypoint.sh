@@ -3,9 +3,6 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
-# Container restarts retain /tmp. A previous boot must never satisfy readiness.
-rm -f /tmp/m8flow-keycloak-ready
-
 # Admin passwords have no defaults: the bootstrap admin (Keycloak 26+; avoids "Local
 # access required" behind a proxy) and the permanent super-admin created after start-up
 # must get theirs from these variables (secrets in deployments; compose passes both), so
@@ -49,6 +46,9 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "[keycloak-entrypoint] ERROR: Required dependency 'jq' was not found in PATH; the client-secret helper cannot run." >&2
   exit 1
 fi
+# Container restarts retain /tmp. Clear stale readiness after prerequisite
+# validation and before starting Keycloak or running any bootstrap commands.
+rm -f /tmp/m8flow-keycloak-ready
 source "${CLIENT_SECRET_HELPER}"
 source /opt/keycloak/bin/keycloak-login-flow.sh
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"

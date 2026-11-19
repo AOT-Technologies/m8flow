@@ -65,7 +65,8 @@ def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
     seed = entrypoint.index('    ensure_default_organization ')
     ready = entrypoint.index('touch /tmp/m8flow-keycloak-ready')
     assert normalize < seed < ready
-    assert entrypoint.index('rm -f /tmp/m8flow-keycloak-ready') < normalize
+    reset_readiness = entrypoint.index('rm -f /tmp/m8flow-keycloak-ready')
+    assert entrypoint.index('command -v jq') < reset_readiness < normalize
     assert 'if [ "${configured}" != true ]; then' in entrypoint
     assert entrypoint.count('-s loginTheme=m8flow') == 1
 
