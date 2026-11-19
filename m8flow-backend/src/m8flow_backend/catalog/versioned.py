@@ -66,6 +66,13 @@ def selected_process_id(contents: dict[str, Any], model_id: str, *, validate_sta
         raise ApiError("invalid_process_model", "Select a primary BPMN file.", 400)
     xml = bpmn_xml(contents, primary)
     root = validate_bpmn(xml)
+    participants = catalog.collaboration_participants(xml, strict=True)
+    if participants is not None:
+        # Collaboration participants are selected when starting an instance,
+        # rather than frozen as a single process in the published release.
+        if validate_start and not any(participant["startable"] for participant in participants):
+            raise ApiError("invalid_process_model", "The collaboration must have a startable participant.", 422)
+        return None
     processes = [
         node for node in root
         if catalog._xml_local_name(node.tag) == "process" and node.get("id")

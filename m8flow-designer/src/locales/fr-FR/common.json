@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "Démarrer un participant de la collaboration",
+    "start": "Démarrer",
+    "participant": "Pool exécutable",
+    "eventStart": "{{name}} (démarre sur un événement BPMN)",
+    "correlationKey": "Clé de corrélation (facultative)",
+    "keyHint": "Utilisez la même clé pour les instances liées ou laissez le champ vide pour en générer une nouvelle."
+  },
   "actions": "Actions",
   "back": "Retour",
   "breadcrumb": "Fil d’Ariane",

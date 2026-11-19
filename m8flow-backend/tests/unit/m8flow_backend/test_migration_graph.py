@@ -7,7 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "9f2c6d4b8e71"
+_HEAD = "c81d2e3f4a56"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -36,6 +36,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         revision.revision for revision in script.walk_revisions(base="base", head=_HEAD)
     ]
     assert len(all_revisions) == len(set(all_revisions))
+    assert "d1e2f3a4b5c6" in all_revisions
 
     # These are the two heads that existed when the NATS and external-form
     # migrations were deployed. Both must reach the single current head.
@@ -52,9 +53,10 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     assert "d4e5f6a7b8c9" in from_old_merge
     assert _HEAD in from_old_merge
 
-    # Databases on either side of main's merge must reach process versioning.
+    # Both feature branches must be reachable from the common host history.
     assert _required_revisions(script, "f7a8b9c0d1e2") == {
-        "fa8b9c0d1e2f", "fbcad9e02138", "e2f3a4b5c6d7", _HEAD,
+        "fa8b9c0d1e2f", "fbcad9e02138", "e2f3a4b5c6d7", "e1f2a3b4c5d6",
+        "b603fd822b22", "9f2c6d4b8e71", _HEAD,
     }
     assert _required_revisions(script, "fa8b9c0d1e2f") == {
         "d1e2f3a4b5c6",
@@ -63,11 +65,23 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         "f7a8b9c0d1e2",
         "fbcad9e02138",
         "e2f3a4b5c6d7",
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "9f2c6d4b8e71",
         _HEAD,
     }
 
     # Keep the upgrade paths for databases already stamped on either branch.
-    assert _required_revisions(script, "fbcad9e02138") == {"e2f3a4b5c6d7", _HEAD}
+    assert _required_revisions(script, "fbcad9e02138") == {
+        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _HEAD,
+    }
     assert _required_revisions(script, "e2f3a4b5c6d7") == {
-        "d2f4a6b8c0e1", "e3f5a7c9d1b2", "f7a8b9c0d1e2", "fa8b9c0d1e2f", "fbcad9e02138", _HEAD,
+        "d2f4a6b8c0e1", "e3f5a7c9d1b2", "f7a8b9c0d1e2", "fa8b9c0d1e2f", "fbcad9e02138",
+        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _HEAD,
+    }
+    assert _required_revisions(script, "b603fd822b22") == {
+        "e2f3a4b5c6d7", "9f2c6d4b8e71", _HEAD,
+    }
+    assert _required_revisions(script, "9f2c6d4b8e71") == {
+        "e1f2a3b4c5d6", "b603fd822b22", _HEAD,
     }

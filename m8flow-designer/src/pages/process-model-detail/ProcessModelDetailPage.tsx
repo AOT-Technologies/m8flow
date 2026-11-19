@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { useProcessStart } from '@/components/useProcessStart';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
 import { ProcessModelVersionHistory } from './components/ProcessModelVersionHistory';
 import { useProcessModelVersionPermissions } from './components/useProcessModelVersionPermissions';
@@ -18,6 +19,7 @@ import i18n from '@/i18n';
  */
 export default function ProcessModelDetailPage() {
   const { t } = useTranslation();
+  const { start, picker } = useProcessStart();
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   const {
@@ -146,6 +148,7 @@ export default function ProcessModelDetailPage() {
 
   return (
     <main className="min-w-0 flex-1 px-5 py-10 pb-14 sm:px-11">
+      {picker}
       <ProcessModelOverview
         detail={detail}
         tenantId={tenantId}
@@ -215,8 +218,8 @@ export default function ProcessModelDetailPage() {
         onStart={
           canStart
             ? async () => {
-                const result = await startProcessInstance(modifiedId, tenantId);
-                navigate(`/process-instances/${result.id}`);
+                const result = await start(modifiedId, tenantId, detail.collaboration_participants);
+                if (result) navigate(`/process-instances/${result.id}`);
               }
             : undefined
         }

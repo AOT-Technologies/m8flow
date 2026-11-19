@@ -406,6 +406,7 @@ export type ProcessModelVersionHistory = ProcessModelVersionState & {
 export type WorkingVersionAction = { operation: 'restore'; version: number } | { operation: 'discard' };
 
 export type BpmnProcessReference = { id: string; file_name: string };
+export type CollaborationParticipant = { id: string; name: string; startable: boolean };
 
 export type ProcessModelListItem = ProcessModelVersionState & {
   id: string;
@@ -711,6 +712,7 @@ export type ProcessModelDetail = ProcessModelVersionState & {
   /** Only the caller's own instances without tenant-wide instance read. */
   recent_instances: ProcessModelDetailInstance[];
   files: ProcessModelDetailFile[];
+  collaboration_participants?: CollaborationParticipant[] | null;
 };
 
 export function processModelDetailPath(
@@ -865,6 +867,12 @@ export type StartProcessInstanceResult = {
   id: number;
   status: string;
   process_model_identifier: string;
+  collaboration_correlation_key?: string;
+};
+
+export type ProcessStartOptions = {
+  bpmn_process_id: string;
+  collaboration_correlation_key?: string;
 };
 
 /** Starts a process instance from a model's latest definition (Processes
@@ -872,9 +880,12 @@ export type StartProcessInstanceResult = {
 export async function startProcessInstance(
   modifiedId: string,
   tenantId?: string | null,
+  options?: ProcessStartOptions,
 ): Promise<StartProcessInstanceResult> {
   const path = processModelActionPath(modifiedId, 'start', tenantId);
-  const response = await apiFetch(path, { method: 'POST' });
+  const response = await apiFetch(path, options
+    ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(options) }
+    : { method: 'POST' });
   return (await response.json()) as StartProcessInstanceResult;
 }
 
