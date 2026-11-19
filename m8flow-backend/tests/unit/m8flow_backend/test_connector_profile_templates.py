@@ -108,6 +108,17 @@ def test_only_allowlisted_fields_are_prefilled() -> None:
     }
 
 
+def test_smtp_starttls_defaults_on_for_new_profiles_only() -> None:
+    """The create form starts on ``default``; no other field sets one."""
+    defaults = {
+        (template["id"], field["id"]): field["default"]
+        for template in all_templates()
+        for field in template.get("profileFields", [])
+        if "default" in field
+    }
+    assert defaults == {("smtp", "smtp_starttls"): "true"}
+
+
 def test_http_basic_auth_username_is_plain_config_and_password_is_secret() -> None:
     template = template_for("http")
     assert template is not None

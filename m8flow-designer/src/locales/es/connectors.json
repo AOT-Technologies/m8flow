@@ -98,6 +98,7 @@
     "descriptionPlaceholder": "Para qué sirve este perfil, p. ej., a qué entorno apunta.",
     "valueSaved": "Hay un valor guardado. Déjelo en blanco para conservarlo.",
     "offDefault": "Desactivado (predeterminado)",
+    "onDefault": "Activado (predeterminado)",
     "on": "Activado",
     "off": "Desactivado",
     "stripeLive": "Clave del modo en vivo. Los pagos realizados con este perfil son reales.",

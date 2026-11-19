@@ -350,7 +350,9 @@ function ConnectorProfileEditBody() {
         description.trim() !== (existing.description ?? '').trim() ||
         cleared.length > 0 || blankedRequiredField || Object.keys(config).length > 0
       )
-    : template !== null && Boolean(displayName || description || Object.keys(values).length));
+    : template !== null && Boolean(displayName || description ||
+        Object.entries(values).some(([id, value]) =>
+          value !== fields.find((field) => field.id === id)?.default)));
   const leaveDialog = useUnsavedChangesGuard(dirty, saving, saved);
 
   useEffect(() => {
@@ -383,10 +385,11 @@ function ConnectorProfileEditBody() {
       const loadedDisplayName = loadedProfile?.display_name ?? '';
       const loadedDescription = loadedProfile?.description ?? '';
       // Saved non-sensitive settings come back in `config` and prefill the
-      // form; credentials never do, so their inputs start empty.
+      // form; credentials never do, so their inputs start empty. A new
+      // profile starts from the template defaults instead.
       const loadedValues: Record<string, string> = {};
       for (const field of loadedTemplate.profileFields) {
-        const value = loadedProfile?.config[field.id];
+        const value = isEdit ? loadedProfile?.config[field.id] : field.default;
         if (!isMaskedConnectorField(field) && value !== undefined) {
           loadedValues[field.id] = value;
         }
@@ -728,11 +731,18 @@ function ConnectorProfileEditBody() {
             }
           }}
         >
-          <option value="">{t(starttls ? 'connectors.edit.notSetOff' : isEdit
-            ? 'connectors.edit.status.notSet'
-            : 'connectors.edit.offDefault')}</option>
-          <option value="true">{t('connectors.edit.on')}</option>
-          {isEdit ? <option value="false">{t('connectors.edit.off')}</option> : null}
+          {/* With a default, "Not set" only describes a profile saved without a value. */}
+          {field.default === undefined || (isEdit && !stored) ? (
+            <option value="">{t(starttls ? 'connectors.edit.notSetOff' : isEdit
+              ? 'connectors.edit.status.notSet'
+              : 'connectors.edit.offDefault')}</option>
+          ) : null}
+          <option value="true">{t(!isEdit && field.default === 'true'
+            ? 'connectors.edit.onDefault'
+            : 'connectors.edit.on')}</option>
+          {isEdit || field.default !== undefined
+            ? <option value="false">{t('connectors.edit.off')}</option>
+            : null}
         </select>
       );
     } else if (masked) {

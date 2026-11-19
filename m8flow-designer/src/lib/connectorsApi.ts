@@ -18,6 +18,8 @@ export type ConnectorFieldDescriptor = {
   /** JavaScript regex the profile form checks before saving. */
   pattern?: string;
   patternMessage?: string;
+  /** Value the create form starts with; saved explicitly like any other choice. */
+  default?: string;
 };
 
 export type ConnectorTemplate = {

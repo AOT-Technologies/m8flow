@@ -97,6 +97,7 @@
     "descriptionPlaceholder": "Wofür dieses Profil gedacht ist, z. B. welche Umgebung es anspricht.",
     "valueSaved": "Ein Wert ist gespeichert. Leer lassen, um ihn beizubehalten.",
     "offDefault": "Aus (Standard)",
+    "onDefault": "An (Standard)",
     "on": "Ein",
     "off": "Aus",
     "stripeLive": "Live-Modus-Schlüssel. Zahlungen mit diesem Profil sind echt.",
