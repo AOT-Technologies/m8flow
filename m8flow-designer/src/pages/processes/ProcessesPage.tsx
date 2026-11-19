@@ -9,10 +9,10 @@ import {
   deleteProcessGroup,
   deleteProcessModel,
   fetchProcessGroups,
+  fetchProcessModelDetail,
   fetchProcessModels,
   processModelActionPath,
   publishProcessModel,
-  startProcessInstance,
   updateProcessGroup,
   updateProcessModel,
   type ProcessGroupListItem,
@@ -30,6 +30,7 @@ import { ProcessGroupsPicker } from './components/ProcessGroupsPicker';
 import { ProcessesModelsList } from './components/ProcessesModelsList';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { startErrorMessage } from '@/lib/startProcessError';
+import { useProcessStart } from '@/components/useProcessStart';
 
 /**
  * Processes models list — wired to GET /v1.0/m8flow/process-models.
@@ -37,6 +38,7 @@ import { startErrorMessage } from '@/lib/startProcessError';
  */
 export default function ProcessesPage() {
   const { t } = useTranslation();
+  const { start, picker } = useProcessStart();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   // All Tenants renders the merged cross-tenant catalog instead of a gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
@@ -90,6 +92,7 @@ export default function ProcessesPage() {
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startPending, setStartPending] = useState(false);
   /** Unfiltered count for empty-state copy when a group filter is active. */
   const [allCount, setAllCount] = useState(0);
 
@@ -241,12 +244,18 @@ export default function ProcessesPage() {
   }, []);
 
   async function handleStartModel(model: ProcessModelListItem) {
+    const modifiedId = encodeProcessModelId(model.id);
+    const tenantId = model.tenant_id ?? scopedTenantId;
     setError(null);
+    setStartPending(true);
     try {
-      const result = await startProcessInstance(encodeProcessModelId(model.id), scopedTenantId);
-      navigate(`/process-instances/${result.id}`);
+      const detail = await fetchProcessModelDetail(modifiedId, tenantId);
+      const result = await start(modifiedId, tenantId, detail.collaboration_participants);
+      if (result) navigate(`/process-instances/${result.id}`);
     } catch (err: unknown) {
       setError(startErrorMessage(err, model.display_name));
+    } finally {
+      setStartPending(false);
     }
   }
 
@@ -302,6 +311,7 @@ export default function ProcessesPage() {
 
   return (
     <main className="min-w-0 flex-1 px-11 py-10">
+      {picker}
       <ProcessesModelsList
         models={models}
         loading={loading}
@@ -325,6 +335,7 @@ export default function ProcessesPage() {
           navigate(`/processes/${encodeProcessModelId(model.id)}${suffix}`);
         }}
         onStartModel={!needsTenantForWrite ? handleStartModel : undefined}
+        startPending={startPending}
         mayStart={(model) => model.working_revision ? Boolean(currentActions?.start.has(model.id)) : Boolean(canStartProcesses)}
         mayPublish={(model) => model.working_revision ? Boolean(currentActions?.publish.has(model.id)) : Boolean(canManageProcessModels)}
         onDeleteModel={canDeleteModel ? handleDeleteModel : undefined}

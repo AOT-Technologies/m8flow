@@ -4,6 +4,8 @@ import json
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -1229,21 +1231,45 @@ def _import_definition(db_session, *, tenant_id: str, user_id: int, model_id: st
     db_session.commit()
 
 
-def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatch):
+@pytest.fixture(params=["designer", "thin"])
+def start_invoice(request, client):
+    def post(headers, **options):
+        if request.param == "thin":
+            return client.post(
+                "/v1.0/process-instances",
+                headers=headers,
+                json={"process_model_identifier": "finance/invoice-approval", **options},
+            )
+        return client.post(
+            "/v1.0/m8flow/process-models/finance:invoice-approval/start",
+            headers=headers,
+            json=options or None,
+        )
+
+    return post
+
+
+@pytest.mark.parametrize("single_pool", [False, True])
+def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_path, monkeypatch, single_pool):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
     _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    if single_pool:
+        xml = VALID_BPMN.read_text(encoding="utf-8").replace(
+            "</bpmn:definitions>",
+            '<bpmn:collaboration id="SinglePool"><bpmn:participant id="Pool" '
+            'processRef="simple_approval"/></bpmn:collaboration></bpmn:definitions>',
+        )
+        primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+        primary.write_text(xml, encoding="utf-8")
 
-    response = client.post(
-        "/v1.0/m8flow/process-models/finance:invoice-approval/start",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert response.status_code == 201
+    response = start_invoice({"Authorization": f"Bearer {token}"})
+    assert response.status_code == 201, response.get_json()
     body = response.get_json()
-    assert body["process_model_identifier"] == "finance/invoice-approval"
     assert isinstance(body["id"], int)
+    assert "collaboration_correlation_key" not in body
 
     # The instance is really persisted and tenant-scoped.
     from m8flow_core.models.process_instance import ProcessInstanceModel
@@ -1252,6 +1278,322 @@ def test_editor_starts_process_instance(client, db_session, tmp_path, monkeypatc
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+@pytest.mark.parametrize("process_ref", ["foreign:Order", "unbound:Order", "Missing", "Order", ""])
+@pytest.mark.parametrize("versioned_model", [False, True], ids=["legacy", "versioned"])
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"bpmn_process_id": "Order"}, {"collaboration_correlation_key": "order-123"}],
+    ids=["no-options", "participant", "correlation-key"],
+)
+def test_invalid_collaboration_cannot_start(
+    start_invoice, client, db_session, tmp_path, monkeypatch, process_ref, options, versioned_model
+):
+    from lxml import etree
+    from sqlalchemy import func, select
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        'id="ExternalPool" name="External"',
+        f'id="ExternalPool" name="External" xmlns:foreign="urn:foreign" processRef="{process_ref}"',
+    )
+    # Message events trigger an earlier unsupported-BPMN check. Exercise the
+    # invalid-reference fall-through without relying on that separate guard.
+    root = etree.fromstring(xml.encode("utf-8"))
+    for event_definition in list(root.iter("{http://www.omg.org/spec/BPMN/20100524/MODEL}messageEventDefinition")):
+        event_definition.getparent().remove(event_definition)
+    xml = etree.tostring(root, encoding="unicode")
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    primary.write_text(xml, encoding="utf-8")
+    if versioned_model:
+        from m8flow_backend.catalog import versions
+
+        versions.import_legacy(db_session, "t1", "finance/invoice-approval")
+        db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Invalid preview data must not break the model detail response.
+    detail = client.get("/v1.0/m8flow/process-models/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["collaboration_participants"] is None
+
+    import_definition = Mock(side_effect=AssertionError("Invalid BPMN must not be imported"))
+    initialize = Mock(wraps=workflow.api.InitializeProcessInstanceFromDefinitionCommand)
+    monkeypatch.setattr(workflow, "import_definition", import_definition)
+    monkeypatch.setattr(workflow.api, "InitializeProcessInstanceFromDefinitionCommand", initialize)
+
+    response = start_invoice(headers, **options)
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == "invalid_process_model"
+    import_definition.assert_not_called()
+    initialize.assert_not_called()
+    assert db_session.scalar(select(func.count()).select_from(ProcessInstanceModel)) == 0
+
+
+def test_collaboration_picker_and_start_use_published_release(
+    start_invoice, client, db_session, tmp_path, monkeypatch
+):
+    from m8flow_core import api
+    from m8flow_backend.catalog import versioned, versions
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    primary.write_text(xml, encoding="utf-8")
+    model = versions.import_legacy(db_session, "t1", "finance/invoice-approval")
+    # Both the working copy and the legacy disk file now differ from the release.
+    ordinary_xml = VALID_BPMN.read_bytes()
+    versioned.write_file(model, primary.name, ordinary_xml)
+    primary.write_bytes(ordinary_xml)
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+    detail = client.get("/v1.0/m8flow/process-models/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert [participant["id"] for participant in detail.get_json()["collaboration_participants"]] == ["Order", "Fulfilment"]
+
+    response = start_invoice(headers)
+    if hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
+        assert response.status_code == 400, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_participant_required"
+    else:
+        assert response.status_code == 409, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_core_upgrade_required"
+
+
+@pytest.mark.parametrize("start_option", ["bpmn_process_id", "collaboration_correlation_key"])
+def test_single_process_start_rejects_collaboration_options(
+    start_invoice, client, db_session, tmp_path, monkeypatch, start_option
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+
+    response = start_invoice({"Authorization": f"Bearer {token}"}, **{start_option: "Order"})
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == "validation_error"
+
+
+@pytest.mark.parametrize(
+    ("status", "collaboration"),
+    [("draft", True), ("paused", True), ("published", False), ("published", True)],
+)
+def test_only_model_detail_loads_collaboration_participants(
+    client, db_session, tmp_path, monkeypatch, status, collaboration
+):
+    from m8flow_backend import catalog
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    model_dir = tmp_path / "bpmn/t1/finance/invoice-approval"
+    metadata_path = model_dir / "process_model.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["status"] = status
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    if collaboration:
+        xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+        (model_dir / "invoice-approval.bpmn").write_text(xml, encoding="utf-8")
+
+    headers = {"Authorization": f"Bearer {token}"}
+    models_url = "/v1.0/m8flow/process-models"
+
+    def fail_primary_bpmn_read(**_kwargs):
+        pytest.fail("Listing models must not read the primary BPMN for collaboration participants")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(catalog, "read_primary_bpmn", fail_primary_bpmn_read)
+        listing = client.get(models_url, headers=headers)
+    assert listing.status_code == 200, listing.get_json()
+    row = next(model for model in listing.get_json() if model["id"] == "finance/invoice-approval")
+    detail = client.get(f"{models_url}/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+
+    expected = None
+    if status == "published" and collaboration:
+        expected = [
+            {"id": "Order", "name": "Order", "startable": True},
+            {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+        ]
+    assert row["status"] == detail.get_json()["status"] == status
+    assert "collaboration_participants" not in row
+    assert detail.get_json()["collaboration_participants"] == expected
+
+
+def test_collaboration_participant_selection_and_start(start_invoice, client, db_session, tmp_path, monkeypatch):
+    from m8flow_core import api
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend.catalog import _reject_unsupported_constructs
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace('processRef="orders:Order"', 'xmlns:local="urn:m8flow:orders" processRef="local:Order"')
+    _reject_unsupported_constructs(xml)
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    primary.write_text(xml, encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+    model_url = "/v1.0/m8flow/process-models/finance:invoice-approval"
+    detail = client.get(model_url, headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["collaboration_participants"] == [
+        {"id": "Order", "name": "Order", "startable": True},
+        {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
+    ]
+
+    if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
+        response = start_invoice(headers, bpmn_process_id="Order")
+        assert response.status_code == 409, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_core_upgrade_required"
+        return
+
+    missing = start_invoice(headers)
+    assert missing.status_code == 400, missing.get_json()
+    assert missing.get_json()["error_code"] == "collaboration_participant_required"
+    bad = start_invoice(headers, bpmn_process_id="ExternalPool")
+    assert bad.status_code == 404, bad.get_json()
+    assert bad.get_json()["error_code"] == "collaboration_participant_not_found"
+
+    key = " Order 123 "
+    response = start_invoice(headers, bpmn_process_id="Fulfilment", collaboration_correlation_key=key)
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    assert body["collaboration_correlation_key"] == key
+    instance = db_session.get(ProcessInstanceModel, body["id"])
+    assert instance is not None
+    assert {item.task_name for item in instance.active_work_items} == {"PrepareFulfilment"}
+
+    response = start_invoice(headers, bpmn_process_id="Order")
+    assert response.status_code == 201, response.get_json()
+    body = response.get_json()
+    generated_key = body["collaboration_correlation_key"]
+    assert isinstance(generated_key, str) and generated_key.strip()
+    assert generated_key != key
+    instance = db_session.get(ProcessInstanceModel, body["id"])
+    assert instance is not None
+    assert instance.collaboration_correlation_key == generated_key
+
+    primary.write_text(
+        xml.replace(
+            '<bpmn:startEvent id="FulfilmentStart"/>',
+            '<bpmn:startEvent id="FulfilmentStart"><bpmn:timerEventDefinition>'
+            '<bpmn:timeDuration>PT1H</bpmn:timeDuration></bpmn:timerEventDefinition></bpmn:startEvent>',
+        ),
+        encoding="utf-8",
+    )
+    event_only = start_invoice(headers, bpmn_process_id="Fulfilment")
+    assert event_only.status_code == 409, event_only.get_json()
+    assert event_only.get_json()["error_code"] == "collaboration_participant_not_startable"
+
+
+@pytest.mark.parametrize(
+    ("options", "response_key"),
+    [
+        pytest.param(
+            {"bpmn_process_id": "Order", "collaboration_correlation_key": "order-123"},
+            "order-123",
+            id="selected-participant",
+        ),
+        pytest.param({"bpmn_process_id": "Order"}, "generated-key", id="generated-key"),
+        pytest.param({}, None, id="missing-participant"),
+    ],
+)
+def test_v1_start_collaboration_contract(client, db_session, monkeypatch, options, response_key):
+    from m8flow_backend import workflow
+    from m8flow_backend.errors import ApiError
+
+    user, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    start = Mock(
+        return_value=SimpleNamespace(id=123, status="running", collaboration_correlation_key=response_key)
+    )
+    if response_key is None:
+        start.side_effect = ApiError("collaboration_participant_required", "Choose a BPMN participant to start.", 400)
+    monkeypatch.setattr(workflow, "start", start)
+
+    response = client.post(
+        "/v1.0/process-instances",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"process_model_identifier": "finance/invoice-approval", **options},
+    )
+
+    start.assert_called_once()
+    assert start.call_args.kwargs == {
+        "tenant_id": "t1",
+        "user_id": user.id,
+        "process_model_identifier": "finance/invoice-approval",
+        "bpmn_process_id": options.get("bpmn_process_id"),
+        "collaboration_correlation_key": options.get("collaboration_correlation_key"),
+    }
+    if response_key is None:
+        assert response.status_code == 400, response.get_json()
+        assert response.get_json()["error_code"] == "collaboration_participant_required"
+    else:
+        assert response.status_code == 201, response.get_json()
+        assert response.get_json() == {"id": 123, "status": "running", "collaboration_correlation_key": response_key}
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        pytest.param("null", "Request body must be a JSON object.", id="null-body"),
+        pytest.param("[]", "Request body must be a JSON object.", id="non-object"),
+        pytest.param("{", "Request body must be a JSON object.", id="invalid-json"),
+        pytest.param("{}", "process_model_identifier must be a nonblank string.", id="missing-identifier"),
+        pytest.param(
+            '{"process_model_identifier": null}',
+            "process_model_identifier must be a nonblank string.",
+            id="null-identifier",
+        ),
+        pytest.param(
+            '{"process_model_identifier": 42}',
+            "process_model_identifier must be a nonblank string.",
+            id="non-string-identifier",
+        ),
+        pytest.param(
+            '{"process_model_identifier": "  "}',
+            "process_model_identifier must be a nonblank string.",
+            id="blank-identifier",
+        ),
+    ],
+)
+def test_v1_start_rejects_invalid_request_body(client, db_session, monkeypatch, body, message):
+    from m8flow_backend import workflow
+
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    start = Mock()
+    monkeypatch.setattr(workflow, "start", start)
+
+    response = client.post(
+        "/v1.0/process-instances",
+        headers={"Authorization": f"Bearer {token}"},
+        data=body,
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json() == {"error_code": "validation_error", "message": message}
+    start.assert_not_called()
 
 
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):

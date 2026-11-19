@@ -1,4 +1,12 @@
 {
+  "collaborationStart": {
+    "title": "Teilnehmer einer Kollaboration starten",
+    "start": "Starten",
+    "participant": "Ausführbarer Pool",
+    "eventStart": "{{name}} (Start durch ein BPMN-Ereignis)",
+    "correlationKey": "Korrelationsschlüssel (optional)",
+    "keyHint": "Verwenden Sie denselben Schlüssel für zusammengehörige Instanzen oder lassen Sie das Feld für einen neuen Schlüssel leer."
+  },
   "actions": "Aktionen",
   "back": "Zurück",
   "breadcrumb": "Brotkrumennavigation",

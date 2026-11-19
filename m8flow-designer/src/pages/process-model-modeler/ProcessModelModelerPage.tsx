@@ -21,7 +21,6 @@ import {
   fetchProcessModels,
   publishProcessModel,
   saveProcessModelFileContent,
-  startProcessInstance,
   updateProcessModel,
   runScriptUnitTest,
   type ProcessModelDetailFile,
@@ -34,6 +33,7 @@ import {
   processModelStatusHint,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { startErrorMessage } from '@/lib/startProcessError';
+import { useProcessStart } from '@/components/useProcessStart';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { DiagramCanvas } from './components/DiagramCanvas';
 import type { DiagramCanvasHandle } from './components/DiagramCanvasHandle';
@@ -94,6 +94,7 @@ export default function ProcessModelModelerPage() {
     fileName: string;
   }>();
   const { t } = useTranslation();
+  const { start, picker } = useProcessStart();
   const navigate = useNavigate();
   const { scopedTenantId, needsTenantForWrite } = useActiveTenant();
   const [searchParams] = useSearchParams();
@@ -601,7 +602,12 @@ export default function ProcessModelModelerPage() {
     setLifecycleError(null);
     setStartedWhileEditing(null);
     try {
-      const result = await startProcessInstance(modifiedId, effectiveTenantId);
+      const detail = await fetchProcessModelDetail(modifiedId, effectiveTenantId).catch(() => null);
+      const result = await start(modifiedId, effectiveTenantId, detail?.collaboration_participants);
+      if (!result) {
+        setLifecycleBusy(null);
+        return;
+      }
       if (savePhase !== 'saved') {
         setStartedWhileEditing(result.id);
         setLifecycleBusy(null);
@@ -642,6 +648,7 @@ export default function ProcessModelModelerPage() {
 
   return (
     <div className="flex h-screen min-w-0 flex-1 flex-col">
+      {picker}
       <header className="flex flex-none flex-col gap-3 border-b border-border px-6 py-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <Breadcrumbs

@@ -961,6 +961,50 @@ def _seed_two_dmn_model(tmp_path, tenant_id: str, model_id: str) -> str:
     return called_dmn
 
 
+@pytest.mark.parametrize("correlation_key", [None, " Order 123 "])
+def test_versioned_collaboration_dispatches_selected_participant(db_session, monkeypatch, correlation_key):
+    from m8flow_backend.catalog import versions
+
+    tenant, user = _seed_actor(db_session)
+    model_id = "orders/collaboration"
+    contents = versions.snapshot(
+        {"orders.bpmn": BPMN.with_name("order-fulfilment-collaboration.bpmn").read_bytes()},
+        "orders.bpmn", "Order",
+    )
+    model = versions.initialize(
+        db_session, tenant.id, model_id, contents, display_name="Orders", status="published",
+    )
+    db_session.commit()
+    entry = versions.release(db_session, model, 1)
+    definition = Mock(return_value=73)
+    command = Mock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+    command.collaboration_correlation_key = None  # Advertise the newer core command contract.
+    execute = Mock(return_value=SimpleNamespace(id=99))
+    monkeypatch.setattr(workflow, "_published_definition_id", definition)
+    monkeypatch.setattr(workflow.api, "InitializeProcessInstanceFromDefinitionCommand", command)
+    monkeypatch.setattr(workflow.api, "execute_command", execute)
+    monkeypatch.setattr(workflow, "_emit_external_form_requests", Mock())
+
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model_id,
+        bpmn_process_id="Fulfilment", collaboration_correlation_key=correlation_key,
+    )
+
+    assert instance.id == 99
+    assert instance.process_model_display_name == "Orders"
+    definition.assert_called_once_with(db_session, entry, user_id=user.id)
+    assert command.call_args.kwargs["bpmn_process_id"] == "Fulfilment"
+    assert command.call_args.kwargs["process_version"] == 1
+    assert command.call_args.kwargs["bpmn_process_definition_id"] == 73
+    if correlation_key is None:
+        assert "collaboration_correlation_key" not in command.call_args.kwargs
+    else:
+        assert command.call_args.kwargs["collaboration_correlation_key"] == correlation_key
+    execute.assert_called_once()
+    assert execute.call_args.args[0] is db_session
+    assert execute.call_args.args[1].bpmn_process_id == "Fulfilment"
+
+
 def test_versioned_dmn_only_publish_keeps_previous_definition(db_session, tmp_path, monkeypatch):
     from m8flow_backend.catalog import versioned
 

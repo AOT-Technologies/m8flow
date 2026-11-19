@@ -78,6 +78,7 @@ export type ProcessesModelsListProps = {
   onFilterByGroup?: (groupId: string) => void;
   /** Starts an instance from the model; parent handles navigation. */
   onStartModel?: (model: ProcessModelListItem) => void;
+  startPending?: boolean;
   mayStart?: (model: ProcessModelListItem) => boolean;
   mayPublish?: (model: ProcessModelListItem) => boolean;
   mayChangeStatus?: boolean;
@@ -121,6 +122,7 @@ export function ProcessesModelsList({
   onOpenModel,
   onFilterByGroup,
   onStartModel,
+  startPending = false,
   mayStart,
   mayPublish,
   mayChangeStatus = true,
@@ -327,6 +329,7 @@ export function ProcessesModelsList({
               variant="pill"
               size="pill"
               onClick={() => onStartModel(model)}
+              disabled={startPending}
               className="px-3.5 py-1.5 text-[11.5px] shadow-none"
             >
               {t('processes.list.actions.start')}
