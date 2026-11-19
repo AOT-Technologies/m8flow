@@ -1087,6 +1087,10 @@ function set_browser_execution_requirement_by_name() {
 
   execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
   if [[ -z "${execution_id}" ]]; then
+    if [[ "${display_name}" == "Username Password Form" ]]; then
+      echo >&2 "ERROR: Realm ${realm_name} has no Username Password Form."
+      return 1
+    fi
     echo ":: Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
     return 0
   fi
@@ -1411,6 +1415,17 @@ if ! ensure_shared_realm_user_policy "$keycloak_shared_realm_name"; then
   exit 1
 fi
 
+for realm_name in "$keycloak_master_realm_name" "$keycloak_shared_realm_name"; do
+  if ! disable_shared_realm_identity_first_login "$realm_name"; then
+    echo >&2 "ERROR: Failed to disable identity-first browser login in realm ${realm_name}"
+    exit 1
+  fi
+  if ! ensure_shared_realm_single_page_login "$realm_name"; then
+    echo >&2 "ERROR: Failed to enforce single-page browser login in realm ${realm_name}"
+    exit 1
+  fi
+done
+
 if ! ensure_default_organization "$keycloak_shared_realm_name"; then
   echo >&2 "ERROR: Failed to ensure default organization in realm ${keycloak_shared_realm_name}"
   exit 1
@@ -1433,16 +1448,6 @@ fi
 
 if ! remove_default_organization_seed_user_realm_roles "$keycloak_shared_realm_name"; then
   echo >&2 "ERROR: Failed to remove direct default organization user roles in realm ${keycloak_shared_realm_name}"
-  exit 1
-fi
-
-if ! disable_shared_realm_identity_first_login "$keycloak_shared_realm_name"; then
-  echo >&2 "ERROR: Failed to disable identity-first browser login in realm ${keycloak_shared_realm_name}"
-  exit 1
-fi
-
-if ! ensure_shared_realm_single_page_login "$keycloak_shared_realm_name"; then
-  echo >&2 "ERROR: Failed to enforce single-page browser login in realm ${keycloak_shared_realm_name}"
   exit 1
 fi
 

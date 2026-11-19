@@ -5,6 +5,7 @@
 # Env: KEYCLOAK_SERVER_URL (default http://localhost:8080), KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD.
 
 set -e
+source /opt/keycloak/bin/keycloak-login-flow.sh
 
 BASE="${KEYCLOAK_SERVER_URL:-http://localhost:8080}"
 USER="${KEYCLOAK_ADMIN:-admin}"
@@ -827,80 +828,6 @@ remove_default_organization_seed_user_realm_roles() {
   done
 }
 
-resolve_browser_execution_id_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
-
-  /opt/keycloak/bin/kcadm.sh get authentication/flows/browser/executions -r "${realm_name}" 2>/dev/null \
-    | grep -B4 "\"displayName\" : \"${display_name}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | tail -n 1
-}
-
-update_browser_execution_requirement() {
-  local realm_name="$1"
-  local execution_id="$2"
-  local requirement="$3"
-  local payload_file
-
-  payload_file="$(mktemp)"
-  cat > "${payload_file}" <<EOF
-{
-  "id": "${execution_id}",
-  "requirement": "${requirement}"
-}
-EOF
-
-  if /opt/keycloak/bin/kcadm.sh update authentication/flows/browser/executions -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
-    rm -f "${payload_file}"
-    return 0
-  fi
-
-  rm -f "${payload_file}"
-  return 1
-}
-
-set_browser_execution_requirement_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
-  local requirement="$3"
-  local execution_id
-
-  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
-  if [ -z "${execution_id}" ]; then
-    echo "[keycloak-init-realms] Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
-    return 0
-  fi
-
-  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
-    echo "[keycloak-init-realms] Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
-    return 0
-  fi
-
-  echo "[keycloak-init-realms] Realm ${realm_name}: failed to set browser execution '${display_name}' to ${requirement}." >&2
-  return 1
-}
-
-disable_shared_realm_identity_first_login() {
-  local display_name
-
-  for display_name in "Organization" "Organization Identity-First Login"; do
-    if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "${display_name}" "DISABLED"; then
-      return 1
-    fi
-  done
-}
-
-ensure_shared_realm_single_page_login() {
-  if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "Username" "DISABLED"; then
-    return 1
-  fi
-
-  if ! set_browser_execution_requirement_by_name "${SHARED_REALM}" "Username Password Form" "REQUIRED"; then
-    return 1
-  fi
-}
-
 update_realm_session_timeouts() {
   local realm_name="$1"
 
@@ -949,6 +876,9 @@ if /opt/keycloak/bin/kcadm.sh update "realms/${SHARED_REALM}" \
 else
   echo "[keycloak-init-realms] Realm ${SHARED_REALM}: failed to enforce organizations and username-only login policy." >&2
 fi
+for realm in master "${SHARED_REALM}"; do
+  ensure_realm_single_page_login "${realm}"
+done
 ensure_shared_realm_spoke_client_scope
 remove_shared_realm_legacy_root_group_mappers
 ensure_default_organization
@@ -956,6 +886,4 @@ ensure_all_organization_role_groups "${SHARED_REALM}"
 ensure_default_organization_seed_members
 ensure_default_organization_seed_roles
 remove_default_organization_seed_user_realm_roles "${SHARED_REALM}"
-disable_shared_realm_identity_first_login
-ensure_shared_realm_single_page_login
 echo "[keycloak-init-realms] Realm configuration complete."

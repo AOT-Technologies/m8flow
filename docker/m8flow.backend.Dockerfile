@@ -91,17 +91,26 @@ USER app
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]
 CMD ["/app/m8flow-backend/bin/run_m8flow_backend.sh"]
 
-FROM ${PYTHON_BASE} AS dev
+FROM ${PYTHON_BASE} AS dev-dependencies
 
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 
-COPY . /app
+# Resolve third-party dependencies from manifests before copying application
+# code. UI/theme/test edits must not rerun Python dependency installation.
+COPY m8flow-backend/pyproject.toml /app/m8flow-backend/pyproject.toml
+COPY m8flow-telemetry /app/m8flow-telemetry
 
-RUN uv pip install --system --break-system-packages "/app/m8flow-backend" \
-  && uv pip install --system --break-system-packages flower "flask>=3.1.3" \
-  && uv pip install --system --break-system-packages "/app/m8flow-telemetry[flask,asgi]" \
-  && uv cache clean
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --break-system-packages \
+      -r /app/m8flow-backend/pyproject.toml "/app/m8flow-telemetry[flask,asgi]" flower "flask>=3.1.3"
+
+FROM dev-dependencies AS dev
+
+RUN userdel -r ubuntu || true; groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app
+COPY --chown=app:app . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --break-system-packages --no-deps "/app/m8flow-backend"
 
 RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
   && sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_celery_worker.sh \
@@ -110,9 +119,6 @@ RUN sed -i 's/\r$//' /app/m8flow-backend/bin/run_m8flow_backend.sh \
 COPY docker/scripts/m8flow_backend_entrypoint.sh /opt/m8flow-backend-entrypoint.sh
 RUN sed -i 's/\r$//' /opt/m8flow-backend-entrypoint.sh \
   && chmod +x /opt/m8flow-backend-entrypoint.sh
-
-RUN userdel -r ubuntu || true; groupadd -r app -g 1000 && useradd -r -u 1000 -g app -d /app -s /bin/bash app \
-  && chown -R app:app /app
 
 USER app
 ENTRYPOINT ["/opt/m8flow-backend-entrypoint.sh"]

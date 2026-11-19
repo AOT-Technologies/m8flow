@@ -5,7 +5,17 @@ const LOGIN_RESTART_MARKER_IDS = [
 const RESTART_GUARD_STORAGE_KEY = 'm8flow-hidden-username-login-restart-url';
 const RESTART_FALLBACK_ID = 'm8f-hidden-username-login-fallback';
 const MANUAL_RESTART_LINK_ID = 'm8f-return-to-full-sign-in';
-const MAX_AUTO_RESTARTS_PER_URL = 2;
+const MAX_AUTO_RESTARTS_PER_CONTEXT = 2;
+
+// This classic script is included verbatim in the HTML after the form markup.
+// Recovery must not wait for a resource download or DOMContentLoaded.
+const loginRecoveryStorage = () => {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+};
 
 const defaultMarker = () => {
   if (typeof document === 'undefined') {
@@ -70,7 +80,7 @@ const rootPath = (url) => {
   }
 };
 
-export const safeHttpUrl = (
+const safeHttpUrl = (
   rawUrl,
   currentHref = typeof window !== 'undefined' ? window.location?.href : undefined,
 ) => {
@@ -128,27 +138,37 @@ export const safeHttpUrl = (
   return rootPath(parsed);
 };
 
-const fallbackElement = (marker) => {
-  if (!marker || typeof document === 'undefined') {
-    return null;
+const showFallback = () => {
+  const status = document.getElementById('m8f-login-recovery-status');
+  if (status) {
+    status.hidden = true;
   }
-
-  const fallbackId =
-    marker.getAttribute?.('data-login-restart-fallback-id') || RESTART_FALLBACK_ID;
-  if (typeof fallbackId !== 'string' || !fallbackId.trim()) {
-    return null;
+  // Re-authentication (prompt=login over a live SSO session) re-identifies the
+  // same user on every restart, so its password form is the only way forward.
+  const form = document.getElementById('kc-form-login');
+  if (form) {
+    form.hidden = false;
+    return;
   }
-
-  return document.getElementById(fallbackId.trim());
-};
-
-const showFallback = (marker) => {
-  const fallback = fallbackElement(marker);
+  const fallback = document.getElementById(RESTART_FALLBACK_ID);
   if (!fallback) {
     return;
   }
 
   fallback.hidden = false;
+};
+
+const restartContext = (restartUrl, currentHref) => {
+  const current = new URL(currentHref);
+  const target = new URL(restartUrl, current);
+  // session_code, execution and client_data can change on every response.
+  // Count those responses together within the same realm/client/login tab.
+  return JSON.stringify([
+    target.origin,
+    target.pathname.split('/login-actions/')[0],
+    target.searchParams.get('client_id') || current.searchParams.get('client_id') || '',
+    target.searchParams.get('tab_id') || current.searchParams.get('tab_id') || '',
+  ]);
 };
 
 const parseRestartGuard = (rawValue) => {
@@ -159,8 +179,7 @@ const parseRestartGuard = (rawValue) => {
   try {
     const parsed = JSON.parse(rawValue);
     if (
-      typeof parsed?.restartUrl === 'string' &&
-      parsed.restartUrl &&
+      (typeof parsed?.context === 'string' || typeof parsed?.restartUrl === 'string') &&
       Number.isInteger(parsed?.attempts) &&
       parsed.attempts >= 0
     ) {
@@ -168,7 +187,7 @@ const parseRestartGuard = (rawValue) => {
     }
   } catch {
     if (typeof rawValue === 'string' && rawValue.trim()) {
-      return { restartUrl: rawValue.trim(), attempts: MAX_AUTO_RESTARTS_PER_URL };
+      return { restartUrl: rawValue.trim(), attempts: MAX_AUTO_RESTARTS_PER_CONTEXT };
     }
   }
 
@@ -176,7 +195,11 @@ const parseRestartGuard = (rawValue) => {
 };
 
 const clearRestartGuard = (storage) => {
-  storage?.removeItem(RESTART_GUARD_STORAGE_KEY);
+  try {
+    storage?.removeItem(RESTART_GUARD_STORAGE_KEY);
+  } catch {
+    // The server-rendered manual link remains usable without browser storage.
+  }
 };
 
 const manualRestartLink = () => {
@@ -187,10 +210,10 @@ const manualRestartLink = () => {
   return document.getElementById(MANUAL_RESTART_LINK_ID);
 };
 
-export const handleManualHiddenUsernameRestart = (
+const handleManualHiddenUsernameRestart = (
   button = manualRestartLink(),
   locationObject = typeof window !== 'undefined' ? window.location : null,
-  storage = typeof window !== 'undefined' ? window.sessionStorage : null,
+  storage = loginRecoveryStorage(),
 ) => {
   if (!button) {
     return false;
@@ -202,14 +225,18 @@ export const handleManualHiddenUsernameRestart = (
   }
 
   clearRestartGuard(storage);
-  locationObject.replace(restartUrl);
-  return true;
+  try {
+    locationObject.replace(restartUrl);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const wireManualHiddenUsernameRestart = (
   button = manualRestartLink(),
   locationObject = typeof window !== 'undefined' ? window.location : null,
-  storage = typeof window !== 'undefined' ? window.sessionStorage : null,
+  storage = loginRecoveryStorage(),
 ) => {
   if (!button || typeof button.addEventListener !== 'function') {
     return;
@@ -222,55 +249,50 @@ const wireManualHiddenUsernameRestart = (
   });
 };
 
-export const restartHiddenUsernameLogin = (
+const restartHiddenUsernameLogin = (
   marker = defaultMarker(),
   locationObject = typeof window !== 'undefined' ? window.location : null,
-  storage = typeof window !== 'undefined' ? window.sessionStorage : null,
+  storage = loginRecoveryStorage(),
 ) => {
   if (!marker) {
-    clearRestartGuard(storage);
+    if (document.getElementById('username') && document.getElementById('password')) {
+      clearRestartGuard(storage);
+    }
     return false;
   }
 
   const restartUrl = restartUrlFromMarker(marker, locationObject?.href);
   if (!restartUrl || !locationObject || typeof locationObject.replace !== 'function' || !storage) {
-    showFallback(marker);
+    showFallback();
     return false;
   }
 
-  const currentGuard = parseRestartGuard(storage.getItem(RESTART_GUARD_STORAGE_KEY));
-  const attemptsForUrl =
-    currentGuard?.restartUrl === restartUrl ? currentGuard.attempts : 0;
-  if (attemptsForUrl >= MAX_AUTO_RESTARTS_PER_URL) {
-    showFallback(marker);
+  try {
+    const context = restartContext(restartUrl, locationObject.href);
+    const currentGuard = parseRestartGuard(storage.getItem(RESTART_GUARD_STORAGE_KEY));
+    const previousContext = currentGuard?.context || (
+      currentGuard?.restartUrl ? restartContext(currentGuard.restartUrl, locationObject.href) : null
+    );
+    const attempts = previousContext === context ? currentGuard.attempts : 0;
+    if (attempts >= MAX_AUTO_RESTARTS_PER_CONTEXT) {
+      showFallback();
+      return false;
+    }
+
+    storage.setItem(
+      RESTART_GUARD_STORAGE_KEY,
+      JSON.stringify({ context, attempts: attempts + 1 }),
+    );
+    locationObject.replace(restartUrl);
+    return true;
+  } catch {
+    // Fail visibly rather than loop when storage is blocked or navigation fails.
+    showFallback();
     return false;
   }
-
-  storage.setItem(
-    RESTART_GUARD_STORAGE_KEY,
-    JSON.stringify({
-      restartUrl,
-      attempts: attemptsForUrl + 1,
-    }),
-  );
-  locationObject.replace(restartUrl);
-  return true;
 };
 
 if (typeof window !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener(
-      'DOMContentLoaded',
-      () => {
-        wireManualHiddenUsernameRestart();
-        restartHiddenUsernameLogin();
-      },
-      {
-        once: true,
-      },
-    );
-  } else {
-    wireManualHiddenUsernameRestart();
-    restartHiddenUsernameLogin();
-  }
+  wireManualHiddenUsernameRestart();
+  restartHiddenUsernameLogin();
 }

@@ -3,6 +3,9 @@
 # Start Keycloak, then set sslRequired=NONE on realms for HTTP access (e.g. behind a reverse proxy without HTTPS termination at Keycloak).
 set -e
 
+# Container restarts retain /tmp. A previous boot must never satisfy readiness.
+rm -f /tmp/m8flow-keycloak-ready
+
 # Admin passwords have no defaults: the bootstrap admin (Keycloak 26+; avoids "Local
 # access required" behind a proxy) and the permanent super-admin created after start-up
 # must get theirs from these variables (secrets in deployments; compose passes both), so
@@ -47,6 +50,7 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 source "${CLIENT_SECRET_HELPER}"
+source /opt/keycloak/bin/keycloak-login-flow.sh
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
 FRONTEND_PUBLIC_URL="${M8FLOW_BACKEND_URL_FOR_FRONTEND:-http://localhost:6853}"
 BACKEND_REDIRECT_URI="${BACKEND_PUBLIC_URL%/}/*"
@@ -903,80 +907,6 @@ remove_default_organization_seed_user_realm_roles() {
   done
 }
 
-resolve_browser_execution_id_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
-
-  /opt/keycloak/bin/kcadm.sh get authentication/flows/browser/executions -r "${realm_name}" 2>/dev/null \
-    | grep -B4 "\"displayName\" : \"${display_name}\"" \
-    | sed -n 's/.*"id" : "\([^"]*\)".*/\1/p' \
-    | tail -n 1
-}
-
-update_browser_execution_requirement() {
-  local realm_name="$1"
-  local execution_id="$2"
-  local requirement="$3"
-  local payload_file
-
-  payload_file="$(mktemp)"
-  cat > "${payload_file}" <<EOF
-{
-  "id": "${execution_id}",
-  "requirement": "${requirement}"
-}
-EOF
-
-  if /opt/keycloak/bin/kcadm.sh update authentication/flows/browser/executions -r "${realm_name}" -f "${payload_file}" >/dev/null 2>&1; then
-    rm -f "${payload_file}"
-    return 0
-  fi
-
-  rm -f "${payload_file}"
-  return 1
-}
-
-set_browser_execution_requirement_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
-  local requirement="$3"
-  local execution_id
-
-  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
-  if [ -z "${execution_id}" ]; then
-    echo "[keycloak-entrypoint] Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
-    return 0
-  fi
-
-  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
-    echo "[keycloak-entrypoint] Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
-    return 0
-  fi
-
-  echo "[keycloak-entrypoint] Realm ${realm_name}: failed to set browser execution '${display_name}' to ${requirement}." >&2
-  return 1
-}
-
-disable_shared_realm_identity_first_login() {
-  local display_name
-
-  for display_name in "Organization" "Organization Identity-First Login"; do
-    if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "${display_name}" "DISABLED"; then
-      return 1
-    fi
-  done
-}
-
-ensure_shared_realm_single_page_login() {
-  if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "Username" "DISABLED"; then
-    return 1
-  fi
-
-  if ! set_browser_execution_requirement_by_name "${M8FLOW_REALM_NAME}" "Username Password Form" "REQUIRED"; then
-    return 1
-  fi
-}
-
 update_realm_session_timeouts() {
   local realm_name="$1"
 
@@ -990,6 +920,13 @@ update_realm_session_timeouts() {
     -s clientSessionMaxLifespan="${KEYCLOAK_CLIENT_SESSION_MAX_LIFESPAN}" \
     -s accessCodeLifespanLogin="${KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN}" \
     -s accessCodeLifespanUserAction="${KEYCLOAK_ACCESS_CODE_LIFESPAN_USER_ACTION}" >/dev/null 2>&1
+}
+
+stop_keycloak_with_error() {
+  echo "[keycloak-entrypoint] ERROR: $1" >&2
+  kill "${KC_PID}" 2>/dev/null || true
+  wait "${KC_PID}" || true
+  exit 1
 }
 
 echo "[keycloak-entrypoint] Running bootstrap-admin user..."
@@ -1028,7 +965,7 @@ while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
   ELAPSED=$((ELAPSED + 2))
 done
 if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-  echo "[keycloak-entrypoint] WARNING: Keycloak did not become ready within ${TIMEOUT}s; skipping realm sslRequired=NONE updates." >&2
+  stop_keycloak_with_error "Keycloak admin API did not become ready within ${TIMEOUT}s."
 else
   # Assign master realm 'admin' role to bootstrap user so partialImport (and other manage-realm ops) are allowed
   if /opt/keycloak/bin/kcadm.sh add-roles -r master --rolename admin --uusername "$USER" 2>/dev/null; then
@@ -1068,15 +1005,6 @@ else
   ensure_shared_realm_spoke_client_secret \
     "${M8FLOW_REALM_NAME}" "${M8FLOW_SPOKE_CLIENT_ID}" "${M8FLOW_SPOKE_CLIENT_SECRET}"
 
-  echo "[keycloak-entrypoint] Setting sslRequired=NONE, loginTheme=m8flow, and aligned session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
-  for realm in master "${M8FLOW_REALM_NAME}"; do
-    if /opt/keycloak/bin/kcadm.sh update realms/${realm} -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false >/dev/null 2>&1 \
-      && update_realm_session_timeouts "${realm}"; then
-      echo "[keycloak-entrypoint] Realm ${realm}: sslRequired=NONE, loginTheme=m8flow, and session timeouts set successfully."
-    else
-      echo "[keycloak-entrypoint] Realm ${realm}: update skipped or failed (realm may not exist yet)." >&2
-    fi
-  done
   if /opt/keycloak/bin/kcadm.sh update "realms/${M8FLOW_REALM_NAME}" \
     -s organizationsEnabled=true \
     -s registrationAllowed=false \
@@ -1086,11 +1014,31 @@ else
   else
     echo "[keycloak-entrypoint] Realm ${M8FLOW_REALM_NAME}: failed to enforce organizations and username-only login policy." >&2
   fi
+  # Organizations can inject identity-first executions during import/startup.
+  # Fix credential collection before any organization/user seeding, and before
+  # Compose exposes the host through its readiness dependencies.
+  echo "[keycloak-entrypoint] Configuring combined login and session timeouts on realms master, ${M8FLOW_REALM_NAME}..."
+  for realm in master "${M8FLOW_REALM_NAME}"; do
+    configured=false
+    for attempt in 1 2 3; do
+      if /opt/keycloak/bin/kcadm.sh update "realms/${realm}" \
+        -s sslRequired=NONE -s loginTheme=m8flow -s registrationAllowed=false \
+        && ensure_realm_single_page_login "${realm}"; then
+        configured=true
+        break
+      fi
+      if [ "${attempt}" -lt 3 ]; then sleep 2; fi
+    done
+    if [ "${configured}" != true ]; then
+      stop_keycloak_with_error "Single-page login configuration failed for ${realm}."
+    fi
+    if ! update_realm_session_timeouts "${realm}"; then
+      echo "[keycloak-entrypoint] Realm ${realm}: session timeout update failed." >&2
+    fi
+  done
   # Best-effort seeding: a failing step must not abort the entrypoint (set -e)
   # before `wait $KC_PID`, which would kill Keycloak. Steps are idempotent, so a
-  # failed one is retried: a keycloak-db restart mid-seeding closes Keycloak's DB
-  # connections for a few seconds, and a skipped disable_shared_realm_identity_first_login
-  # leaves the realm on the username-only login page.
+  # failed one is retried after transient database connection failures.
   # ponytail: 3 tries 5s apart rides out a ~10s DB blip; a longer outage still logs and continues.
   for step in \
     ensure_shared_realm_spoke_client_scope \
@@ -1099,9 +1047,7 @@ else
     "ensure_all_organization_role_groups ${M8FLOW_REALM_NAME}" \
     ensure_default_organization_seed_members \
     ensure_default_organization_seed_roles \
-    "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}" \
-    disable_shared_realm_identity_first_login \
-    ensure_shared_realm_single_page_login; do
+    "remove_default_organization_seed_user_realm_roles ${M8FLOW_REALM_NAME}"; do
     attempt=1
     until eval "${step}"; do
       if [ "${attempt}" -ge 3 ]; then
@@ -1113,6 +1059,12 @@ else
       sleep 5
     done
   done
+  for realm in master "${M8FLOW_REALM_NAME}"; do
+    if ! ensure_realm_single_page_login "${realm}"; then
+      stop_keycloak_with_error "Final login-flow verification failed for ${realm}."
+    fi
+  done
+  touch /tmp/m8flow-keycloak-ready
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
 

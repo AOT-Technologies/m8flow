@@ -26,17 +26,56 @@ def test_m8flow_login_theme_collects_username_and_password_together():
     assert form_at < username_at < password_at
 
 
+def test_recovery_is_inlined_after_markup_without_parsing_javascript_as_freemarker():
+    for name in ("login.ftl", "login-username.ftl"):
+        template = (LOGIN_FTL.parent / name).read_text()
+        include = '<script><#include "resources/js/restartHiddenUsernameLogin.js" parse=false></script>'
+        assert include in template
+        assert template.index('id="kc-form"') < template.index(include)
+        assert 'src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"' not in template
+        assert '<#include "login-recovery.ftl">' in template
+
+    recovery = (LOGIN_FTL.parent / "login-recovery.ftl").read_text()
+    assert 'role="status"' in recovery
+    assert 'role="alert" hidden' in recovery
+    assert '<noscript>' in recovery
+    assert 'href="${url.loginRestartFlowUrl}"' in recovery
+
+
 def test_bootstrap_applies_m8flow_theme_to_master_and_shared_realms():
     entrypoint = ENTRYPOINT.read_text()
     assert "loginTheme=m8flow" in entrypoint
     assert "for realm in master" in entrypoint
-    assert '"Username Password Form"' in entrypoint
-    assert '"REQUIRED"' in entrypoint
-    assert '"Username"' in entrypoint
-    assert '"DISABLED"' in entrypoint
+    helper = (REPO_ROOT / "docker" / "keycloak-login-flow.sh").read_text()
+    assert '"auth-username-password-form"' in helper
+    assert '"REQUIRED"' in helper
+    assert '"auth-username-form"' in helper
+    assert '"DISABLED"' in helper
     init_realms = INIT_REALMS.read_text()
-    assert '"Username Password Form"' in init_realms
-    assert '"REQUIRED"' in init_realms
+    for script in (entrypoint, init_realms):
+        assert 'source /opt/keycloak/bin/keycloak-login-flow.sh' in script
+        assert 'ensure_realm_single_page_login "${realm}"' in script
+
+
+def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
+    entrypoint = ENTRYPOINT.read_text()
+    # The live regression was healthy=true while organization seeding still
+    # left Keycloak on its injected identity-first execution.
+    normalize = entrypoint.index('&& ensure_realm_single_page_login "${realm}"')
+    seed = entrypoint.index('    ensure_default_organization ')
+    ready = entrypoint.index('touch /tmp/m8flow-keycloak-ready')
+    assert normalize < seed < ready
+    assert entrypoint.index('rm -f /tmp/m8flow-keycloak-ready') < normalize
+    assert 'if [ "${configured}" != true ]; then' in entrypoint
+    assert entrypoint.count('-s loginTheme=m8flow') == 1
+
+    import yaml
+
+    compose = yaml.safe_load((REPO_ROOT / "docker" / "m8flow-docker-compose.yml").read_text())
+    services = compose["services"]
+    assert "test -f /tmp/m8flow-keycloak-ready" in services["keycloak"]["healthcheck"]["test"][1]
+    assert services["keycloak-proxy"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
+    assert services["keycloak-proxy"]["depends_on"]["keycloak"]["restart"] is True
 
 
 @pytest.mark.skipif(

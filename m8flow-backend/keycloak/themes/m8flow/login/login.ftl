@@ -28,9 +28,10 @@
                     data-login-restart-url="${url.loginRestartFlowUrl}"
                     hidden
                 ></div>
+                <#include "login-recovery.ftl">
             </#if>
             <#if realm.password>
-                <form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
+                <form id="kc-form-login" <#if usernameHidden??>hidden</#if> onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
                     <#if !usernameHidden??>
                         <div class="${properties.kcFormGroupClass!}">
                             <label for="username" class="${properties.kcLabelClass!}"><#if !realm.loginWithEmailAllowed>${msg("username")}<#elseif !realm.registrationEmailAsUsername>${msg("usernameOrEmail")}<#else>${msg("email")}</#if></label>
@@ -131,8 +132,8 @@
             </#if>
             </div>
         </div>
+        <script><#include "resources/js/restartHiddenUsernameLogin.js" parse=false></script>
         <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
-        <script type="module" src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"></script>
         <script type="module" src="${url.resourcesPath}/js/masterRealmLogin.js"></script>
     <#elseif section = "socialProviders" >
         <#assign isM8flowRealmLogin = realm.name == 'm8flow'>
