@@ -161,6 +161,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setCanManageProcessModels(Boolean(permissions['/process-models']?.PUT));
           setCanStartProcesses(Boolean(permissions['/process-instances']?.POST));
           setCanReviewTasks(Boolean(caps.can_review_tasks));
+          setCapabilityError(null);
           setCapabilityStatus('ready');
           setCanReadSecrets(Boolean(permissions['/secrets']?.GET));
           setCanManageSecrets(Boolean(caps.can_manage_secrets));

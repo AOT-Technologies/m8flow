@@ -229,6 +229,8 @@ export default function TemplateFileModelerPage() {
   const isBpmn = fileLower.endsWith('.bpmn');
   const isDiagram = isBpmn || fileLower.endsWith('.dmn');
 
+  // 'saving' and 'error' still hold edits the server has not confirmed; leaving
+  // mid-save can abort the request and lose them, so guard every non-saved phase.
   const dirty = savePhase !== 'saved';
   useBeforeUnload(
     useCallback(

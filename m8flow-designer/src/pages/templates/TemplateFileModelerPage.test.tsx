@@ -140,6 +140,31 @@ describe('TemplateFileModelerPage', () => {
     const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
     expect(puts[1][1]?.body).toBe('# Unsaved draft');
   });
+  it('guards unload while a save is in flight and releases it once saved', async () => {
+    let finishSave: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        return new Promise((resolve) => {
+          finishSave = () => resolve({ ok: true, json: async () => TEMPLATE });
+        });
+      }
+      if (url.includes('/files/README.md')) return Promise.resolve({ ok: true, text: async () => '# Original' });
+      return Promise.resolve({ ok: true, json: async () => TEMPLATE });
+    }));
+    renderAt('/templates/3/modeler/README.md');
+    fireEvent.change(await screen.findByLabelText('Canvas draft'), { target: { value: '# Draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(finishSave).toBeDefined());
+    const during = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(during);
+    expect(during.defaultPrevented).toBe(true);
+    finishSave?.();
+    await waitFor(() => {
+      const after = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(after);
+      expect(after.defaultPrevented).toBe(false);
+    });
+  });
   afterEach(() => {
     // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
     cleanup();

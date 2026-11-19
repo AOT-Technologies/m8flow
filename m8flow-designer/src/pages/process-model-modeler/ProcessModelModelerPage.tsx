@@ -467,6 +467,8 @@ export default function ProcessModelModelerPage() {
   const showNotPrimary = isBpmn && !isPrimary && Boolean(primaryFileName);
 
   const allowLeaveRef = useRef(false);
+  // 'saving' and 'error' still hold edits the server has not confirmed; leaving
+  // mid-save can abort the request and lose them, so guard every non-saved phase.
   const dirty = savePhase !== 'saved';
   useBeforeUnload(
     useCallback(
