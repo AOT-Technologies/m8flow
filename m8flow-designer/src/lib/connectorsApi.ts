@@ -19,7 +19,7 @@ export type ConnectorFieldDescriptor = {
   pattern?: string;
   patternMessage?: string;
   /** Value the create form starts with; saved explicitly like any other choice. */
-  default?: string;
+  default?: 'true' | 'false';
 };
 
 export type ConnectorTemplate = {

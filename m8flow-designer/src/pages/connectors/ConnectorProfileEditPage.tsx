@@ -351,8 +351,7 @@ function ConnectorProfileEditBody() {
         cleared.length > 0 || blankedRequiredField || Object.keys(config).length > 0
       )
     : template !== null && Boolean(displayName || description ||
-        Object.entries(values).some(([id, value]) =>
-          value !== fields.find((field) => field.id === id)?.default)));
+        fields.some((field) => (values[field.id] ?? '') !== (field.default ?? ''))));
   const leaveDialog = useUnsavedChangesGuard(dirty, saving, saved);
 
   useEffect(() => {

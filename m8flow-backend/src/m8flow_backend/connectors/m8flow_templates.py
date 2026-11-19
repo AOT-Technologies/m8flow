@@ -70,6 +70,11 @@ def _secret(
         field["pattern"] = pattern
         field["patternMessage"] = pattern_message or f"Enter a valid {label.lower()}."
     if default is not None:
+        # The form's boolean select only has "true"/"false" options.
+        if field_type == "boolean" and default not in ("true", "false"):
+            raise ValueError(
+                f"{field_id}: boolean default must be 'true' or 'false', got {default!r}"
+            )
         field["default"] = default
     return field
 

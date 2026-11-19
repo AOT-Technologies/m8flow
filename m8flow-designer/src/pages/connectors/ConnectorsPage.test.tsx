@@ -142,7 +142,7 @@ const SMTP_TEMPLATE = {
     { id: 'smtp_host', label: 'Host', type: 'text', required: true, secret: true },
     {
       id: 'smtp_starttls', label: 'Use STARTTLS', type: 'boolean', required: false, secret: true,
-      default: 'true',
+      default: 'true' as const,
     },
   ],
 };
@@ -618,7 +618,23 @@ describe('Connectors UI', () => {
     expect(router.state.location.pathname).toBe('/connectors/smtp/profiles');
   });
 
-  it.each(['true', 'false'])('creates an SMTP profile with STARTTLS %s saved explicitly', async (value) => {
+  it('does not mark a new profile dirty after STARTTLS is switched off and back on', async () => {
+    mockFetchConnectorTemplate.mockResolvedValue(SMTP_TEMPLATE);
+    mockFetchConnectorProfiles.mockResolvedValue([]);
+    const router = renderAt(['/connectors/smtp/profiles', '/connectors/smtp/profiles/new'], INTEGRATOR);
+
+    const starttls = await screen.findByRole('combobox', { name: /Use STARTTLS/ });
+    fireEvent.change(starttls, { target: { value: 'false' } });
+    fireEvent.change(starttls, { target: { value: 'true' } });
+    await act(() => router.navigate(-1));
+    expect(screen.queryByText('Discard unsaved changes?')).not.toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/connectors/smtp/profiles');
+  });
+
+  it.each([
+    ['left on by default', null, 'true'],
+    ['switched off', 'false', 'false'],
+  ])('creates an SMTP profile with STARTTLS %s saved explicitly', async (_label, choice, saved) => {
     mockFetchConnectorTemplate.mockResolvedValue(SMTP_TEMPLATE);
     mockFetchConnectorProfiles.mockResolvedValue([]);
     mockCreateConnectorProfile.mockResolvedValue(SMTP_PROFILE);
@@ -630,12 +646,14 @@ describe('Connectors UI', () => {
     fireEvent.change(screen.getByTestId('connector-profile-field-smtp_host'), {
       target: { value: 'smtp.example.com' },
     });
-    fireEvent.change(screen.getByRole('combobox', { name: /Use STARTTLS/ }), { target: { value } });
+    if (choice) {
+      fireEvent.change(screen.getByRole('combobox', { name: /Use STARTTLS/ }), { target: { value: choice } });
+    }
     fireEvent.click(screen.getByTestId('connector-profile-save'));
 
     await waitFor(() => {
       expect(mockCreateConnectorProfile).toHaveBeenCalledWith(
-        expect.objectContaining({ config: { smtp_host: 'smtp.example.com', smtp_starttls: value } }),
+        expect.objectContaining({ config: { smtp_host: 'smtp.example.com', smtp_starttls: saved } }),
         't1',
       );
     });
