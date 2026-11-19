@@ -28,14 +28,16 @@ def _common(table: str) -> list[sa.Column]:
             sa.ForeignKey("m8flow_tenant.id", name=_ownership_fk(table)),
             nullable=False,
         ),
-        sa.Column(
-            "process_instance_id",
-            sa.Integer(),
-            sa.ForeignKey("process_instance.id"),
-            nullable=False,
-        ),
+        # Match core's tenant-scoped composite FK. The independent tenant FK is
+        # inherited from M8fTenantScopedMixin; this constraint additionally
+        # prevents a journal row from referencing another tenant's instance.
+        sa.Column("process_instance_id", sa.Integer(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["m8f_tenant_id", "process_instance_id"],
+            ["process_instance.m8f_tenant_id", "process_instance.id"],
+        ),
     ]
 
 

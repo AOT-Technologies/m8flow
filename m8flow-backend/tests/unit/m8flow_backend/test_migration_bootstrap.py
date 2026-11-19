@@ -17,6 +17,7 @@ disposable database.
 from __future__ import annotations
 
 import os
+import runpy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -48,6 +49,11 @@ def _script_head() -> str:
 
 def _orm_table_names() -> set[str]:
     return {name for metadata in alembic_target_metadata() for name in metadata.tables}
+
+
+def _root_baseline_table_names() -> set[str]:
+    migration = runpy.run_path(str(_MIGRATIONS_DIR / "versions" / "1518b05122bc_create_m8flow_tables.py"))
+    return set(migration["BASELINE_TABLE_NAMES"])
 
 
 def _alembic_config(database_uri: str, monkeypatch: pytest.MonkeyPatch) -> Config:
@@ -616,11 +622,12 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     remaining = set(sa.inspect(engine).get_table_names())
-    # The historical root creates the legacy group table; the breaking
-    # migration renames it to m8f_group on upgrade. A full downgrade restores
-    # that historical table shape, so it is the one expected survivor besides
-    # Alembic's bookkeeping table.
-    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
+    # The historical root has a frozen downgrade scope. Tables added to the
+    # current core ORM after that baseline are deliberately retained, as are
+    # Alembic's bookkeeping table and the legacy group table restored by downgrade.
+    configuration_tables = {"m8flow_named_value", "m8flow_connector_variable"}
+    retained_core_tables = _orm_table_names() - _root_baseline_table_names() - configuration_tables
+    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"} | retained_core_tables
 
 
 @pytest.mark.parametrize("missing", ["neither", "index", "both"])
@@ -757,7 +764,13 @@ def journal_schema(tmp_path_factory):
 def _legacy_journal_table(schema, metadata, name):
     for parent in ("m8flow_tenant", "process_instance"):
         if parent not in metadata.tables:
-            sa.Table(parent, metadata, sa.Column("id", schema.tables[parent].c.id.type, primary_key=True))
+            columns = [sa.Column("id", schema.tables[parent].c.id.type, primary_key=True)]
+            if parent == "process_instance":
+                # Core 1.1 scopes journal-to-instance references by both tenant
+                # and instance id. This lightweight metadata only resolves the
+                # FK targets; the actual parent tables already exist in SQLite.
+                columns.append(sa.Column("m8f_tenant_id", sa.String(255), nullable=False))
+            sa.Table(parent, metadata, *columns)
     table = schema.tables[name].to_metadata(metadata)
     table.indexes.clear()
     for constraint in tuple(table.constraints):
@@ -982,12 +995,18 @@ def test_compensation_reconciles_indexes_and_requires_creation_record(
     database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
     previous_revision = "c1e4f5a6b7d8"
-    command.upgrade(cfg, _JOURNAL_REVISION)
+    command.upgrade(cfg, previous_revision)
 
     engine = sa.create_engine(database_uri)
     name = "compensation_scope"
     tenant_index, process_index = _journal_indexes(name)
     metadata = sa.MetaData()
+    if not replace_table:
+        # Simulate a table owned by the compensation migration rather than the
+        # current core baseline, which now includes these ORM tables itself.
+        with engine.begin() as connection:
+            connection.execute(sa.text(f'DROP TABLE "{name}"'))
+    command.upgrade(cfg, _JOURNAL_REVISION)
     with engine.begin() as connection:
         if replace_table:
             table = _legacy_journal_table(journal_schema, metadata, name)
@@ -999,8 +1018,12 @@ def test_compensation_reconciles_indexes_and_requires_creation_record(
             table.create(connection)
             original_row = _insert_journal_row(connection, table)
         else:
-            for index in (tenant_index, process_index):
-                connection.execute(sa.DDL(f"DROP INDEX {index}"))
+            # Core may use different names for equivalent indexes. Drop indexes
+            # by indexed column so this simulates an interrupted host migration.
+            for index in sa.inspect(connection).get_indexes(name):
+                if index.get("column_names") in (["m8f_tenant_id"], ["process_instance_id"]):
+                    quoted_name = connection.dialect.identifier_preparer.quote(index["name"])
+                    connection.execute(sa.text(f"DROP INDEX {quoted_name}"))
 
     # Retry the revision against the existing tables as after an interrupted upgrade.
     command.stamp(cfg, previous_revision)
@@ -1022,6 +1045,13 @@ def test_compensation_table_and_creation_record_roll_back_together(tmp_path, mon
     cfg = _alembic_config(database_uri, monkeypatch)
     previous_revision = "c1e4f5a6b7d8"
     command.upgrade(cfg, previous_revision)
+    # The current core metadata includes the journal tables in the baseline
+    # schema. Remove them to exercise this revision's create-and-rollback path.
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.text(f'DROP TABLE "{table}"'))
+    engine.dispose()
     create_index = op.create_index
 
     def fail_journal_index(index_name, *args, **kwargs):

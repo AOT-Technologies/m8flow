@@ -1076,6 +1076,14 @@ def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monke
     db_session.commit()
     due = scheduled.run_at.replace(tzinfo=UTC) + timedelta(seconds=1)
     assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
+    # Core 1.1 persists a separate immediately-due occurrence job. The first
+    # poll materializes that occurrence; the next poll starts the instance.
+    assert workflow.run_due(
+        db_session,
+        tenant_id=tenant.id,
+        now=due + timedelta(seconds=1),
+        worker_id="versioned-timer-test",
+    ) == 1
     instance = db_session.query(ProcessInstanceModel).filter_by(
         m8f_tenant_id=tenant.id, process_model_identifier=model.model_id,
     ).one()
@@ -1761,6 +1769,12 @@ def test_delete_instance_uses_database_journal_foreign_keys(db_session, tmp_path
     connection = db_session.connection()
     connection.exec_driver_sql("PRAGMA foreign_keys = ON")
     assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+    # Core 1.1 includes the journal tables in Base.metadata, so the test fixture
+    # already created them. Replace those empty tables with the deliberately
+    # cyclic/non-cyclic schema this deletion-order test exercises.
+    for table_name in ("compensation_record", "compensation_run", "compensation_scope"):
+        connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{table_name}"')
 
     # Keep the journal tables outside the core metadata, like a migration-only schema.
     metadata = sa.MetaData()

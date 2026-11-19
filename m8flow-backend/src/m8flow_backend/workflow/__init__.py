@@ -3563,7 +3563,7 @@ def _retire_stale_timer_starts(session: Session, tenant_id: str) -> None:
     from m8flow_backend import catalog
     from m8flow_backend.catalog import versions
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
 
     states = {model.model_id: model for model in versions.states(session, tenant_id)}
     rows = session.execute(
@@ -3571,7 +3571,7 @@ def _retire_stale_timer_starts(session: Session, tenant_id: str) -> None:
         .join(BpmnProcessDefinitionModel, BpmnProcessDefinitionModel.id == SchedulerJobModel.bpmn_process_definition_id)
         .where(
             SchedulerJobModel.m8f_tenant_id == tenant_id,
-            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
             BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
         )
     )
