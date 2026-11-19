@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Chargement des autorisations…",
-    "loadFailed": "Impossible de charger les autorisations. Rechargez la page pour réessayer."
+    "loadFailed": "Impossible de charger les autorisations. Veuillez réessayer."
   },
   "network": {
     "unableToConnect": "Connexion impossible. Vérifiez votre connexion internet.",

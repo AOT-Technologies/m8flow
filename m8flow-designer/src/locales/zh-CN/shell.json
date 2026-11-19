@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "正在加载权限…",
-    "loadFailed": "无法加载权限。请重新加载页面后重试。"
+    "loadFailed": "无法加载权限。请重试。"
   },
   "network": {
     "unableToConnect": "无法连接。请检查您的网络连接。",

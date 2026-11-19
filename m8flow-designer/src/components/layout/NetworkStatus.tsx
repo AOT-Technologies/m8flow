@@ -1,30 +1,11 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouteError } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { Button } from '@/components/ui/button';
-import { NetworkError } from '@/lib/api';
-
-function subscribe(onChange: () => void) {
-  window.addEventListener('online', onChange);
-  window.addEventListener('offline', onChange);
-  return () => {
-    window.removeEventListener('online', onChange);
-    window.removeEventListener('offline', onChange);
-  };
-}
-
-export function useOnline(): boolean {
-  return useSyncExternalStore(subscribe, () => navigator.onLine);
-}
-
-// Chrome, Firefox, Safari and Vite wordings for a request or page chunk that never arrived.
-const NETWORK_FAILURE = /failed to fetch|dynamically imported module|importing a module script failed|unable to preload|networkerror/i;
-
-export function isNetworkFailure(error: unknown): boolean {
-  return error instanceof NetworkError || (error instanceof Error && NETWORK_FAILURE.test(error.message));
-}
+import { isNetworkFailure } from '@/lib/networkErrors';
+import { useOnline } from '@/lib/useOnline';
 
 /** App-wide notice while the browser is offline; pages stay mounted, so typed input survives. */
 export function OfflineBanner() {
@@ -42,18 +23,25 @@ export function RouteError() {
   const { t } = useTranslation();
   const error = useRouteError();
   const online = useOnline();
+  const wasOnline = useRef(online);
+  const reloaded = useRef(false);
+  const networkFailure = isNetworkFailure(error);
 
-  // React.lazy caches a failed page chunk, so retrying means reloading; do it by itself once back online.
+  // React.lazy caches rejected imports. Reload once on reconnection; never
+  // reload on mount, duplicate online events, or an unrelated application bug.
   useEffect(() => {
-    const reload = () => window.location.reload();
-    window.addEventListener('online', reload);
-    return () => window.removeEventListener('online', reload);
-  }, []);
+    const reconnected = !wasOnline.current && online;
+    wasOnline.current = online;
+    if (networkFailure && reconnected && !reloaded.current) {
+      reloaded.current = true;
+      window.location.reload();
+    }
+  }, [online, networkFailure]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-foreground">
       <Alert tone="error">
-        {!online || isNetworkFailure(error) ? t('shell.network.unableToConnect') : t('shell.network.pageFailed')}
+        {networkFailure ? t('shell.network.unableToConnect') : t('shell.network.pageFailed')}
       </Alert>
       <Button onClick={() => window.location.reload()}>{t('shell.network.retry')}</Button>
     </main>

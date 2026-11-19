@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Načítání oprávnění…",
-    "loadFailed": "Oprávnění se nepodařilo načíst. Načtěte stránku znovu a zkuste to znovu."
+    "loadFailed": "Oprávnění se nepodařilo načíst. Zkuste to prosím znovu."
   },
   "network": {
     "unableToConnect": "Nelze se připojit. Zkontrolujte připojení k internetu.",

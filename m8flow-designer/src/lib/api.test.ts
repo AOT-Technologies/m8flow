@@ -124,4 +124,12 @@ describe('apiGet', () => {
 
     await expect(apiGet('/v1.0/tasks')).rejects.toBe(abort);
   });
+
+  it.each(['Invalid URL', 'Request with GET/HEAD method cannot have body.'])(
+    'preserves non-network fetch TypeErrors (%s)', async (message) => {
+      const error = new TypeError(message);
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
+      await expect(apiGet('/v1.0/tasks')).rejects.toBe(error);
+    },
+  );
 });

@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { getCurrentUser, logout } from '@/lib/auth';
 import { useActiveTenant, useCapabilities, useTenantRegistry } from '@/components/session/hooks';
 import { Sidebar } from './Sidebar';
+import { Button } from '@/components/ui/button';
 
 /**
  * Shared chrome: Sidebar + tenant/logout wiring + `<Outlet />` for page content.
@@ -37,6 +38,8 @@ export function AppShell() {
     canReadProcessInstances,
     canReadNatsApiKeys,
     status,
+    loadError,
+    retryPermissions,
   } = useCapabilities();
   // The inbox (and its nav item) needs its GET grant; a single task also opens
   // with submit alone, e.g. an editor's own task from the instance page (M8F-647).
@@ -92,7 +95,12 @@ export function AppShell() {
       : tenants;
 
   if (status === 'loading') return <p role="status">{t('shell.permissions.loading')}</p>;
-  if (status === 'error') return <p role="alert">{t('shell.permissions.loadFailed')}</p>;
+  if (status === 'error') return (
+    <div className="space-y-4 p-6">
+      <p role="alert">{loadError ?? t('shell.permissions.loadFailed')}</p>
+      <Button onClick={retryPermissions}>{t('shell.network.retry')}</Button>
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">

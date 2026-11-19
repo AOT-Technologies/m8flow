@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { forwardRef, useImperativeHandle, type Ref } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useState, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -33,8 +33,10 @@ vi.mock('@/pages/process-model-modeler/components/DiagramCanvas', () => ({
     },
     ref: Ref<DiagramCanvasHandle>,
   ) {
+    const [draft, setDraft] = useState(xml);
+    useEffect(() => setDraft(xml), [xml]);
     useImperativeHandle(ref, () => ({
-      saveXML: async () => ({ xml, baseline: xml }),
+      saveXML: async () => ({ xml: draft, baseline: draft }),
       markSaved: () => {
         onDirtyChange?.(false);
         return false;
@@ -42,6 +44,10 @@ vi.mock('@/pages/process-model-modeler/components/DiagramCanvas', () => ({
     }));
     return (
       <div>
+        <textarea aria-label="Canvas draft" value={draft} onChange={(event) => {
+          setDraft(event.target.value);
+          onDirtyChange?.(true);
+        }} />
         <button type="button" onClick={() => onDirtyChange?.(true)}>
           Mark dirty
         </button>
@@ -103,6 +109,37 @@ function renderAt(
 }
 
 describe('TemplateFileModelerPage', () => {
+  it('keeps edits and shows the connection message after a failed save, then retries on Save', async () => {
+    let saves = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        saves += 1;
+        if (saves === 1) throw new TypeError('Load failed');
+        return { ok: true, json: async () => TEMPLATE };
+      }
+      if (url.includes('/files/README.md')) return { ok: true, text: async () => '# Original' };
+      return { ok: true, json: async () => TEMPLATE };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderAt('/templates/3/modeler/README.md');
+    const draft = await screen.findByLabelText('Canvas draft');
+    fireEvent.change(draft, { target: { value: '# Unsaved draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
+    expect(screen.getByLabelText('Canvas draft')).toBe(draft);
+    expect(draft).toHaveValue('# Unsaved draft');
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    window.dispatchEvent(new Event('online'));
+    expect(saves).toBe(1);
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saves).toBe(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(draft).toHaveValue('# Unsaved draft');
+    const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(puts[1][1]?.body).toBe('# Unsaved draft');
+  });
   afterEach(() => {
     // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
     cleanup();

@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Cargando permisos…",
-    "loadFailed": "No se pudieron cargar los permisos. Recargue la página para volver a intentarlo."
+    "loadFailed": "No se pudieron cargar los permisos. Vuelva a intentarlo."
   },
   "network": {
     "unableToConnect": "No se puede conectar. Compruebe su conexión a internet.",

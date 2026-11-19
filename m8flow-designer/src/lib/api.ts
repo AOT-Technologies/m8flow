@@ -1,4 +1,5 @@
-import i18n from '@/i18n';
+import { toNetworkError } from './networkErrors';
+export { NetworkError, toNetworkError } from './networkErrors';
 import {
   getAccessToken,
   type OrganizationMembership,
@@ -67,20 +68,6 @@ export class ApiError extends Error {
   }
 }
 
-/** fetch() got no response at all (offline, DNS, server unreachable). Its message is user-facing,
- * so pages that show `err.message` say "check your connection" instead of "Failed to fetch". */
-export class NetworkError extends Error {
-  constructor() {
-    super(i18n.t('shell.network.unableToConnect'));
-    this.name = 'NetworkError';
-  }
-}
-
-/** fetch() rejects with a TypeError on network failure; an AbortError (caller's own cancel) passes through. */
-export function toNetworkError(error: unknown): never {
-  throw error instanceof TypeError ? new NetworkError() : error;
-}
-
 /** Best-effort read of the backend's `{ error_code, message }` error body so
  * the ApiError can carry the real reason. Clones the response so callers that
  * still want the raw body are unaffected. */
@@ -146,7 +133,7 @@ function attemptSilentRefresh(): Promise<boolean> {
       credentials: 'include',
     })
       .then((response) => response.ok)
-      .catch(() => false)
+      .catch(toNetworkError)
       .finally(() => {
         refreshInFlight = null;
       });

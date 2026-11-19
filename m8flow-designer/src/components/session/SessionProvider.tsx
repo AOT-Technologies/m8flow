@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { checkPermissions, fetchCapabilities, fetchOrganizationMemberships, fetchTenants, type TenantSummary } from '@/lib/api';
 import {
@@ -8,6 +8,8 @@ import {
   type OrganizationMembership,
 } from '@/lib/auth';
 import { persistTenantId, readPersistedTenantId } from '@/lib/selectedTenant';
+import { isNetworkFailure, NetworkError } from '@/lib/networkErrors';
+import { useOnline } from '@/lib/useOnline';
 import { SessionContext, type SessionContextValue } from './SessionContext';
 import { buildPermissionCheckRequest, hasPermission } from './permissionCheckTargets';
 
@@ -88,6 +90,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [canReadProcesses, setCanReadProcesses] = useState(false);
   const [canReadProcessInstances, setCanReadProcessInstances] = useState(false);
   const [capabilityStatus, setCapabilityStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const [permissionsReloadKey, setPermissionsReloadKey] = useState(0);
+  const [organizationsReloadKey, setOrganizationsReloadKey] = useState(0);
+  const failedReads = useRef({ permissions: false, tenants: false, organizations: false });
+  const online = useOnline();
+  const wasOnline = useRef(online);
+  const retryPermissions = useCallback(() => {
+    failedReads.current.permissions = false;
+    setCapabilityError(null);
+    setCapabilityStatus('loading');
+    setPermissionsReloadKey((key) => key + 1);
+  }, []);
   const [canReadSecrets, setCanReadSecrets] = useState(false);
   const [canManageSecrets, setCanManageSecrets] = useState(false);
   const [canReadNamedValues, setCanReadNamedValues] = useState(false);
@@ -118,6 +132,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    failedReads.current.permissions = false;
     Promise.all([
       fetchCapabilities(),
       checkPermissions({
@@ -220,8 +235,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           });
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
+          failedReads.current.permissions = isNetworkFailure(error);
+          setCapabilityError(error instanceof NetworkError ? error.message : null);
           setCanManageProcesses(false);
           setCanManageProcessModels(false);
           setCanReadProcesses(false);
@@ -253,21 +270,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [permissionsReloadKey]);
 
   useEffect(() => {
     if (!superAdmin) {
       return;
     }
     let cancelled = false;
+    failedReads.current.tenants = false;
     fetchTenants()
       .then((rows) => {
         if (!cancelled) {
           setTenants(rows.map((row) => ({ id: row.id, name: row.name || row.id })));
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
+          failedReads.current.tenants = isNetworkFailure(error);
           setTenants([]);
         }
       });
@@ -284,6 +303,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     setActiveTenantLabel(getActiveTenantDisplayLabel());
     let cancelled = false;
+    failedReads.current.organizations = false;
     fetchOrganizationMemberships()
       .then((rows) => {
         if (!cancelled) {
@@ -291,15 +311,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           setOrganizationMemberships(rows);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
+          failedReads.current.organizations = isNetworkFailure(error);
           setActiveTenantLabel(getActiveTenantDisplayLabel());
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [superAdmin]);
+  }, [superAdmin, organizationsReloadKey]);
+
+  // Only failed bootstrap reads are retried. Reconnection never remounts the
+  // shell, refreshes a loaded form, or replays a user's write operation.
+  useEffect(() => {
+    const reconnected = !wasOnline.current && online;
+    wasOnline.current = online;
+    if (!reconnected) return;
+    if (failedReads.current.permissions) retryPermissions();
+    if (failedReads.current.tenants) {
+      failedReads.current.tenants = false;
+      setTenantsReloadKey((key) => key + 1);
+    }
+    if (failedReads.current.organizations) {
+      failedReads.current.organizations = false;
+      setOrganizationsReloadKey((key) => key + 1);
+    }
+  }, [online, retryPermissions]);
 
   const setSelectedTenant = useCallback((tenantId: string | null) => {
     persistTenantId(tenantId);
@@ -323,6 +361,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       capabilities: {
         status: capabilityStatus,
+        loadError: capabilityError,
+        retryPermissions,
         canStartProcesses,
         canReviewTasks,
         canReadTaskReview,
@@ -366,6 +406,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       canManageProcesses,
       canManageProcessModels,
       capabilityStatus,
+      capabilityError,
+      retryPermissions,
       canStartProcesses,
       canReviewTasks,
       canReadTaskReview,

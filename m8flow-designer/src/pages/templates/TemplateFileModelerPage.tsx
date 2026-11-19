@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Link, useBeforeUnload, useNavigate, useParams } from 'react-router-dom';
 
 import i18n from '@/i18n';
+import { Alert } from '@/components/library/alert/Alert';
+import { NetworkError } from '@/lib/networkErrors';
 import { ApiError, fetchConnectorsGrouped } from '@/lib/api';
 import { fetchConnectorProfilesForPicker } from '@/lib/connectorsApi';
 import { downloadTextFile } from '@/lib/download';
@@ -66,6 +68,7 @@ export default function TemplateFileModelerPage() {
   const [notFound, setNotFound] = useState(!validId || !file);
   const [error, setError] = useState<string | null>(null);
   const [savePhase, setSavePhase] = useState<SavePhase>('saved');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const currentIdRef = useRef<number | null>(null);
   const allowLeaveRef = useRef(false);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
@@ -142,6 +145,7 @@ export default function TemplateFileModelerPage() {
   const handleSave = useCallback(async () => {
     if (!canEdit || !canvasRef.current || currentIdRef.current == null) return;
     setSavePhase('saving');
+    setSaveError(null);
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
       const updated = await saveTemplateFileContent(
@@ -153,7 +157,8 @@ export default function TemplateFileModelerPage() {
       const stillDirty = canvasRef.current.markSaved(baseline);
       setSavePhase(stillDirty ? 'dirty' : 'saved');
       reanchorIfForked(updated);
-    } catch {
+    } catch (err) {
+      if (err instanceof NetworkError) setSaveError(err.message);
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
@@ -224,7 +229,7 @@ export default function TemplateFileModelerPage() {
   const isBpmn = fileLower.endsWith('.bpmn');
   const isDiagram = isBpmn || fileLower.endsWith('.dmn');
 
-  const dirty = savePhase === 'dirty';
+  const dirty = savePhase !== 'saved';
   useBeforeUnload(
     useCallback(
       (event) => {
@@ -291,6 +296,8 @@ export default function TemplateFileModelerPage() {
           onViewXml={undefined}
         />
       </header>
+
+      {saveError ? <Alert tone="error">{saveError}</Alert> : null}
 
       {/* `isolate`: same stacking containment as ProcessModelModelerPage —
           see the comment there (M8F-524). */}

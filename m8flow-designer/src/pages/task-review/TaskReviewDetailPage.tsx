@@ -254,6 +254,7 @@ export default function TaskReviewDetailPage() {
   const [loading, setLoading] = useState(validId);
   const [notFound, setNotFound] = useState(!validId);
   const [error, setError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [formValues, setFormValues] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -300,7 +301,7 @@ export default function TaskReviewDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [parsedId, validId]);
+  }, [parsedId, validId, loadAttempt]);
 
   function handleSubmit(outcome?: string) {
     if (!canSubmitTaskReviews || !validId || submitting || !detail || detail.task.completed) return;
@@ -397,6 +398,9 @@ export default function TaskReviewDetailPage() {
         <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
+        <Button className="mt-4" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+          {t('shell.network.retry')}
+        </Button>
       </main>
     );
   }

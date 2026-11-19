@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "A carregar permissões…",
-    "loadFailed": "Não foi possível carregar as permissões. Recarregue a página para tentar novamente."
+    "loadFailed": "Não foi possível carregar as permissões. Tente novamente."
   },
   "network": {
     "unableToConnect": "Não foi possível ligar. Verifique a sua ligação à internet.",

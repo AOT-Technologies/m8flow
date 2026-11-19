@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Loading permissions…",
-    "loadFailed": "Unable to load permissions. Reload to try again."
+    "loadFailed": "Unable to load permissions. Please try again."
   },
   "network": {
     "unableToConnect": "Unable to connect. Please check your internet connection.",

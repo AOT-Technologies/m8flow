@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Ladataan käyttöoikeuksia…",
-    "loadFailed": "Käyttöoikeuksia ei voitu ladata. Yritä uudelleen päivittämällä sivu."
+    "loadFailed": "Käyttöoikeuksia ei voitu ladata. Yritä uudelleen."
   },
   "network": {
     "unableToConnect": "Yhteyttä ei voitu muodostaa. Tarkista internetyhteytesi.",

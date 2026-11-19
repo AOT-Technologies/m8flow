@@ -40,7 +40,7 @@
   },
   "permissions": {
     "loading": "Berechtigungen werden geladen…",
-    "loadFailed": "Berechtigungen konnten nicht geladen werden. Laden Sie die Seite neu, um es erneut zu versuchen."
+    "loadFailed": "Berechtigungen konnten nicht geladen werden. Bitte versuchen Sie es erneut."
   },
   "network": {
     "unableToConnect": "Verbindung nicht möglich. Bitte überprüfen Sie Ihre Internetverbindung.",
