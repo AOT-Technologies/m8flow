@@ -41,6 +41,9 @@ _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 _LIFECYCLE_ROUTE = re.compile(
     r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate|retry)/?"
 )
+_PROCESS_MODEL_VERSION_ROUTE = re.compile(
+    r"/m8flow/process-models/([^/]+)/(versions|publish|working-version|start)"
+)
 LOGGER = logging.getLogger(__name__)
 
 
@@ -263,6 +266,71 @@ def _normalize_authorization_path(path: str) -> str:
     return normalized
 
 
+def _decode_version_model_id(encoded_model_id: str) -> str | None:
+    from m8flow_backend.catalog import process_model_identifier_from_path_param
+
+    try:
+        model_id = process_model_identifier_from_path_param(encoded_model_id)
+    except ApiError:
+        return None
+    if any(segment in {"", ".", ".."} for segment in model_id.split("/")):
+        return None
+    return model_id
+
+
+def _process_model_version_permission(action: str, path: str) -> tuple[str, str]:
+    match = _PROCESS_MODEL_VERSION_ROUTE.fullmatch(path)
+    if match is None:
+        return action, path
+    encoded_model_id, operation = match.groups()
+    model_id = _decode_version_model_id(encoded_model_id)
+    if model_id is None:
+        return action, path
+    if action == "read" and operation == "versions":
+        return action, f"/process-model-files/{model_id}"
+    if (action, operation) in {("create", "publish"), ("update", "working-version")}:
+        return "update", "/process-models"
+    if action == "create" and operation == "start":
+        return action, "/process-instances"
+    return action, path
+
+
+def check_uri_permission(user: UserModel, method: str, path: str, *, session: Session) -> bool:
+    """Include the dispatcher grant when checking a model-specific Start action."""
+    if not allow_uri(user, method, path, session=session):
+        return False
+    if method != "POST":
+        return True
+    match = _PROCESS_MODEL_VERSION_ROUTE.fullmatch(_normalize_authorization_path(path))
+    if match is None or match.group(2) != "start":
+        return True
+    model_id = _decode_version_model_id(match.group(1))
+    if model_id is None:
+        return False
+    if actor_is_super_admin(user):
+        return True
+
+    from m8flow_backend.auth import require_tenant_id
+
+    try:
+        tenant_id = require_tenant_id(user)
+    except ApiError:
+        return False
+    return can_start_process_model(session, tenant_id=tenant_id, user_id=user.id, model_id=model_id)
+
+
+def can_start_process_model(session: Session, *, tenant_id: str, user_id: int, model_id: str) -> bool:
+    """Evaluate the concrete process.start grant used by the Core dispatcher."""
+    return HostAuthorizationPolicy().authorize(session, api.AuthorizationRequest(
+        tenant_id=tenant_id,
+        actor_user_id=user_id,
+        command_key=_PROCESS_START_COMMAND,
+        permission="start",
+        resource_type="process_model",
+        resource_id=model_id,
+    )).allowed
+
+
 def allow_uri(
     user: UserModel,
     method: str,
@@ -298,6 +366,7 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    action, path = _process_model_version_permission(action, path)
     lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
     if lifecycle_route:
         target = lifecycle_route.group(1)

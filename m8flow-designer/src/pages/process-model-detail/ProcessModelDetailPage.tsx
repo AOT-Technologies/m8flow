@@ -2,8 +2,12 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 
-import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, startProcessInstance, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { ApiError, copyProcessModel, createProcessModelFile, createScriptUnitTest, deleteProcessModelFile, fetchProcessModelDetail, fetchScriptUnitTests, runProcessModelTests, runScriptUnitTest, updateProcessModel, type ProcessModelDetail } from '@/lib/api';
+import { useProcessStart } from '@/components/useProcessStart';
 import { ProcessModelOverview } from './components/ProcessModelOverview';
+import { ProcessModelVersionHistory } from './components/ProcessModelVersionHistory';
+import { useProcessModelVersionPermissions } from './components/useProcessModelVersionPermissions';
+import { publishProcessModel } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
 import { ChevronLeft } from 'lucide-react';
@@ -15,6 +19,7 @@ import i18n from '@/i18n';
  */
 export default function ProcessModelDetailPage() {
   const { t } = useTranslation();
+  const { start, picker } = useProcessStart();
   const { processModelId } = useParams<{ processModelId: string }>();
   const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   const {
@@ -48,16 +53,19 @@ export default function ProcessModelDetailPage() {
   // Template creation remains read-only for super-admins in the backend service.
   const canSaveAsTemplate = canCreateTemplates && !isSuperAdmin && !needsTenantToWrite;
   // Starting an instance is a write: it must land in one tenant.
-  const canStart = Boolean(canStartProcesses) && !needsTenantToWrite;
   const navigate = useNavigate();
   const modifiedId = processModelId ?? '';
 
   const [detail, setDetail] = useState<ProcessModelDetail | null>(null);
+  const versionPermissions = useProcessModelVersionPermissions(modifiedId, tenantId, Boolean(detail?.working_revision));
+  const canStart = (detail?.working_revision ? versionPermissions?.start : canStartProcesses) && !needsTenantToWrite;
   const [loading, setLoading] = useState(Boolean(modifiedId));
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [versionFeedback, setVersionFeedback] = useState('');
 
   useEffect(() => {
+    setVersionFeedback('');
     if (!modifiedId) {
       setDetail(null);
       setLoading(false);
@@ -139,16 +147,41 @@ export default function ProcessModelDetailPage() {
   }
 
   return (
-    <main className="flex-1 px-11 py-10 pb-14">
+    <main className="min-w-0 flex-1 px-5 py-10 pb-14 sm:px-11">
+      {picker}
       <ProcessModelOverview
         detail={detail}
         tenantId={tenantId}
         canManage={canEditModel}
         canReadFiles={canReadProcessModelFiles}
+        versionFeedback={versionFeedback}
+        versionHistory={versionPermissions?.history && (
+          <ProcessModelVersionHistory
+            key={`${detail.tenant_id}/${modifiedId}`}
+            modifiedId={modifiedId}
+            tenantId={tenantId || (isSuperAdmin ? detail.tenant_id : undefined)}
+            revision={detail.working_revision}
+            canRestore={Boolean(versionPermissions.restore && !needsTenantToWrite)}
+            triggerStyle="pill"
+            onChanged={(identity, message) => {
+              setVersionFeedback(message);
+              setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
+              void fetchProcessModelDetail(modifiedId, tenantId).then(setDetail).catch(() => {
+                setError(t('processModelDetail.page.loadFailed'));
+              });
+            }}
+          />
+        )}
+        onPublish={versionPermissions?.publish && !needsTenantToWrite && detail.working_revision
+          ? async () => {
+              const identity = await publishProcessModel(modifiedId, detail.working_revision!, tenantId);
+              setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
+            }
+          : undefined}
         onUpdateIdentity={
           canEditModel
             ? async (patch) => {
-                const identity = await updateProcessModel(modifiedId, patch, tenantId);
+                const identity = await updateProcessModel(modifiedId, patch, tenantId, detail.working_revision);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
@@ -156,7 +189,7 @@ export default function ProcessModelDetailPage() {
         onAddFile={
           canCreateModelFile
             ? async (input) => {
-                await createProcessModelFile(modifiedId, input, tenantId);
+                await createProcessModelFile(modifiedId, input, tenantId, detail.working_revision);
                 setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
             : undefined
@@ -164,7 +197,7 @@ export default function ProcessModelDetailPage() {
         onDeleteFile={
           canDeleteModelFile
             ? async (fileName) => {
-                await deleteProcessModelFile(modifiedId, fileName, tenantId);
+                await deleteProcessModelFile(modifiedId, fileName, tenantId, detail.working_revision);
                 setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
             : undefined
@@ -176,6 +209,7 @@ export default function ProcessModelDetailPage() {
                   modifiedId,
                   { primary_file_name: fileName },
                   tenantId,
+                  detail.working_revision,
                 );
                 setDetail(await fetchProcessModelDetail(modifiedId, tenantId));
               }
@@ -184,8 +218,8 @@ export default function ProcessModelDetailPage() {
         onStart={
           canStart
             ? async () => {
-                const result = await startProcessInstance(modifiedId, tenantId);
-                navigate(`/process-instances/${result.id}`);
+                const result = await start(modifiedId, tenantId, detail.collaboration_participants);
+                if (result) navigate(`/process-instances/${result.id}`);
               }
             : undefined
         }
@@ -201,7 +235,7 @@ export default function ProcessModelDetailPage() {
         onChangeStatus={
           canEditModel
             ? async (status) => {
-                const identity = await updateProcessModel(modifiedId, { status }, tenantId);
+                const identity = await updateProcessModel(modifiedId, { status }, tenantId, detail.working_revision);
                 setDetail((prev) => (prev ? { ...prev, ...identity } : prev));
               }
             : undefined
@@ -225,7 +259,19 @@ export default function ProcessModelDetailPage() {
         }
         onCreateScriptUnitTest={
           canCreateScriptTest
-            ? (input) => createScriptUnitTest(modifiedId, input, tenantId)
+            ? async (input) => {
+                const result = await createScriptUnitTest(modifiedId, input, tenantId, detail.working_revision);
+                if (result.working_revision) {
+                  setDetail((prev) => prev && ({
+                    ...prev,
+                    working_revision: result.working_revision,
+                    draft_version: result.draft_version,
+                    published_version: result.published_version,
+                    has_unpublished_changes: result.has_unpublished_changes,
+                  }));
+                }
+                return result;
+              }
             : undefined
         }
         onRunScriptUnitTest={

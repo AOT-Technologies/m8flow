@@ -77,6 +77,19 @@ To upgrade, follow these steps:
 4. If the changelog says the Keycloak realm changed, re-import it as the
    changelog describes.
 
+## Process model versions
+
+The process-model version migration imports the model folders available under
+`M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR`. Keep the catalog mounted during the
+upgrade. Published and paused models receive V1, and existing drafts receive
+V1 Draft. The original files remain available for recovery.
+
+After the upgrade, PostgreSQL holds working copies and release history. Back
+up PostgreSQL along with the model folder, which still holds process groups.
+For a rollback to an older application release, use the pre-upgrade backup.
+The older application reads its model files from that backup and cannot open
+drafts or versions created in the upgraded database.
+
 ## Upgrade from 1.0.x to 2.0
 
 The 2.0 upgrade runs a destructive migration, `c4d5e6f7a8b9`, that moves the

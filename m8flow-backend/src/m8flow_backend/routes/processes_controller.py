@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
 from flask import Response, g, request
 from sqlalchemy import select
 
 from m8flow_backend import catalog, workflow
+from m8flow_backend.identity import super_admin_tenant_membership
+from m8flow_backend.catalog import process_model_identifier_from_path_param, versioned, versions
 from m8flow_backend.auth import (
     require_catalog_write_tenant_id,
     require_current_user,
@@ -32,16 +33,6 @@ def _safe_content_disposition(filename: str) -> dict[str, str]:
     return {"Content-Disposition": f"attachment; filename*=UTF-8''{safe}"}
 
 
-def process_model_identifier_from_path_param(modified: str | None) -> str:
-    """Colon-encoded nested ids, including a percent-encoded colon from fetch/Vite."""
-    value = modified or ""
-    previous = None
-    while previous != value:
-        previous = value
-        value = unquote(value)
-    return value.replace(":", "/")
-
-
 def _process_group_permission_uri(*, modified_process_group_identifier: str, **_kwargs) -> str:
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
     return f"/v1.0/process-groups/{group_id}"
@@ -52,6 +43,15 @@ def _model_files_permission_uri(*, modified_process_model_identifier: str, **_kw
     the catalog list grant matches every /process-models/... path."""
     model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
     return f"/v1.0/process-model-files/{model_id}"
+
+
+def _working_revision(*, required: bool = False) -> str | None:
+    token = request.headers.get("If-Match")
+    if token:
+        return token.strip('"')
+    if required:
+        raise ApiError("working_revision_required", "A working revision is required. Reload the model.", 428)
+    return None
 
 
 @handle_api_errors
@@ -269,6 +269,7 @@ def delete_process_group(modified_process_group_identifier: str):
     if not catalog.process_group_exists(tenant_id=tenant_id, group_id=group_id):
         raise ApiError("not_found", "Process group not found", 404)
 
+    versions.lock_tenant(session, tenant_id)
     instance_count = workflow.count_instances_for_process_group(
         session, tenant_id=tenant_id, group_id=group_id
     )
@@ -279,7 +280,14 @@ def delete_process_group(modified_process_group_identifier: str):
             409,
         )
 
+    for model_id in catalog.list_models(group_id, tenant_id=tenant_id, session=session):
+        model = versions.write_state(session, tenant_id, model_id)
+        if model is None:
+            model = versions.import_legacy(session, tenant_id, model_id)
+        if model is not None and not model.deleted:
+            versioned.delete_model(session, model)
     catalog.delete_process_group(tenant_id=tenant_id, group_id=group_id)
+    session.commit()
     return success_response({"deleted": True, "id": group_id}, 200)
 
 
@@ -298,16 +306,21 @@ def create_process_model(body: dict | None = None):
     payload = _group_write_payload(body)
     tenant_id = require_catalog_write_tenant_id(user, explicit_tenant_id=_explicit_body_tenant(payload))
 
-    identity = catalog.create_process_model(
-        session,
-        tenant_id=tenant_id,
-        group_id=payload.get("group_id") or "",
-        leaf_id=payload.get("id") or "",
-        display_name=payload.get("display_name"),
-        description=payload.get("description"),
-        user_id=user.id,
+    group_id = catalog.validate_process_group_id(payload.get("group_id") or "")
+    if not catalog.process_group_exists(tenant_id=tenant_id, group_id=group_id):
+        raise ApiError("not_found", "Process group not found", 404)
+    name = payload.get("display_name") or ""
+    leaf = catalog.resolve_process_model_leaf(leaf_id=payload.get("id") or "", display_name=name)
+    primary = f"{leaf}.bpmn"
+    process_id = catalog._bpmn_process_id(leaf)
+    model = versioned.create(
+        session, tenant_id, f"{group_id}/{leaf}",
+        files={primary: catalog.default_bpmn_xml(process_id=process_id).encode()},
+        name=name.strip() or leaf, description=(payload.get("description") or "").strip(),
+        primary=primary, process_id=process_id,
     )
-    session.flush()
+    identity = versioned.identity(session, model)
+    session.commit()
     return success_response(identity, 201)
 
 
@@ -330,22 +343,73 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    identity = catalog.update_process_model_metadata(
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        display_name=payload.get("display_name") if "display_name" in payload else None,
-        description=payload.get("description") if "description" in payload else None,
-        primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
-        status=payload.get("status") if "status" in payload else None,
-    )
-    if "status" in payload or "primary_file_name" in payload:
-        workflow.reconcile_process_model_timer_starts(
-            g.db_session,
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            status=identity["status"],
-            user_id=user.id,
+    session = g.db_session
+    with super_admin_tenant_membership(session, tenant_id=tenant_id, user=user):
+        model = versioned.for_write(session, tenant_id, process_model_identifier, expected=_working_revision())
+        try:
+            versioned.update_metadata(session, model, payload, user_id=user.id, username=user.username)
+            result = versioned.identity(session, model)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+    return success_response(result, 200)
+
+
+@handle_api_errors
+@require_permission(forbidden_message="Not permitted to publish this process model")
+def publish_process_model(modified_process_model_identifier: str):
+    user = require_current_user()
+    tenant_id = require_catalog_write_tenant_id(user)
+    session = g.db_session
+    with super_admin_tenant_membership(session, tenant_id=tenant_id, user=user):
+        model = versioned.for_write(
+            session, tenant_id, process_model_identifier_from_path_param(modified_process_model_identifier),
+            expected=_working_revision(required=True),
         )
+        try:
+            versioned.publish(session, model, user_id=user.id, username=user.username)
+            result = versioned.identity(session, model)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+    return success_response(result, 200)
+
+
+@handle_api_errors
+@require_permission(on_deny="404", forbidden_message="Process model not found")
+def get_process_model_versions(modified_process_model_identifier: str):
+    user = require_current_user()
+    tenant_id = require_tenant_id(user)
+    model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
+    return success_response(versioned.history(g.db_session, tenant_id, model_id), 200)
+
+
+@handle_api_errors
+@require_permission(forbidden_message="Not permitted to change this process model draft")
+def change_working_version(modified_process_model_identifier: str, body: dict | None = None):
+    user = require_current_user()
+    tenant_id = require_catalog_write_tenant_id(user)
+    session = g.db_session
+    payload = _group_write_payload(body)
+    try:
+        model = versioned.for_write(
+            session, tenant_id, process_model_identifier_from_path_param(modified_process_model_identifier),
+            expected=_working_revision(required=True),
+        )
+        operation, number = payload.get("operation"), payload.get("version")
+        if operation == "restore" and type(number) is int and number > 0:
+            versioned.restore(session, model, number)
+        elif operation == "discard" and number is None:
+            versioned.restore(session, model, None)
+        else:
+            raise ApiError("invalid_version_operation", "Specify a version to restore or discard the draft.", 400)
+        identity = versioned.identity(session, model)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
     return success_response(identity, 200)
 
 
@@ -367,15 +431,18 @@ def copy_process_model(modified_process_model_identifier: str, body: dict | None
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    identity = catalog.copy_process_model(
-        session,
-        tenant_id=tenant_id,
-        source_identifier=process_model_identifier,
-        leaf_id=payload.get("id") or "",
-        display_name=payload.get("display_name"),
-        user_id=user.id,
+    source = versioned.for_write(session, tenant_id, process_model_identifier)
+    group = catalog.process_group_id_for_model(process_model_identifier)
+    leaf = catalog.validate_process_model_leaf(payload.get("id") or "")
+    model_id = f"{group}/{leaf}" if group else leaf
+    model = versioned.create(
+        session, tenant_id, model_id, files=versions.file_bytes(source.working),
+        name=(payload.get("display_name") or "").strip() or leaf,
+        description=source.description, primary=source.working["primary_file_name"],
+        process_id=source.working["primary_process_id"],
     )
-    session.flush()
+    identity = versioned.identity(session, model)
+    session.commit()
     return success_response(identity, 201)
 
 
@@ -473,8 +540,9 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        raise ApiError("not_found", "Process model not found", 404)
+    model = versioned.for_write(
+        session, tenant_id, process_model_identifier, expected=_working_revision(),
+    )
     primary = _primary_bpmn_name(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     xml_bytes = catalog.read_model_file(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier, file_name=primary
@@ -489,22 +557,10 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
             payload.get("expected_output_json") if isinstance(payload.get("expected_output_json"), dict) else {}
         ),
     )
-    workflow.import_definition(
-        session,
-        tenant_id=tenant_id,
-        user_id=user.id,
-        bpmn_identifier=process_model_identifier,
-        source_bpmn_xml=xml,
-        source_dmn_xml=catalog.model_dmn_xml(
-            tenant_id=tenant_id, process_model_identifier=process_model_identifier, bpmn_xml=xml
-        ),
-        bpmn_name=primary,
-    )
-    catalog.write_spec_file(
-        tenant_id=tenant_id, path=process_model_identifier, file_name=primary, content=xml.encode("utf-8")
-    )
-    session.flush()
-    return success_response({"ok": True, "id": unit_id}, 201)
+    versioned.write_file(model, primary, xml.encode("utf-8"))
+    result = {"ok": True, "id": unit_id, **versions.fields(session, model)}
+    session.commit()
+    return success_response(result, 201)
 
 
 @handle_api_errors
@@ -617,6 +673,13 @@ def get_process_model(modified_process_model_identifier: str):
             "recent_instances": recent,
             "timer_start_schedules": timer_start_schedules,
             "files": files,
+            "collaboration_participants": (
+                catalog.model_collaboration_participants(
+                    tenant_id=tenant_id, process_model_identifier=process_model_identifier
+                )
+                if identity["status"] == catalog.PROCESS_MODEL_STATUS_PUBLISHED
+                else None
+            ),
         },
         200,
     )
@@ -658,7 +721,10 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
 
     extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
     mime = _FILE_MIMETYPES.get(extension, "application/octet-stream")
-    return Response(content, mimetype=mime, headers=_safe_content_disposition(file_name))
+    response = Response(content, mimetype=mime, headers=_safe_content_disposition(file_name))
+    if identity["working_revision"]:
+        response.set_etag(identity["working_revision"])
+    return response
 
 
 @handle_api_errors
@@ -667,39 +733,26 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
     forbidden_message="Not permitted to modify this process model",
 )
 def put_process_model_file(modified_process_model_identifier: str, file_name: str):
-    """Save one named file's bytes into an existing process model directory.
-
-    .bpmn content is re-imported (same as catalog.save) so the process
-    definition stays in sync; every file type is git-committed. Denied ->
-    403 (a write op, unlike the read endpoints' 404-for-denied — there is
-    nothing tenant-identity-revealing to protect by hiding the model here).
-    """
+    """Save one file to the working copy."""
     user = require_current_user()
     tenant_id = require_catalog_write_tenant_id(user)
 
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        raise ApiError("not_found", "Process model not found", 404)
-
     catalog.validate_leaf_file_name(file_name)
     content = request.get_data()
     if not content:
         raise ApiError("missing_content", "Request body is required", 400)
 
-    path = catalog.update_file(
-        {"id": process_model_identifier}, file_name, content, tenant_id=tenant_id
+    session = g.db_session
+    model = versioned.for_write(
+        session, tenant_id, process_model_identifier, expected=_working_revision(),
     )
-    stat = path.stat()
-    return success_response(
-        {
-            "name": file_name,
-            "size_bytes": int(stat.st_size),
-            "updated_at": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-        },
-        200,
-    )
+    row = versioned.write_file(model, file_name, content)
+    row.update(versions.fields(session, model))
+    session.commit()
+    return success_response(row, 200)
 
 
 @handle_api_errors
@@ -729,15 +782,12 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
     else:
         content = None
 
-    row = catalog.create_model_file(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        file_name=file_name,
-        content=content,
-        user_id=user.id,
+    model = versioned.for_write(
+        session, tenant_id, process_model_identifier, expected=_working_revision(),
     )
-    session.flush()
+    row = versioned.create_file(model, file_name.strip(), content)
+    row.update(versions.fields(session, model))
+    session.commit()
     return success_response(row, 201)
 
 
@@ -754,12 +804,14 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    catalog.delete_model_file(
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        file_name=file_name,
+    session = g.db_session
+    model = versioned.for_write(
+        session, tenant_id, process_model_identifier, expected=_working_revision(),
     )
-    return success_response({"deleted": True, "name": file_name}, 200)
+    versioned.remove_file(model, file_name)
+    result = {"deleted": True, "name": file_name, **versions.fields(session, model)}
+    session.commit()
+    return success_response(result, 200)
 
 
 @handle_api_errors
@@ -767,14 +819,8 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
     uri="/v1.0/process-instances",
     forbidden_message="Not permitted to start this process model",
 )
-def start_process_instance(modified_process_model_identifier: str):
-    """Start (create + initialize) a process instance from a model's latest
-    definition — the Processes list/detail "Start" action. Write op: denied →
-    403 (nothing tenant-identity-revealing to hide, same as
-    put_process_model_file). Started with no submission variables; models that
-    need a start form are launched empty here, same as workflow.start's own
-    default.
-    """
+def start_process_instance(modified_process_model_identifier: str, body: dict | None = None):
+    """Start a model or selected collaboration participant from the Designer."""
     user = require_current_user()
     session = g.db_session
     tenant_id = require_tenant_id(user)
@@ -785,18 +831,23 @@ def start_process_instance(modified_process_model_identifier: str):
     if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
         raise ApiError("not_found", "Process model not found", 404)
 
+    options = body or {}
     instance = workflow.start(
         session,
         tenant_id=tenant_id,
         user_id=user.id,
         process_model_identifier=process_model_identifier,
+        bpmn_process_id=options.get("bpmn_process_id"),
+        collaboration_correlation_key=options.get("collaboration_correlation_key"),
     )
     session.flush()
+    correlation_key = getattr(instance, "collaboration_correlation_key", None)
     return success_response(
         {
             "id": instance.id,
             "status": instance.status,
             "process_model_identifier": process_model_identifier,
+            **({"collaboration_correlation_key": correlation_key} if correlation_key is not None else {}),
         },
         201,
     )
@@ -808,7 +859,7 @@ def start_process_instance(modified_process_model_identifier: str):
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):
-    """Delete a process model's on-disk BPMN spec (git-committed removal).
+    """Tombstone the model and clear its working copy.
     Blocked (409) while any process instance still references the model, so
     its run history/audit rows are never orphaned — callers must remove or
     let those complete first. Write op: denied → 403.
@@ -820,8 +871,7 @@ def delete_process_model(modified_process_model_identifier: str):
     process_model_identifier = process_model_identifier_from_path_param(
         modified_process_model_identifier
     )
-    if not catalog.model_exists(tenant_id=tenant_id, process_model_identifier=process_model_identifier):
-        raise ApiError("not_found", "Process model not found", 404)
+    model = versioned.for_write(session, tenant_id, process_model_identifier)
 
     instance_count = workflow.count_instances_for_process_model(
         session, tenant_id=tenant_id, process_model_identifier=process_model_identifier
@@ -833,14 +883,6 @@ def delete_process_model(modified_process_model_identifier: str):
             409,
         )
 
-    workflow.reconcile_process_model_timer_starts(
-        session,
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        status=catalog.PROCESS_MODEL_STATUS_DRAFT,
-        user_id=user.id,
-    )
-    catalog.delete_process_model(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    )
+    versioned.delete_model(session, model)
+    session.commit()
     return success_response({"deleted": True, "id": process_model_identifier}, 200)

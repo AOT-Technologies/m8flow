@@ -119,17 +119,27 @@ def register_v1_routes(app: Flask) -> None:
     @app.post("/v1.0/process-models")
     @require_permission(forbidden_message="Not allowed to save process models")
     def save_process_model():
-        user = require_current_user()
+        from m8flow_backend.catalog import versioned, versions
+
         session = g.db_session
-        tenant_id = require_tenant_id(user)
+        tenant_id = require_tenant_id(require_current_user())
         body = request.get_json(force=True)
-        catalog.save(
-            session,
-            path=body["path"],
-            xml=body["xml"],
-            tenant_id=tenant_id,
-            user_id=user.id,
-        )
+        model_id = body["path"]
+        versions.lock_tenant(session, tenant_id)
+        if catalog.model_exists(tenant_id=tenant_id, process_model_identifier=model_id, session=session):
+            model = versioned.for_write(session, tenant_id, model_id)
+            file_name = versions.primary_bpmn(model.working, model_id)
+            if file_name is None:
+                raise ApiError("invalid_process_model", "Select a primary BPMN file.", 400)
+            versioned.write_file(model, file_name, body["xml"].encode("utf-8"))
+        else:
+            leaf = model_id.rsplit("/", 1)[-1]
+            file_name = f"{leaf}.bpmn"
+            versioned.create(
+                session, tenant_id, model_id, files={file_name: body["xml"].encode("utf-8")},
+                name=leaf, primary=file_name,
+            )
+        session.commit()
         return jsonify({"ok": True}), 201
 
     @app.get("/v1.0/process-models")
@@ -146,14 +156,25 @@ def register_v1_routes(app: Flask) -> None:
         user = require_current_user()
         session = g.db_session
         tenant_id = require_tenant_id(user)
-        body = request.get_json(force=True)
+        body = request.get_json(force=True, silent=True)
+        if not isinstance(body, dict):
+            raise ApiError("validation_error", "Request body must be a JSON object.", 400)
+        process_model_identifier = body.get("process_model_identifier")
+        if not isinstance(process_model_identifier, str) or not process_model_identifier.strip():
+            raise ApiError("validation_error", "process_model_identifier must be a nonblank string.", 400)
+
         instance = workflow.start(
             session,
             tenant_id=tenant_id,
             user_id=user.id,
-            process_model_identifier=body["process_model_identifier"],
+            process_model_identifier=process_model_identifier,
+            bpmn_process_id=body.get("bpmn_process_id"),
+            collaboration_correlation_key=body.get("collaboration_correlation_key"),
         )
-        return jsonify({"id": instance.id, "status": instance.status}), 201
+        response = {"id": instance.id, "status": instance.status}
+        if (key := getattr(instance, "collaboration_correlation_key", None)) is not None:
+            response["collaboration_correlation_key"] = key
+        return jsonify(response), 201
 
     @app.get("/v1.0/process-instances")
     @require_permission(on_deny="empty", empty_response=[])

@@ -28,6 +28,7 @@ function renderWithOutlet(context: SessionFixtureContext, initial = '/processes'
       <Routes>
         <Route element={<Outlet context={context} />}>
           <Route path="/processes" element={<ProcessesPage />} />
+          <Route path="/process-instances/12" element={<p>Started instance 12</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -229,6 +230,106 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('button', { name: /new process model/i })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
+  });
+
+  const modelPath = '/v1.0/m8flow/process-models/finance:invoice-approval';
+  const collaborationDetail = {
+    collaboration_participants: [
+      { id: 'Order', name: 'Order', startable: true },
+      { id: 'Fulfilment', name: 'Fulfilment', startable: false },
+    ],
+  };
+
+  function renderStartFlow(loadDetail: () => Response | Promise<Response>) {
+    const startRequests = vi.fn();
+    const detailRequests = vi.fn<(url: string) => Response | Promise<Response>>(loadDetail);
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/process-instances/owners')) return Response.json({ owner_options: [] });
+      if (url.endsWith('/process-models?tenantId=t1')) {
+        const model = {
+          id: 'finance/invoice-approval', tenant_id: 't1', display_name: 'Invoice Approval',
+          group_id: 'finance', group_display_name: 'Finance', status: 'published',
+          last_run_at: null, runs_30d: 0,
+        };
+        return Response.json([model, { ...model, id: 'finance/expenses', display_name: 'Expenses' }]);
+      }
+      if (init.method === 'POST') {
+        startRequests(url, init.body);
+        return Response.json({ id: 12 });
+      }
+      return detailRequests(url);
+    }));
+    renderWithOutlet({
+      scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false, canStartProcesses: true,
+    });
+    return { detailRequests, startRequests };
+  }
+
+  async function invoiceStartButton() {
+    const row = await screen.findByRole('button', { name: /Invoice Approval/ });
+    return within(row).getByRole('button', { name: 'Start' });
+  }
+
+  it('loads only the selected model detail on Start and starts a single-process model without options', async () => {
+    let resolveDetail!: (detail: Response) => void;
+    const detail = new Promise<Response>((resolve) => { resolveDetail = resolve; });
+    const { detailRequests, startRequests } = renderStartFlow(() => detail);
+    const startButton = await invoiceStartButton();
+    expect(detailRequests).not.toHaveBeenCalled();
+
+    await userEvent.click(startButton);
+    expect(detailRequests).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(`${modelPath}?tenantId=t1`));
+    expect(startRequests).not.toHaveBeenCalled();
+    for (const button of screen.getAllByRole('button', { name: 'Start' })) {
+      expect(button).toBeDisabled();
+    }
+
+    resolveDetail(Response.json({ collaboration_participants: null }));
+    expect(await screen.findByText('Started instance 12')).toBeInTheDocument();
+    expect(startRequests).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(`${modelPath}/start?tenantId=t1`), undefined,
+    );
+  });
+
+  it('starts the participant chosen from the detail response', async () => {
+    const { startRequests } = renderStartFlow(() => Response.json(collaborationDetail));
+    const user = userEvent.setup();
+    await user.click(await invoiceStartButton());
+
+    const picker = within(await screen.findByRole('dialog', { name: 'Start a collaboration participant' }));
+    expect(startRequests).not.toHaveBeenCalled();
+    await user.selectOptions(picker.getByRole('combobox', { name: 'Executable pool' }), 'Order');
+    await user.type(picker.getByLabelText(/Correlation key/), 'Order 123');
+    await user.click(picker.getByRole('button', { name: 'Start' }));
+
+    expect(await screen.findByText('Started instance 12')).toBeInTheDocument();
+    expect(startRequests).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining(`${modelPath}/start?tenantId=t1`),
+      JSON.stringify({ bpmn_process_id: 'Order', collaboration_correlation_key: 'Order 123' }),
+    );
+  });
+
+  it('reenables Start without posting when the participant picker is cancelled', async () => {
+    const { startRequests } = renderStartFlow(() => Response.json(collaborationDetail));
+    const user = userEvent.setup();
+    const startButton = await invoiceStartButton();
+    await user.click(startButton);
+    const picker = within(await screen.findByRole('dialog', { name: 'Start a collaboration participant' }));
+    await user.click(picker.getByRole('button', { name: 'Cancel' }));
+
+    expect(startRequests).not.toHaveBeenCalled();
+    expect(startButton).toBeEnabled();
+  });
+
+  it('shows a detail lookup failure and reenables Start without posting', async () => {
+    const { startRequests } = renderStartFlow(() => Response.json({ message: 'Process model not found' }, { status: 404 }));
+    const startButton = await invoiceStartButton();
+    await userEvent.click(startButton);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Process model not found');
+    expect(startRequests).not.toHaveBeenCalled();
+    expect(startButton).toBeEnabled();
   });
 
   it('opens the groups picker and applies a group filter', async () => {

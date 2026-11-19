@@ -357,7 +357,12 @@ def test_super_admin_can_create_process_model_from_published_template(
     info = created_pm.get_json()["template_info"]
     assert info["source_template_id"] == source_id
     assert info["process_model_identifier"] == "finance/from-template-sa"
-    assert (tmp_path / "bpmn" / "t1" / "finance" / "from-template-sa").is_dir()
+    assert created_pm.json["process_model"]["draft_version"] == 1
+    model = client.get(
+        "/v1.0/m8flow/process-models/finance:from-template-sa?tenantId=t1", headers=_headers(sa_token),
+    )
+    assert model.status_code == 200
+    assert [entry["name"] for entry in model.json["files"]] == ["diagram.bpmn"]
 
     client.delete_cookie(SELECTED_TENANT_COOKIE_NAME)
     missing_tenant = client.post(
@@ -405,6 +410,77 @@ def test_create_process_model_with_template_file_missing_from_storage(
     stored.write_bytes(stored_bytes)
     retried = client.post(url, json=body, headers=_headers(admin_token))
     assert retried.status_code == 201, retried.text
+
+
+def test_reuses_deleted_legacy_model_id_from_template(client, db_session, app, tmp_path, monkeypatch):
+    from sqlalchemy import select
+
+    from m8flow_backend.catalog import versions
+    from m8flow_backend.models.process_model_template import ProcessModelTemplateModel
+
+    root = tmp_path / "bpmn"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(root))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    model_id = "finance/reused"
+    folder = root / "t1" / model_id
+    folder.mkdir(parents=True)
+    legacy_file = folder / "legacy.bpmn"
+    legacy_file.write_bytes(MINIMAL_BPMN)
+    occupied = root / "t1" / "finance" / "occupied"
+    occupied.mkdir()
+    (occupied / "process_group.json").write_text("{}", encoding="utf-8")
+    user, token = _login_user(
+        client, db_session, username="template-recreator", groups=["t1:tenant-admin"], tenant_id="t1",
+    )
+    old_template = _create_template(client, token, name="Original", published=True)
+    new_template = _create_template(client, token, name="Replacement", published=True)
+    assert old_template.status_code == new_template.status_code == 201
+    old_info = old_template.json
+    new_id = new_template.json["id"]
+    model = versions.import_legacy(db_session, "t1", model_id)
+    old_generation, old_revision = model.generation, model.working_revision
+    db_session.add(ProcessModelTemplateModel(
+        m8f_tenant_id="t1", process_model_identifier=model_id, created_by=user.username,
+        source_template_id=old_info["id"], source_template_key=old_info["templateKey"],
+        source_template_version=old_info["version"], source_template_name="Original",
+    ))
+    db_session.commit()
+
+    def create_target(leaf):
+        return client.post(
+            f"/v1.0/m8flow/templates/{new_id}/create-process-model", headers=_headers(token),
+            json={"process_group_id": "finance", "process_model_id": leaf, "display_name": "Replacement"},
+        )
+
+    live = create_target("reused")
+    assert (live.status_code, live.json["error_code"]) == (409, "process_model_exists")
+    collision = create_target("occupied")
+    assert (collision.status_code, collision.json["error_code"]) == (409, "process_group_exists")
+    assert client.delete("/v1.0/m8flow/process-models/finance:reused", headers=_headers(token)).status_code == 200
+    assert legacy_file.read_bytes() == MINIMAL_BPMN
+
+    recreated = create_target("reused")
+    assert recreated.status_code == 201, recreated.json
+    assert recreated.json["process_model"]["draft_version"] == 1
+    assert recreated.json["process_model"]["published_version"] is None
+    assert recreated.json["template_info"]["source_template_id"] == new_id
+    model = versions.write_state(db_session, "t1", model_id)
+    assert model.generation != old_generation
+    assert model.working_revision != old_revision
+    assert set(model.working["files"]) == {"diagram.bpmn"}
+    provenance_query = select(ProcessModelTemplateModel).filter_by(
+        m8f_tenant_id="t1", process_model_identifier=model_id,
+    )
+    provenance, = db_session.scalars(provenance_query)
+    assert provenance.source_template_id == new_id
+    assert versions.release_by_reference(db_session, "t1", model_id, f"{old_generation}:1") is not None
+
+    assert client.delete("/v1.0/m8flow/process-models/finance:reused", headers=_headers(token)).status_code == 200
+    plain = client.post(
+        "/v1.0/m8flow/process-models", headers=_headers(token), json={"group_id": "finance", "id": "reused"},
+    )
+    assert plain.status_code == 201, plain.json
+    assert db_session.scalars(provenance_query).all() == []
 
 
 def test_template_headers_decode_percent_encoded_non_ascii():
