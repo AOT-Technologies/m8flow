@@ -48,6 +48,24 @@ describe('paletteMinimizeModule', () => {
     expect(palette.isOpen()).toBe(true);
   });
 
+  it('minimizes in expanded view and restores the previous state on exit', () => {
+    const { container, palette, fire } = mountPalette();
+    const toggle = container.querySelector('.djs-palette-toggle') as HTMLElement;
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(palette.isOpen()).toBe(false);
+    toggle.click();
+    expect(palette.isOpen()).toBe(true);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(palette.isOpen()).toBe(true);
+
+    // Minimized before expanding stays minimized after leaving.
+    (container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement).click();
+    fire('m8flow.expand.changed', { expanded: true });
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(palette.isOpen()).toBe(false);
+  });
+
   it('keeps a minimized palette minimized when a language switch re-renders it', () => {
     let dictionary: Record<string, string> = {};
     const { container, palette, fire } = mountPalette((template) => dictionary[template] ?? template);

@@ -29,7 +29,8 @@ vi.mock('m8flow-bpmn/lib/Modeler', () => ({
     }
     get(name: string) {
       if (name === 'commandStack') return stack;
-      if (name === 'canvas') return { zoom: () => {}, resized: () => {} };
+      if (name === 'canvas') return { zoom: () => {} };
+      if (name === 'm8flowZoomControls') return { refit: () => {} };
       if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }

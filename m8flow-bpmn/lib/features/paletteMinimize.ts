@@ -47,6 +47,16 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
     setTitles();
   });
 
+  // Expanded view (zoomControls): minimize to give the diagram the room; the
+  // user can reopen it, and leaving restores what they had.
+  let minimizedBeforeExpand = false;
+  eventBus.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
+    if (expanded) minimizedBeforeExpand = minimized;
+    minimized = expanded || minimizedBeforeExpand;
+    if (minimized) palette.close();
+    else palette.open();
+  });
+
   // Palette re-renders and reopens itself on i18n.changed; run after it
   // (lower priority) so a minimized palette stays minimized.
   eventBus.on('i18n.changed', 500, () => {

@@ -126,14 +126,14 @@ describe('applyTaskStateMarkers', () => {
 describe('task state legend', () => {
   function mountLegend(translate: (template: string) => string = (template) => template) {
     const container = document.createElement('div');
-    const handlers = new Map<string, () => void>();
+    const handlers = new Map<string, (event?: unknown) => void>();
     const Legend = taskStateLegendModule.m8flowTaskStateLegend[1] as any;
     new Legend(
       { getContainer: () => container },
-      { on: (event: string, handler: () => void) => handlers.set(event, handler) },
+      { on: (event: string, handler: (event?: unknown) => void) => handlers.set(event, handler) },
       translate,
     );
-    return { container, fire: (event: string) => handlers.get(event)?.() };
+    return { container, fire: (event: string, payload?: unknown) => handlers.get(event)?.(payload) };
   }
 
   it('shows a swatch per state plus not-reached and path-taken rows', () => {
@@ -191,6 +191,26 @@ describe('task state legend', () => {
 
     toggle().click();
     expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(false);
+  });
+
+  it('minimizes in expanded view and restores the previous state on exit', () => {
+    const { container, fire } = mountLegend();
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const isCollapsed = () => legend.classList.contains('m8flow-bpmn-legend--collapsed');
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(isCollapsed()).toBe(true);
+    toggle().click();
+    expect(isCollapsed()).toBe(false);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(false);
+
+    // Minimized before expanding stays minimized after leaving.
+    toggle().click();
+    fire('m8flow.expand.changed', { expanded: true });
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(true);
   });
 
   it('renders translated labels as text, not markup', () => {

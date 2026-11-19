@@ -16,6 +16,32 @@ const ICON = (paths: string) =>
 const EXPAND_ICON = ICON('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>');
 const COLLAPSE_ICON = ICON('<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/>');
 
+type Size = { width: number; height: number };
+type Rect = Size & { x: number; y: number };
+
+/** Room for the chrome over the canvas: toolbar row on top, palette on the left. */
+export const FILL_PADDING = { top: 80, right: 40, bottom: 40, left: 120 };
+
+/**
+ * Viewbox for the expanded view: scale the diagram until it fills the
+ * viewport on its shorter side ("cover", not fit-viewport's "contain"), so a
+ * wide process is readable and pans sideways. Never past 100%. Starts at the
+ * diagram's left / top edge; centres along an axis that has room to spare.
+ */
+export function fillViewbox(outer: Size, inner: Rect, pad = FILL_PADDING): Rect {
+  const availWidth = Math.max(1, outer.width - pad.left - pad.right);
+  const availHeight = Math.max(1, outer.height - pad.top - pad.bottom);
+  const scale = Math.min(1, Math.max(availWidth / inner.width, availHeight / inner.height));
+  const offsetX = pad.left + Math.max(0, (availWidth - inner.width * scale) / 2);
+  const offsetY = pad.top + Math.max(0, (availHeight - inner.height * scale) / 2);
+  return {
+    x: inner.x - offsetX / scale,
+    y: inner.y - offsetY / scale,
+    width: outer.width / scale,
+    height: outer.height / scale,
+  };
+}
+
 /**
  * `config.zoomControls.parent`: a host element to mount the pill in (like
  * `propertiesPanel.parent`), so the host can lay it out in its own toolbar.
@@ -58,6 +84,16 @@ export function ZoomControls(
 
   // A CSS overlay, not the Fullscreen API: fullscreen would hide the host's
   // dialogs (script / form editors), which portal to <body>.
+  // Re-zoom for the current mode after the canvas changed size. Public
+  // (`m8flowZoomControls.refit()`) so a host that resizes the canvas after
+  // the toggle (the modeler hiding its properties panel) can refit too.
+  this.refit = () => {
+    canvas.resized();
+    const { outer, inner } = canvas.viewbox();
+    if (expanded && inner.width > 0 && inner.height > 0) canvas.viewbox(fillViewbox(outer, inner));
+    else canvas.zoom('fit-viewport', 'auto');
+  };
+
   const setExpanded = (next: boolean) => {
     expanded = next;
     expandTarget().classList.toggle(EXPANDED_CLASS, next);
@@ -66,8 +102,7 @@ export function ZoomControls(
     setTitles();
     // Hosts react to the mode (the modeler hides its properties panel).
     eventBus.fire('m8flow.expand.changed', { expanded: next });
-    canvas.resized();
-    canvas.zoom('fit-viewport', 'auto');
+    this.refit();
   };
 
   // Escape leaves the expanded view, unless it was meant for a label edit or

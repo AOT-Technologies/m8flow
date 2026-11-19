@@ -331,13 +331,10 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     instance.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
       expandedRef.current = expanded;
       setPanelOpen(expanded ? false : panelBeforeExpandRef.current);
-      // The package fit the diagram before the panel changed width; refit
-      // once React has hidden / restored it.
-      requestAnimationFrame(() => {
-        const canvas = instance.get('canvas');
-        canvas.resized();
-        canvas.zoom('fit-viewport', 'auto');
-      });
+      // The package zoomed before the panel changed width; refit for the
+      // mode (fill in expanded view, fit otherwise) once React has hidden /
+      // restored it.
+      requestAnimationFrame(() => instance.get('m8flowZoomControls').refit());
     });
 
     // Answer the properties panel's "Launch Editor" buttons inline (docked

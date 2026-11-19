@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ZoomControls, zoomControlsModule } from '../lib/features/zoomControls';
+import { fillViewbox, ZoomControls, zoomControlsModule } from '../lib/features/zoomControls';
 
 function mountZoomControls(translate: (template: string) => string = (template) => template) {
   const parent = document.createElement('div');
   const zoom = vi.fn((level?: unknown) => (typeof level === 'number' ? level : 1));
   const resized = vi.fn();
-  const canvas = { getContainer: () => parent, zoom, resized };
+  // A wide process: 5000 x 1000 diagram in a 1000 x 600 canvas.
+  const viewbox = vi.fn((box?: unknown) => box ?? { outer: { width: 1000, height: 600 }, inner: { x: 0, y: 0, width: 5000, height: 1000 } });
+  const canvas = { getContainer: () => parent, zoom, resized, viewbox };
   const handlers = new Map<string, Array<() => void>>();
   const eventBus = {
     on: (event: string, handler: () => void) => {
@@ -16,7 +18,7 @@ function mountZoomControls(translate: (template: string) => string = (template) 
   };
   new (ZoomControls as unknown as new (c: unknown, e: unknown, t: unknown) => void)(canvas, eventBus, translate);
   const fire = (event: string) => (handlers.get(event) ?? []).forEach((handler) => handler());
-  return { parent, zoom, resized, fire, busFire: eventBus.fire };
+  return { parent, zoom, resized, viewbox, fire, busFire: eventBus.fire };
 }
 
 describe('zoomControlsModule', () => {
@@ -48,7 +50,7 @@ describe('zoomControlsModule', () => {
     const host = document.createElement('div');
     host.setAttribute('data-m8flow-expand-root', '');
     document.body.appendChild(host);
-    const { parent, zoom, resized, fire, busFire } = mountZoomControls();
+    const { parent, zoom, resized, viewbox, fire, busFire } = mountZoomControls();
     host.appendChild(parent);
     const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
 
@@ -58,7 +60,9 @@ describe('zoomControlsModule', () => {
     expect(expand.getAttribute('aria-pressed')).toBe('true');
     expect(expand.title).toBe('Exit expanded view');
     expect(resized).toHaveBeenCalled();
-    expect(zoom).toHaveBeenCalledWith('fit-viewport', 'auto');
+    // Expanded fills the screen height rather than fitting the whole width.
+    expect(viewbox).toHaveBeenLastCalledWith(expect.objectContaining({ width: 1000 / 0.48 }));
+    expect(zoom).not.toHaveBeenCalledWith('fit-viewport', 'auto');
     expect(busFire).toHaveBeenLastCalledWith('m8flow.expand.changed', { expanded: true });
 
     // Escape from outside the diagram (an open dialog) leaves it expanded.
@@ -71,6 +75,7 @@ describe('zoomControlsModule', () => {
     expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(false);
     expect(expand.title).toBe('Expand view');
     expect(busFire).toHaveBeenLastCalledWith('m8flow.expand.changed', { expanded: false });
+    expect(zoom).toHaveBeenLastCalledWith('fit-viewport', 'auto');
 
     expand.click();
     fire('diagram.destroy');
@@ -89,6 +94,23 @@ describe('zoomControlsModule', () => {
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeNull();
     expect(slot.querySelector('.m8flow-bpmn-zoom.m8flow-bpmn-zoom--inline')).toBeTruthy();
     expect((ZoomControls as unknown as { $inject: string[] }).$inject).toContain('config.zoomControls');
+  });
+
+  it('fillViewbox fills the height of a wide diagram and starts at its left edge', () => {
+    const pad = { top: 80, right: 40, bottom: 40, left: 120 };
+    // 840 x 480 available; height wins: scale 0.48, wider than the screen.
+    const box = fillViewbox({ width: 1000, height: 600 }, { x: 100, y: 50, width: 5000, height: 1000 }, pad);
+    const scale = 1000 / box.width;
+    expect(scale).toBeCloseTo(0.48);
+    expect((100 - box.x) * scale).toBeCloseTo(pad.left);
+    expect((50 - box.y) * scale).toBeCloseTo(pad.top);
+  });
+
+  it('fillViewbox never zooms past 100% and centres a small diagram', () => {
+    const box = fillViewbox({ width: 1000, height: 600 }, { x: 0, y: 0, width: 200, height: 100 });
+    expect(box.width).toBe(1000);
+    expect(-box.x).toBeCloseTo(120 + (840 - 200) / 2);
+    expect(-box.y).toBeCloseTo(80 + (480 - 100) / 2);
   });
 
   it('removes the chrome on diagram.destroy', () => {

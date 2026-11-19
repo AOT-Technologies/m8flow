@@ -133,6 +133,15 @@ function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (temp
   render();
   eventBus.on('i18n.changed', render);
 
+  // Expanded view (zoomControls): minimize so the legend doesn't cover the
+  // diagram; the user can reopen it, and leaving restores what they had.
+  let collapsedBeforeExpand = false;
+  eventBus.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
+    if (expanded) collapsedBeforeExpand = collapsed;
+    collapsed = expanded || collapsedBeforeExpand;
+    render();
+  });
+
   parent.appendChild(root);
   eventBus.on('diagram.destroy', () => root.remove());
 }
