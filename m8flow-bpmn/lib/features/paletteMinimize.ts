@@ -5,8 +5,7 @@
  * that toggle an icon, tooltip and keyboard access (diagram-chrome.css).
  * Open by default.
  */
-const CHEVRON_UP =
-  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>';
+import { CHEVRON_UP_PATHS, svgIcon } from './svgIcon';
 
 export function PaletteMinimize(this: any, eventBus: any, palette: any, translate: (template: string) => string) {
   let minimized = false;
@@ -22,7 +21,7 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
     minimize = document.createElement('button');
     minimize.type = 'button';
     minimize.className = 'm8flow-bpmn-palette-minimize';
-    minimize.innerHTML = CHEVRON_UP;
+    minimize.append(svgIcon(CHEVRON_UP_PATHS, 14));
     minimize.addEventListener('click', () => {
       minimized = true;
       palette.close();
@@ -45,7 +44,15 @@ export function PaletteMinimize(this: any, eventBus: any, palette: any, translat
       });
     }
     setTitles();
+    syncExpanded(palette.isOpen());
   });
+
+  // aria-expanded on both controls tracks the palette's open state.
+  const syncExpanded = (open: boolean) => {
+    minimize?.setAttribute('aria-expanded', String(open));
+    reopen?.setAttribute('aria-expanded', String(open));
+  };
+  eventBus.on('palette.changed', ({ open }: { open: boolean }) => syncExpanded(open));
 
   // Expanded view (zoomControls): minimize to give the diagram the room; the
   // user can reopen it, and leaving restores what they had.

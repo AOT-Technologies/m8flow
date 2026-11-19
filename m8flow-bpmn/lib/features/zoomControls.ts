@@ -4,6 +4,7 @@
  * and the DMN DRD viewer so fit + toolbar zoom match.
  */
 import '../assets/zoom-controls.css';
+import { svgIcon } from './svgIcon';
 
 const TITLES = { in: 'Zoom in', out: 'Zoom out', fit: 'Fit to viewport' } as const;
 const EXPAND_TITLE = 'Expand view';
@@ -11,10 +12,8 @@ const COLLAPSE_TITLE = 'Exit expanded view';
 const EXPANDED_CLASS = 'm8flow-bpmn--expanded';
 /** Hosts mark a wider wrapper (e.g. canvas + properties panel) to expand with the canvas. */
 const EXPAND_ROOT = '[data-m8flow-expand-root]';
-const ICON = (paths: string) =>
-  `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-const EXPAND_ICON = ICON('<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>');
-const COLLAPSE_ICON = ICON('<path d="M4 14h6v6"/><path d="M20 10h-6V4"/><path d="M14 10l7-7"/><path d="M3 21l7-7"/>');
+const EXPAND_PATHS = ['M15 3h6v6', 'M9 21H3v-6', 'M21 3l-7 7', 'M3 21l7-7'];
+const COLLAPSE_PATHS = ['M4 14h6v6', 'M20 10h-6V4', 'M14 10l7-7', 'M3 21l7-7'];
 
 type Size = { width: number; height: number };
 type Rect = Size & { x: number; y: number };
@@ -29,16 +28,22 @@ export const FILL_PADDING = { top: 80, right: 40, bottom: 40, left: 120 };
  * diagram's left / top edge; centres along an axis that has room to spare.
  */
 export function fillViewbox(outer: Size, inner: Rect, pad = FILL_PADDING): Rect {
-  const availWidth = Math.max(1, outer.width - pad.left - pad.right);
-  const availHeight = Math.max(1, outer.height - pad.top - pad.bottom);
-  const scale = Math.min(1, Math.max(availWidth / inner.width, availHeight / inner.height));
-  const offsetX = pad.left + Math.max(0, (availWidth - inner.width * scale) / 2);
-  const offsetY = pad.top + Math.max(0, (availHeight - inner.height * scale) / 2);
+  // Clamp to >= 1 so an empty diagram or a hidden (0 x 0) canvas still gives
+  // a finite viewbox instead of Infinity / NaN.
+  const outerWidth = Math.max(1, outer.width || 0);
+  const outerHeight = Math.max(1, outer.height || 0);
+  const innerWidth = Math.max(1, inner.width || 0);
+  const innerHeight = Math.max(1, inner.height || 0);
+  const availWidth = Math.max(1, outerWidth - pad.left - pad.right);
+  const availHeight = Math.max(1, outerHeight - pad.top - pad.bottom);
+  const scale = Math.min(1, Math.max(availWidth / innerWidth, availHeight / innerHeight));
+  const offsetX = pad.left + Math.max(0, (availWidth - innerWidth * scale) / 2);
+  const offsetY = pad.top + Math.max(0, (availHeight - innerHeight * scale) / 2);
   return {
-    x: inner.x - offsetX / scale,
-    y: inner.y - offsetY / scale,
-    width: outer.width / scale,
-    height: outer.height / scale,
+    x: (inner.x || 0) - offsetX / scale,
+    y: (inner.y || 0) - offsetY / scale,
+    width: outerWidth / scale,
+    height: outerHeight / scale,
   };
 }
 
@@ -59,15 +64,21 @@ export function ZoomControls(
 
   const root = document.createElement('div');
   root.className = 'm8flow-bpmn-zoom';
-  root.innerHTML = [
-    '<button type="button" data-zoom="in">+</button>',
-    '<button type="button" data-zoom="out">−</button>',
-    '<button type="button" data-zoom="fit">□</button>',
-    `<button type="button" data-zoom="expand" aria-pressed="false">${EXPAND_ICON}</button>`,
-  ].join('');
-  const expandButton = root.querySelector<HTMLButtonElement>('[data-zoom="expand"]')!;
+  const button = (action: string, content: string | Node) => {
+    const element = document.createElement('button');
+    element.type = 'button';
+    element.dataset.zoom = action;
+    element.append(content);
+    return element;
+  };
+  const expandButton = button('expand', svgIcon(EXPAND_PATHS));
+  expandButton.setAttribute('aria-pressed', 'false');
+  root.append(button('in', '+'), button('out', '−'), button('fit', '□'), expandButton);
   const expandTarget = (): HTMLElement => parent.closest(EXPAND_ROOT) ?? parent;
   let expanded = false;
+  // The element that actually carries EXPANDED_CLASS, so collapse and
+  // teardown clear it there even if the host re-parented the canvas since.
+  let expandedElement: HTMLElement | null = null;
 
   // Re-run on i18n.changed so a language switch reaches an open diagram.
   const setTitles = () => {
@@ -96,8 +107,10 @@ export function ZoomControls(
 
   const setExpanded = (next: boolean) => {
     expanded = next;
-    expandTarget().classList.toggle(EXPANDED_CLASS, next);
-    expandButton.innerHTML = next ? COLLAPSE_ICON : EXPAND_ICON;
+    expandedElement?.classList.remove(EXPANDED_CLASS);
+    expandedElement = next ? expandTarget() : null;
+    expandedElement?.classList.add(EXPANDED_CLASS);
+    expandButton.replaceChildren(svgIcon(next ? COLLAPSE_PATHS : EXPAND_PATHS));
     expandButton.setAttribute('aria-pressed', String(next));
     setTitles();
     // Hosts react to the mode (the modeler hides its properties panel).
@@ -111,7 +124,7 @@ export function ZoomControls(
     if (!expanded || event.key !== 'Escape' || event.defaultPrevented) return;
     const target = event.target as HTMLElement;
     if (target.isContentEditable) return;
-    if (target !== document.body && !expandTarget().contains(target)) return;
+    if (target !== document.body && !(expandedElement ?? expandTarget()).contains(target)) return;
     setExpanded(false);
   };
   document.addEventListener('keydown', onKeydown);
@@ -132,7 +145,8 @@ export function ZoomControls(
 
   eventBus.on('diagram.destroy', () => {
     document.removeEventListener('keydown', onKeydown);
-    expandTarget().classList.remove(EXPANDED_CLASS);
+    expandedElement?.classList.remove(EXPANDED_CLASS);
+    expandedElement = null;
     root.remove();
   });
 }

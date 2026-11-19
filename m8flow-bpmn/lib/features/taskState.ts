@@ -8,6 +8,7 @@
  */
 import { isAny } from 'bpmn-js/lib/util/ModelUtil';
 import '../assets/task-state.css';
+import { CHEVRON_UP_PATHS, svgIcon } from './svgIcon';
 
 export type BpmnInstanceTask = {
   bpmn_identifier: string;
@@ -91,9 +92,6 @@ export function applyTaskStateMarkers(viewer: any, tasks: BpmnInstanceTask[]) {
     });
 }
 
-const CHEVRON_ICON =
-  '<svg class="m8flow-bpmn-legend-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>';
-
 function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (template: string) => string) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
@@ -114,7 +112,7 @@ function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (temp
     const label = document.createElement('span');
     label.textContent = translate('Task state');
     title.append(label);
-    title.insertAdjacentHTML('beforeend', CHEVRON_ICON);
+    title.append(svgIcon(CHEVRON_UP_PATHS, 14, 'm8flow-bpmn-legend-chevron'));
     title.addEventListener('click', () => {
       collapsed = !collapsed;
       render();

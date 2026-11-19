@@ -7,10 +7,18 @@ function mountPalette(translate: (template: string) => string = (template) => te
   const container = document.createElement('div');
   container.className = 'djs-palette open';
   container.innerHTML = '<div class="djs-palette-entries"></div><div class="djs-palette-toggle"></div>';
+  // Like diagram-js, open / close fire palette.changed.
+  let notify: (open: boolean) => void = () => {};
   const palette = {
     isOpen: () => container.classList.contains('open'),
-    open: () => container.classList.add('open'),
-    close: () => container.classList.remove('open'),
+    open: () => {
+      container.classList.add('open');
+      notify(true);
+    },
+    close: () => {
+      container.classList.remove('open');
+      notify(false);
+    },
   };
   container.querySelector('.djs-palette-toggle')!.addEventListener('click', () => palette.open());
 
@@ -23,6 +31,7 @@ function mountPalette(translate: (template: string) => string = (template) => te
   };
   new (PaletteMinimize as unknown as new (...args: unknown[]) => void)(eventBus, palette, translate);
   const fire = (event: string, payload?: unknown) => (handlers.get(event) ?? []).forEach((handler) => handler(payload));
+  notify = (open) => fire('palette.changed', { open });
   fire('palette.create', { container });
   return { container, palette, fire };
 }
@@ -64,6 +73,31 @@ describe('paletteMinimizeModule', () => {
     fire('m8flow.expand.changed', { expanded: true });
     fire('m8flow.expand.changed', { expanded: false });
     expect(palette.isOpen()).toBe(false);
+  });
+
+  it('keeps aria-expanded on both controls in step with the palette', () => {
+    const { container, palette, fire } = mountPalette();
+    const minimize = container.querySelector('.m8flow-bpmn-palette-minimize') as HTMLButtonElement;
+    const toggle = container.querySelector('.djs-palette-toggle') as HTMLElement;
+    const states = () => [minimize.getAttribute('aria-expanded'), toggle.getAttribute('aria-expanded')];
+
+    expect(states()).toEqual(['true', 'true']);
+    minimize.click();
+    expect(states()).toEqual(['false', 'false']);
+    toggle.click();
+    expect(states()).toEqual(['true', 'true']);
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(states()).toEqual(['false', 'false']);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(states()).toEqual(['true', 'true']);
+    expect(palette.isOpen()).toBe(true);
+  });
+
+  it('builds its chevron as an SVG element, not a markup string', () => {
+    const { container } = mountPalette();
+    const svg = container.querySelector('.m8flow-bpmn-palette-minimize svg') as SVGSVGElement;
+    expect(svg.namespaceURI).toBe('http://www.w3.org/2000/svg');
   });
 
   it('keeps a minimized palette minimized when a language switch re-renders it', () => {

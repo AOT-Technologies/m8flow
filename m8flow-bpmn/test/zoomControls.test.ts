@@ -113,6 +113,50 @@ describe('zoomControlsModule', () => {
     expect(-box.y).toBeCloseTo(80 + (480 - 100) / 2);
   });
 
+  it('fillViewbox returns a finite viewbox for empty or negative sizes', () => {
+    const cases = [
+      { outer: { width: 1000, height: 600 }, inner: { x: 0, y: 0, width: 0, height: 100 } },
+      { outer: { width: 1000, height: 600 }, inner: { x: 0, y: 0, width: 100, height: 0 } },
+      { outer: { width: 1000, height: 600 }, inner: { x: 10, y: 10, width: -50, height: -20 } },
+      { outer: { width: 0, height: 0 }, inner: { x: 0, y: 0, width: 5000, height: 1000 } },
+    ];
+    for (const { outer, inner } of cases) {
+      const box = fillViewbox(outer, inner);
+      expect(Object.values(box).every(Number.isFinite)).toBe(true);
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.height).toBeGreaterThan(0);
+    }
+  });
+
+  it('clears the expanded class from the element it was added to, even after re-parenting', () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-m8flow-expand-root', '');
+    const other = document.createElement('div');
+    document.body.append(host, other);
+    const { parent, fire } = mountZoomControls();
+    host.appendChild(parent);
+    const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
+
+    expand.click();
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(true);
+    // The host moves the canvas out of the expand root while expanded.
+    other.appendChild(parent);
+    fire('diagram.destroy');
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(false);
+    expect(parent.classList.contains('m8flow-bpmn--expanded')).toBe(false);
+
+    host.remove();
+    other.remove();
+  });
+
+  it('builds its icons as SVG elements, not markup strings', () => {
+    const { parent } = mountZoomControls();
+    const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
+    const svg = expand.querySelector('svg') as SVGSVGElement;
+    expect(svg.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(svg.querySelectorAll('path')).toHaveLength(4);
+  });
+
   it('removes the chrome on diagram.destroy', () => {
     const { parent, fire } = mountZoomControls();
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeTruthy();
