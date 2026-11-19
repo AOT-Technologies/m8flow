@@ -6,9 +6,11 @@ import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
+from defusedxml import ElementTree as SafeElementTree
+from defusedxml.common import DefusedXmlException
 from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
 from m8flow_core.models.work_item import WorkItemModel
@@ -18,6 +20,7 @@ from m8flow_backend.models.native import (
     TypeaheadModel,
 )
 from m8flow_backend import catalog, workflow
+from m8flow_backend.catalog import versions
 from m8flow_backend.errors import ApiError
 
 LOGGER = logging.getLogger(__name__)
@@ -422,15 +425,19 @@ def _extension_filename(
 
 
 def _load_json_supporting_file(
-    *, tenant_id: str, process_model_identifier: str, file_name: str | None
+    *, tenant_id: str, process_model_identifier: str, file_name: str | None,
+    release_contents: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not file_name:
         return None
-    raw = catalog.read_model_file(
-        tenant_id=tenant_id,
-        process_model_identifier=process_model_identifier,
-        file_name=file_name,
-    )
+    if release_contents is not None:
+        raw = versions.read_file(release_contents, file_name)
+    else:
+        raw = catalog.read_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=file_name,
+        )
     if raw is None:
         return None
     try:
@@ -450,17 +457,75 @@ def _load_form_files(
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     extensions = _form_extensions(work_item)
     model_id = work_item.bpmn_process_identifier
+    release_contents = None
+    session = object_session(work_item)
+    instance = work_item.process_instance
+    if session is not None and instance is not None and model_id and instance.m8f_tenant_id == tenant_id:
+        release = None
+        if instance.bpmn_version_control_type == "m8flow_release":
+            release = versions.release_by_reference(
+                session, tenant_id, model_id, instance.bpmn_version_control_identifier,
+            )
+            # Keep a missing pinned file from falling through to the draft.
+            release_contents = versions.snapshot({})
+        else:
+            model = versions.state(session, tenant_id, model_id)
+            if model is not None:
+                release = versions.release(session, model, 1)
+        definition = work_item.task_model.task_definition if work_item.task_model is not None else None
+        if definition is not None:
+            process_id, separator, _ = definition.bpmn_identifier.partition("::")
+            if separator:
+                pinned = workflow.called_release_file(
+                    session, tenant_id=tenant_id, instance_id=instance.id, process_id=process_id,
+                )
+                if pinned is not None:
+                    release, child_file = pinned
+                    model_id = release.model_id
+                    # Core shares task definitions between starts of the same
+                    # parent release. A later run can write a newer child's
+                    # task metadata there, so read the filenames from the
+                    # actual child BPMN this instance resolved.
+                    extensions = _released_task_extensions(
+                        versions.read_file(release.contents, child_file), definition.bpmn_identifier.split("::", 1)[1],
+                    )
+        if release is not None:
+            release_contents = release.contents
     schema_name = _extension_filename(extensions, _SCHEMA_FILENAME_KEYS, _SCHEMA_FILENAME_SUFFIX)
     ui_name = _extension_filename(extensions, _UI_SCHEMA_FILENAME_KEYS, _UI_SCHEMA_FILENAME_SUFFIX)
     schema = _load_json_supporting_file(
-        tenant_id=tenant_id, process_model_identifier=model_id, file_name=schema_name
+        tenant_id=tenant_id, process_model_identifier=model_id, file_name=schema_name,
+        release_contents=release_contents,
     )
     ui_schema = _load_json_supporting_file(
-        tenant_id=tenant_id, process_model_identifier=model_id, file_name=ui_name
+        tenant_id=tenant_id, process_model_identifier=model_id, file_name=ui_name,
+        release_contents=release_contents,
     )
     if schema is None:
         schema = dict(_EMPTY_SCHEMA)
     return schema, ui_schema
+
+
+def _released_task_extensions(bpmn: bytes | None, task_id: str) -> dict[str, str]:
+    if bpmn is None:
+        return {}
+    try:
+        root = SafeElementTree.fromstring(bpmn)
+    except (ET.ParseError, DefusedXmlException):
+        return {}
+    task = next((element for element in root.iter() if element.get("id") == task_id), None)
+    if task is None:
+        return {}
+    result = {}
+    for extension in task:
+        if extension.tag.rsplit("}", 1)[-1] != "extensionElements":
+            continue
+        for element in extension.iter():
+            name = element.get("name") or element.tag.rsplit("}", 1)[-1]
+            value = element.get("value") or (element.text or "").strip()
+            if value:
+                result[name] = value
+    return result
 
 
 def _prior_submission_values(

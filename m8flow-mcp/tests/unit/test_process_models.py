@@ -75,8 +75,24 @@ async def test_delete_nested_group_uses_colon_id(tools):
 
 
 async def test_publish_process_model_sets_published_status(tools):
-    with patch("src.mcp_tools.process_models.client.put", new_callable=AsyncMock, return_value={}) as put:
+    with (
+        patch("src.mcp_tools.process_models.client.get", new_callable=AsyncMock, return_value={"status": "paused"}),
+        patch("src.mcp_tools.process_models.client.put", new_callable=AsyncMock, return_value={}) as put,
+    ):
         await tools["publish_process_model"]("finance/expense")
     put.assert_awaited_once_with(
         "/v1.0/m8flow/process-models/finance:expense", "Bearer t", data={"status": "published"}
+    )
+
+
+async def test_publish_process_model_promotes_saved_draft(tools):
+    with (
+        patch("src.mcp_tools.process_models.client.get", new_callable=AsyncMock, return_value={
+            "status": "published", "draft_version": 2, "working_revision": "rev",
+        }),
+        patch("src.mcp_tools.process_models.client.post", new_callable=AsyncMock, return_value={}) as post,
+    ):
+        await tools["publish_process_model"]("finance/expense")
+    post.assert_awaited_once_with(
+        "/v1.0/m8flow/process-models/finance:expense/publish", "Bearer t", headers={"If-Match": '"rev"'},
     )

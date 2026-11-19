@@ -8,7 +8,8 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from xml.etree.ElementTree import ParseError
+from urllib.parse import unquote
+from xml.etree.ElementTree import Element, ParseError
 
 from typing import Any
 
@@ -28,6 +29,7 @@ from m8flow_backend.catalog.collaboration import (
 )
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 from m8flow_backend import workflow
+from m8flow_backend.catalog import versioned, versions
 
 LOGGER = logging.getLogger(__name__)
 
@@ -164,6 +166,10 @@ def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool
     from flask import g
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
+    return model_exists(tenant_id=tenant, process_model_identifier=path)
+
+
+def _legacy_model_exists(tenant: str, path: str) -> bool:
     try:
         model_dir = _resolved_inside_tenant(tenant, path, **_MODEL_PATH_ERROR)
     except ApiError:
@@ -179,10 +185,7 @@ def is_process_group_identifier(group: str, tenant_id: str | None = None) -> boo
     from flask import g
 
     tenant = tenant_id or getattr(g, "m8flow_tenant_id", None) or "default"
-    try:
-        return _resolved_inside_tenant(tenant, group, **_GROUP_PATH_ERROR).is_dir()
-    except ApiError:
-        return False
+    return process_group_exists(tenant_id=tenant, group_id=group)
 
 
 def delete_process_model(*, tenant_id: str, process_model_identifier: str) -> None:
@@ -267,6 +270,9 @@ def read_model_file(*, tenant_id: str, process_model_identifier: str, file_name:
     "model not found" vs "file not found" response should check that first.
     """
     validate_leaf_file_name(file_name)
+    model = versioned.read_state(tenant_id, process_model_identifier)
+    if model is not None:
+        return None if model.deleted else versions.read_file(model.working, file_name)
     try:
         path = _resolved_inside_tenant(tenant_id, process_model_identifier, file_name, **_MODEL_PATH_ERROR)
     except ApiError:
@@ -319,7 +325,7 @@ def write_spec_file(*, tenant_id: str, path: str, file_name: str, content: bytes
     return target
 
 
-def list_models(group: str | None = None, *, tenant_id: str) -> list[str]:
+def legacy_model_ids(group: str | None = None, *, tenant_id: str) -> list[str]:
     root = _tenant_models_root(tenant_id)
     if not root.exists():
         return []
@@ -336,6 +342,20 @@ def list_models(group: str | None = None, *, tenant_id: str) -> list[str]:
     return sorted(set(models))
 
 
+def list_models(group: str | None = None, *, tenant_id: str, session: Session | None = None) -> list[str]:
+    ids = set(legacy_model_ids(group, tenant_id=tenant_id))
+    session = session or versions.request_session()
+    if session is not None:
+        for model in versions.states(session, tenant_id):
+            if group and not model.model_id.startswith(f"{group}/"):
+                continue
+            if model.deleted:
+                ids.discard(model.model_id)
+            else:
+                ids.add(model.model_id)
+    return sorted(ids)
+
+
 def read_json_file(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -347,7 +367,10 @@ def read_json_file(path: Path) -> dict[str, Any]:
 
 
 def process_model_display_name(*, tenant_id: str, process_model_identifier: str) -> str:
-    """Prefer process_model.json display_name; fall back to the leaf path segment."""
+    """Read the catalog display name, falling back to the model path's leaf."""
+    model = versioned.read_state(tenant_id, process_model_identifier)
+    if model is not None:
+        return model.display_name
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     display = meta.get("display_name")
     if isinstance(display, str) and display.strip():
@@ -365,6 +388,9 @@ def process_model_status(*, tenant_id: str, process_model_identifier: str) -> st
     on get an explicit `draft` written at creation (see create_process_model),
     so new work still starts in draft as designed.
     """
+    model = versioned.read_state(tenant_id, process_model_identifier)
+    if model is not None:
+        return PROCESS_MODEL_STATUS_DRAFT if model.deleted else model.status
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     status = meta.get("status")
     if isinstance(status, str) and status.strip() in PROCESS_MODEL_STATUSES:
@@ -421,6 +447,7 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
     for tenant in _tenant_ids_for_fanout(tenant_id):
         for model_id in list_models(group, tenant_id=tenant):
             group_id = process_group_id_for_model(model_id)
+            status = process_model_status(tenant_id=tenant, process_model_identifier=model_id)
             rows.append(
                 {
                     "id": model_id,
@@ -435,9 +462,8 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
                     "group_display_name": process_group_display_name(
                         tenant_id=tenant, group_id=group_id
                     ),
-                    "status": process_model_status(
-                        tenant_id=tenant, process_model_identifier=model_id
-                    ),
+                    "status": status,
+                    **versioned.version_fields(tenant, model_id, status),
                 }
             )
     return rows
@@ -447,17 +473,20 @@ def _bpmn_processes_for_model(*, tenant_id: str, process_model_identifier: str) 
     """Return every BPMN process id and its file within a catalog model."""
     processes: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
-    for file_info in list_model_files(
-        tenant_id=tenant_id, process_model_identifier=process_model_identifier
-    ):
-        file_name = file_info["name"]
-        if not file_name.lower().endswith(".bpmn"):
-            continue
-        source = read_model_file(
-            tenant_id=tenant_id,
-            process_model_identifier=process_model_identifier,
-            file_name=file_name,
-        )
+    session = versions.request_session()
+    model = versions.state(session, tenant_id, process_model_identifier)
+    if model is not None:
+        entry = versions.release(session, model, model.latest_version) if model.status == "published" else None
+        if entry is None:
+            return []
+        contents = entry.contents
+    else:
+        legacy = versions.legacy_model(tenant_id, process_model_identifier)
+        if legacy is None:
+            return []
+        contents = legacy[1]
+    for file_name in versions.bpmn_names(contents):
+        source = versions.read_file(contents, file_name)
         if source is None:
             continue
         try:
@@ -479,6 +508,14 @@ def model_collaboration_participants(
     *, tenant_id: str, process_model_identifier: str
 ) -> list[CollaborationParticipant] | None:
     try:
+        session = versions.request_session()
+        model = versions.state(session, tenant_id, process_model_identifier)
+        if model is not None:
+            entry = versions.release(session, model, model.latest_version) if model.status == "published" else None
+            if entry is None:
+                return None
+            name = versions.primary_bpmn(entry.contents, entry.model_id)
+            return collaboration_participants(versioned.bpmn_xml(entry.contents, name)) if name else None
         primary = read_primary_bpmn(tenant_id=tenant_id, process_model_identifier=process_model_identifier)
     except ApiError:
         return None
@@ -548,7 +585,7 @@ def validate_process_group_id(group_id: str) -> str:
     return cleaned
 
 
-def process_group_exists(*, tenant_id: str, group_id: str) -> bool:
+def process_group_exists(*, tenant_id: str, group_id: str, session: Session | None = None) -> bool:
     """True when `group_id` is a directory in the tenant catalog that is not a process model."""
     try:
         cleaned = validate_process_group_id(group_id)
@@ -557,7 +594,11 @@ def process_group_exists(*, tenant_id: str, group_id: str) -> bool:
         return False
     if not target.is_dir():
         return False
-    return not is_process_model_identifier(cleaned, tenant_id=tenant_id)
+    model = versions.state(session or versions.request_session(), tenant_id, cleaned)
+    if model is not None and not model.deleted:
+        return False
+    # A deleted model can still have its pre-upgrade BPMN directory.
+    return not _legacy_model_exists(tenant_id, cleaned)
 
 
 def create_process_group(
@@ -638,6 +679,17 @@ def validate_process_model_leaf(leaf_id: str) -> str:
     if not cleaned or "/" in cleaned:
         raise ApiError("invalid_process_model", "Process model id must be a single path segment", 400)
     return cleaned
+
+
+def process_model_identifier_from_path_param(modified: str | None) -> str:
+    """Decode colon-encoded model paths consistently for routing and RBAC."""
+    value = modified or ""
+    for _ in range(4):
+        decoded = unquote(value)
+        if decoded == value:
+            return decoded.replace(":", "/")
+        value = decoded
+    raise ApiError("invalid_process_model", "Process model path is encoded too deeply.", 400)
 
 
 def slugify_process_model_leaf(display_name: str) -> str:
@@ -1066,8 +1118,13 @@ def delete_model_file(*, tenant_id: str, process_model_identifier: str, file_nam
     path.unlink()
 
 
-def model_exists(*, tenant_id: str, process_model_identifier: str) -> bool:
-    return is_process_model_identifier(process_model_identifier, tenant_id=tenant_id)
+def model_exists(
+    *, tenant_id: str, process_model_identifier: str, session: Session | None = None,
+) -> bool:
+    model = versions.state(session or versions.request_session(), tenant_id, process_model_identifier)
+    if model is not None:
+        return not model.deleted
+    return _legacy_model_exists(tenant_id, process_model_identifier)
 
 
 def model_dmn_xml(
@@ -1092,6 +1149,10 @@ def model_dmn_xml(
     except UnicodeDecodeError as exc:
         raise ApiError("invalid_file_content", "DMN file is not valid UTF-8", 400) from exc
     sources.update(pending or {})
+    return select_dmn_xml(sources, bpmn_xml)
+
+
+def select_dmn_xml(sources: dict[str, str], bpmn_xml: str) -> str | None:
     if not sources:
         return None
     called = _called_decision_ids(bpmn_xml)
@@ -1125,6 +1186,9 @@ def _dmn_decision_id(dmn_xml: str) -> str | None:
 
 
 def process_model_description(*, tenant_id: str, process_model_identifier: str) -> str:
+    model = versioned.read_state(tenant_id, process_model_identifier)
+    if model is not None:
+        return model.description
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
     description = meta.get("description")
     if isinstance(description, str):
@@ -1134,6 +1198,11 @@ def process_model_description(*, tenant_id: str, process_model_identifier: str) 
 
 def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[dict[str, Any]]:
     """Files in the model directory (not recursive). Marks primary via process_model.json."""
+    model = versioned.read_state(tenant_id, process_model_identifier)
+    if model is not None:
+        return [] if model.deleted else [
+            versioned.file_row(model, name) for name in sorted(model.working["files"], key=str.lower)
+        ]
     try:
         model_dir = _resolved_inside_tenant(tenant_id, process_model_identifier, **_MODEL_PATH_ERROR)
     except ApiError:
@@ -1191,6 +1260,7 @@ def get_model_identity(
     if resolved is None:
         return None
     group_id = process_group_id_for_model(process_model_identifier)
+    status = process_model_status(tenant_id=resolved, process_model_identifier=process_model_identifier)
     return {
         "id": process_model_identifier,
         "tenant_id": resolved,
@@ -1202,13 +1272,12 @@ def get_model_identity(
         ),
         "group_id": group_id,
         "group_display_name": process_group_display_name(tenant_id=resolved, group_id=group_id),
-        "status": process_model_status(
-            tenant_id=resolved, process_model_identifier=process_model_identifier
-        ),
+        "status": status,
+        **versioned.version_fields(resolved, process_model_identifier, status),
     }
 
 
-def _reject_unsupported_constructs(xml: str) -> None:
+def _reject_unsupported_constructs(xml: str) -> Element:
     # Parse first so malformed input always has the same error contract, even
     # when its partial text also resembles an unsupported BPMN construct.
     try:
@@ -1275,6 +1344,7 @@ def _reject_unsupported_constructs(xml: str) -> None:
             except ValidationError as exc:
                 raise ApiError("unsupported_bpmn", str(exc), 400) from exc
             break
+    return root
 
 
 def _xml_boolean_is_true(value: str | None) -> bool:

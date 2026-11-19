@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
+  checkPermissions,
   createProcessGroup,
   createProcessModel,
   deleteProcessGroup,
@@ -10,6 +11,8 @@ import {
   fetchProcessGroups,
   fetchProcessModelDetail,
   fetchProcessModels,
+  processModelActionPath,
+  publishProcessModel,
   updateProcessGroup,
   updateProcessModel,
   type ProcessGroupListItem,
@@ -62,6 +65,29 @@ export default function ProcessesPage() {
   const groupFilter = searchParams.get('group');
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
+  const [allowedModelActions, setAllowedModelActions] = useState<{
+    models: ProcessModelListItem[]; tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
+  }>();
+  useEffect(() => {
+    if (needsTenantForWrite) return;
+    const versioned = models.filter((model) => model.working_revision);
+    if (!versioned.length) return;
+    const request = Object.fromEntries(versioned.flatMap((model) => {
+      const id = encodeProcessModelId(model.id);
+      return [[processModelActionPath(id, 'publish'), ['POST']], [processModelActionPath(id, 'start'), ['POST']]];
+    }));
+    let active = true;
+    checkPermissions(request).then((permissions) => {
+      if (!active) return;
+      const allowed = (action: 'publish' | 'start') => new Set(versioned.filter((model) =>
+        permissions[processModelActionPath(encodeProcessModelId(model.id), action)]?.POST === true,
+      ).map((model) => model.id));
+      setAllowedModelActions({ models, tenantId: scopedTenantId, publish: allowed('publish'), start: allowed('start') });
+    }).catch(() => { if (active) setAllowedModelActions(undefined); });
+    return () => { active = false; };
+  }, [models, needsTenantForWrite, scopedTenantId]);
+  const currentActions = allowedModelActions?.models === models && allowedModelActions.tenantId === scopedTenantId
+    ? allowedModelActions : undefined;
   const [owners, setOwners] = useState<ProcessInstanceOwnerOption[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -245,7 +271,11 @@ export default function ProcessesPage() {
     model: ProcessModelListItem,
     status: ProcessModelStatus,
   ) {
-    await updateProcessModel(encodeProcessModelId(model.id), { status }, scopedTenantId);
+    if (status === 'published' && model.status !== 'paused' && model.working_revision) {
+      await publishProcessModel(encodeProcessModelId(model.id), model.working_revision, scopedTenantId);
+    } else {
+      await updateProcessModel(encodeProcessModelId(model.id), { status }, scopedTenantId, model.working_revision);
+    }
     setRefreshKey((k) => k + 1);
   }
 
@@ -304,13 +334,17 @@ export default function ProcessesPage() {
             : '';
           navigate(`/processes/${encodeProcessModelId(model.id)}${suffix}`);
         }}
-        onStartModel={canStartProcesses && !needsTenantForWrite ? handleStartModel : undefined}
+        onStartModel={!needsTenantForWrite ? handleStartModel : undefined}
         startPending={startPending}
+        mayStart={(model) => model.working_revision ? Boolean(currentActions?.start.has(model.id)) : Boolean(canStartProcesses)}
+        mayPublish={(model) => model.working_revision ? Boolean(currentActions?.publish.has(model.id)) : Boolean(canManageProcessModels)}
         onDeleteModel={canDeleteModel ? handleDeleteModel : undefined}
         onCreateModel={canCreateModel ? () => setCreateOpen(true) : undefined}
         onChangeModelStatus={
-          canManageProcessModels && !needsTenantForWrite ? handleChangeModelStatus : undefined
+          (canManageProcessModels || currentActions?.publish.size) && !needsTenantForWrite
+            ? handleChangeModelStatus : undefined
         }
+        mayChangeStatus={canManageProcessModels}
         onCreateGroup={canCreateGroup ? () => openGroups(true) : undefined}
       />
       <CreateProcessModelDialog

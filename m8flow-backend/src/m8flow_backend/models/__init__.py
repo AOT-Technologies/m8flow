@@ -2,6 +2,7 @@ from m8flow_core.models.tenant import M8flowTenantModel, TenantStatus
 from m8flow_backend.models.celery_task import CeleryTaskModel
 from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+from m8flow_backend.models.process_model_version import ProcessInstanceCalledReleases, ProcessModelRelease, ProcessModelState
 from m8flow_backend.models.host_base import HostBase
 from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
@@ -38,8 +39,11 @@ __all__ = [
     "NatsEventAuditModel",
     "PkceCodeVerifierModel",
     "ProcessInstanceErrorModel",
+    "ProcessInstanceCalledReleases",
     "ProcessInstanceFileDataModel",
     "ProcessModelTemplateModel",
+    "ProcessModelRelease",
+    "ProcessModelState",
     "RefreshTokenModel",
     "SecretModel",
     "ServiceAccountModel",

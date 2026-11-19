@@ -105,9 +105,10 @@ m8flow keeps data in three places:
 - **PostgreSQL** holds process instances, tasks, events, users, groups,
   permissions, tenants, secrets, and audit records. Tenant-scoped tables carry
   an `m8f_tenant_id` column.
-- **The process-model directory** holds the catalog as files, one folder per
-  tenant, under `M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR`. Compose bind-mounts
-  `data/process_models` from the repository.
+- **The process-model directory** holds process groups and legacy catalog files
+  under `M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR`. PostgreSQL holds imported
+  process models, working copies, and published releases. Back up both the
+  database and the process-model directory to recover the full catalog.
 - **The templates directory** holds template versions as files, under
   `M8FLOW_TEMPLATES_STORAGE_DIR`.
 

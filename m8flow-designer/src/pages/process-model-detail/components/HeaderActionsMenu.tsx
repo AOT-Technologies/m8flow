@@ -76,5 +76,5 @@ export function HeaderActionsMenu({
       : []),
   ];
 
-  return <ActionMenu size="header" contentClassName="w-52" items={items} />;
+  return <ActionMenu size="header" className="size-10 shrink-0" contentClassName="w-52" items={items} />;
 }

@@ -27,6 +27,7 @@ export interface ConfirmDialogProps {
    * (via `onOpenChange(false)`) right after — callers don't need to close it
    * themselves inside this callback. */
   onConfirm: () => void
+  onCloseAutoFocus?: (event: Event) => void
   /**
    * `"destructive"` (default) matches the mockup's "Delete this process
    * model?" example: a solid red pill confirm button next to the pale
@@ -89,6 +90,7 @@ function ConfirmDialog({
   cancelLabel,
   confirmLabel,
   onConfirm,
+  onCloseAutoFocus,
   tone = "destructive",
   pending,
 }: ConfirmDialogProps) {
@@ -98,7 +100,7 @@ function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent data-slot="confirm-dialog-content">
+      <AlertDialogContent data-slot="confirm-dialog-content" onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogHeader>
           <span
             data-slot="confirm-dialog-icon"
@@ -112,7 +114,7 @@ function ConfirmDialog({
               aria-hidden="true"
             />
           </span>
-          <div>
+          <div className="min-w-0 [overflow-wrap:anywhere]">
             <AlertDialogTitle>{title}</AlertDialogTitle>
             {description ? (
               <AlertDialogDescription className="mt-1.5">{description}</AlertDialogDescription>

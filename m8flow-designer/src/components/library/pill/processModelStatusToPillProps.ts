@@ -35,12 +35,19 @@ export function normalizeProcessModelStatus(
   return status && status in STATUS_CONFIG ? status : "published"
 }
 
-export function processModelStatusToPillProps(status: ProcessModelStatus | null | undefined): {
+export function processModelStatusToPillProps(
+  status: ProcessModelStatus | null | undefined,
+  hasUnpublishedChanges?: boolean,
+): {
   tone: PillTone
   dot: boolean
   children: string
 } {
-  const config = STATUS_CONFIG[normalizeProcessModelStatus(status)]
+  const normalized = normalizeProcessModelStatus(status)
+  if (normalized === "published" && hasUnpublishedChanges) {
+    return { tone: "warning", dot: true, children: i18n.t("common.modelStatus.publishedWithChanges") }
+  }
+  const config = STATUS_CONFIG[normalized]
   return { tone: config.tone, dot: true, children: i18n.t(config.labelKey) }
 }
 

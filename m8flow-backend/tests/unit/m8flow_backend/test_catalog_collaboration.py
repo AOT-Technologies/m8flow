@@ -102,6 +102,14 @@ def test_message_filter_accepts_supported_collaboration(collaboration_xml):
     _reject_unsupported_constructs(collaboration_xml)
 
 
+@pytest.mark.parametrize("process_id", [None, "Order"])
+def test_versioned_collaboration_defers_participant_selection_until_start(collaboration_xml, process_id):
+    from m8flow_backend.catalog import versioned, versions
+
+    contents = versions.snapshot({"orders.bpmn": collaboration_xml.encode()}, "orders.bpmn", process_id)
+    assert versioned.selected_process_id(contents, "orders", validate_start=True) is None
+
+
 @pytest.mark.parametrize(
     "event",
     [
