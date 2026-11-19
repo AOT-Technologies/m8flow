@@ -11,7 +11,7 @@ export type SaveButtonProps = {
 export function SaveButton({ onClick, disabled }: SaveButtonProps) {
   const { t } = useTranslation();
   return (
-    <Button type="button" variant="pill-info" size="pill" onClick={onClick} disabled={disabled}>
+    <Button type="button" variant="pill-info" size="pill" className="h-7 py-0" onClick={onClick} disabled={disabled}>
       {t('modeler.save')}
     </Button>
   );

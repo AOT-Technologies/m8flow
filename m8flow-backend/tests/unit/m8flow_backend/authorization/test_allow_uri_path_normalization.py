@@ -29,6 +29,39 @@ def test_allow_uri_normalizes_standard_granted_route(path, regular_user, monkeyp
 
 
 @pytest.mark.parametrize(
+    ("method", "suffix", "expected_action", "expected_target"),
+    [
+        ("GET", "finance:invoice-approval/versions/", "read", "/process-model-files/finance/invoice-approval"),
+        ("GET", "finance%3Ainvoice-approval/versions", "read", "/process-model-files/finance/invoice-approval"),
+        ("GET", "finance%2Finvoice-approval/versions", "read", "/process-model-files/finance/invoice-approval"),
+        ("GET", "finance%253Ainvoice-approval/versions", "read", "/process-model-files/finance/invoice-approval"),
+        ("POST", "finance%3Ainvoice-approval/publish", "update", "/process-models"),
+        ("PUT", "finance%2Finvoice-approval/working-version", "update", "/process-models"),
+        ("POST", "finance:invoice-approval/start", "create", "/process-instances"),
+        ("GET", "finance:invoice-approval/unknown", "read", None),
+        ("POST", "finance:invoice-approval/unknown/publish", "create", None),
+        ("POST", "%2F/publish", "create", None),
+        ("POST", "finance%253A%252e%252e%253Ainvoice-approval/publish", "create", None),
+        ("POST", "finance%2525253Ainvoice-approval/publish", "create", None),
+        ("GET", "versions", "read", None),
+    ],
+)
+def test_allow_uri_maps_only_valid_process_model_version_routes(
+    method, suffix, expected_action, expected_target, regular_user, monkeypatch,
+):
+    path = f"/m8flow/process-models/{suffix}"
+    seen = []
+
+    def resource_permitted(_session, _user, action, _resource_type, resource_id, **_kwargs):
+        seen.append((action, resource_id))
+        return resource_id == expected_target
+
+    monkeypatch.setattr(authorization, "_resource_permitted", resource_permitted)
+    assert authorization.allow_uri(regular_user, method, f"/v1.0{path}", session=object()) is (expected_target is not None)
+    assert seen == [(expected_action, expected_target or path)]
+
+
+@pytest.mark.parametrize(
     "path", ["/secrets", "/secrets/", "/v1.0/secrets", "/v1.0/secrets/"]
 )
 def test_allow_uri_normalizes_no_group_fallback_route(path, regular_user, monkeypatch):

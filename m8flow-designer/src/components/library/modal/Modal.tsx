@@ -23,7 +23,7 @@ export interface ModalProps {
   footer?: React.ReactNode
   /**
    * `"sm"` (460px wide, the default) is the original plain-form-modal size —
-   * auto-height with no floor or cap, right for a couple of form fields.
+   * auto-height with scrolling when the form exceeds the viewport.
    * `"md"` (720px wide, `min-h-[520px]` tall) is for content that needs real
    * room in both dimensions — a picker list, a multi-step wizard — without a
    * hard cap: it still auto-grows past that floor if content needs more
@@ -39,7 +39,7 @@ export interface ModalProps {
 }
 
 const modalSizeClassName: Record<NonNullable<ModalProps["size"]>, string> = {
-  sm: "max-w-[460px] sm:max-w-[460px]",
+  sm: "max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[460px] grid-cols-1 overflow-y-auto sm:max-w-[460px]",
   md: "max-w-[720px] sm:max-w-[720px] min-h-[520px] flex flex-col",
   lg: "max-w-[1100px] sm:max-w-[1100px] h-[80vh] flex flex-col overflow-hidden",
 }
@@ -95,7 +95,7 @@ function Modal({ open, onOpenChange, title, children, footer, size = "sm" }: Mod
           <DialogFooter
             data-slot="modal-footer"
             className={cn(
-              "mx-0 mb-0 flex-row items-center justify-end gap-2.5 rounded-none border-t-0 bg-transparent p-0",
+              "mx-0 mb-0 flex-row flex-wrap items-center justify-end gap-2.5 rounded-none border-t-0 bg-transparent p-0",
               hasHeightFloor && "mt-auto flex-none"
             )}
           >

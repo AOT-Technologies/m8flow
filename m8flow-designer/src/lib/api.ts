@@ -389,9 +389,23 @@ export function fetchHomeMyTasks(
 /** Publish lifecycle. Only `published` models can start instances. */
 export type ProcessModelStatus = 'draft' | 'published' | 'paused';
 
+export type ProcessModelVersionState = {
+  published_version?: number | null;
+  draft_version?: number | null;
+  has_unpublished_changes?: boolean;
+  working_revision?: string | null;
+};
+
+export type ProcessModelVersionHistory = ProcessModelVersionState & {
+  status: ProcessModelStatus;
+  versions: { version: number; published_at: string | null; published_by: string | null }[];
+};
+
+export type WorkingVersionAction = { operation: 'restore'; version: number } | { operation: 'discard' };
+
 export type BpmnProcessReference = { id: string; file_name: string };
 
-export type ProcessModelListItem = {
+export type ProcessModelListItem = ProcessModelVersionState & {
   id: string;
   /** Owning tenant. Model ids are catalog paths and collide across tenants,
    * so this is what disambiguates a row (and routes to its detail page).
@@ -511,7 +525,7 @@ export async function deleteProcessGroup(
   await apiFetch(processGroupWritePath(groupId, tenantId), { method: 'DELETE' });
 }
 
-export type ProcessModelIdentity = {
+export type ProcessModelIdentity = ProcessModelVersionState & {
   id: string;
   display_name: string;
   description: string;
@@ -551,11 +565,12 @@ export async function updateProcessModel(
     status?: ProcessModelStatus;
   },
   tenantId?: string | null,
+  revision?: string | null,
 ): Promise<ProcessModelIdentity> {
   const path = processModelDetailPath(modifiedId, tenantId);
   const response = await apiFetch(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
     body: JSON.stringify(patch),
   });
   return (await response.json()) as ProcessModelIdentity;
@@ -626,16 +641,17 @@ export async function createScriptUnitTest(
     expected_output_json: Record<string, unknown>;
   },
   tenantId?: string | null,
-): Promise<{ ok: boolean; id: string }> {
+  revision?: string | null,
+): Promise<ProcessModelVersionState & { ok: boolean; id: string }> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
   const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
     body: JSON.stringify(input),
   });
-  return (await response.json()) as { ok: boolean; id: string };
+  return (await response.json()) as ProcessModelVersionState & { ok: boolean; id: string };
 }
 
 export type ScriptUnitTestRunResult = {
@@ -678,7 +694,7 @@ export type ProcessModelDetailFile = {
   decision_id?: string | null;
 };
 
-export type ProcessModelDetail = {
+export type ProcessModelDetail = ProcessModelVersionState & {
   id: string;
   tenant_id: string;
   display_name: string;
@@ -716,6 +732,45 @@ export function fetchProcessModelDetail(
   return apiGet<ProcessModelDetail>(processModelDetailPath(modifiedId, tenantId));
 }
 
+export function processModelActionPath(
+  modifiedId: string,
+  action: 'publish' | 'versions' | 'working-version' | 'start',
+  tenantId?: string | null,
+): string {
+  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
+  return `${processModelDetailPath(modifiedId)}/${action}${suffix}`;
+}
+
+function revisionHeader(revision?: string | null): Record<string, string> {
+  return revision ? { 'If-Match': `"${revision}"` } : {};
+}
+
+export function fetchProcessModelVersions(
+  modifiedId: string, tenantId?: string | null,
+): Promise<ProcessModelVersionHistory> {
+  return apiGet(processModelActionPath(modifiedId, 'versions', tenantId));
+}
+
+export async function publishProcessModel(
+  modifiedId: string, revision: string, tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const response = await apiFetch(processModelActionPath(modifiedId, 'publish', tenantId), {
+    method: 'POST', headers: revisionHeader(revision),
+  });
+  return response.json() as Promise<ProcessModelIdentity>;
+}
+
+export async function changeWorkingProcessVersion(
+  modifiedId: string, action: WorkingVersionAction, revision: string, tenantId?: string | null,
+): Promise<ProcessModelIdentity> {
+  const response = await apiFetch(processModelActionPath(modifiedId, 'working-version', tenantId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
+    body: JSON.stringify(action),
+  });
+  return response.json() as Promise<ProcessModelIdentity>;
+}
+
 export function processModelFilePath(
   modifiedId: string,
   fileName: string,
@@ -738,15 +793,23 @@ export async function fetchProcessModelFileContent(
   fileName: string,
   tenantId?: string | null,
 ): Promise<string> {
+  return (await fetchProcessModelWorkingFile(modifiedId, fileName, tenantId)).content;
+}
+
+export async function fetchProcessModelWorkingFile(
+  modifiedId: string,
+  fileName: string,
+  tenantId?: string | null,
+): Promise<{ content: string; revision?: string }> {
   const path = processModelFilePath(modifiedId, fileName, tenantId);
   const response = await fetchWithAuthRetry(path, { method: 'GET' });
   if (!response.ok) {
     throw new ApiError(path, response.status);
   }
-  return response.text();
+  return { content: await response.text(), revision: response.headers?.get('ETag')?.replace(/^"|"$/g, '') };
 }
 
-export type ProcessModelFileSaveResult = {
+export type ProcessModelFileSaveResult = ProcessModelVersionState & {
   name: string;
   size_bytes: number;
   updated_at: string;
@@ -758,16 +821,14 @@ export async function saveProcessModelFileContent(
   fileName: string,
   content: string,
   tenantId?: string | null,
+  revision?: string | null,
 ): Promise<ProcessModelFileSaveResult> {
   const path = processModelFilePath(modifiedId, fileName, tenantId);
-  const response = await fetchWithAuthRetry(path, {
+  const response = await apiFetch(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/octet-stream' },
+    headers: { 'Content-Type': 'application/octet-stream', ...revisionHeader(revision) },
     body: content,
   });
-  if (!response.ok) {
-    throw new ApiError(path, response.status, 'PUT');
-  }
   return (await response.json()) as ProcessModelFileSaveResult;
 }
 
@@ -775,13 +836,14 @@ export async function createProcessModelFile(
   modifiedId: string,
   input: { file_name: string; content?: string },
   tenantId?: string | null,
+  revision?: string | null,
 ): Promise<ProcessModelFileSaveResult> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
   const path = `/v1.0/m8flow/process-models/${encodedId}/files${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
     body: JSON.stringify(input),
   });
   return (await response.json()) as ProcessModelFileSaveResult;
@@ -791,9 +853,10 @@ export async function deleteProcessModelFile(
   modifiedId: string,
   fileName: string,
   tenantId?: string | null,
+  revision?: string | null,
 ): Promise<void> {
   const path = processModelFilePath(modifiedId, fileName, tenantId);
-  await apiFetch(path, { method: 'DELETE' });
+  await apiFetch(path, { method: 'DELETE', headers: revisionHeader(revision) });
 }
 
 export type StartProcessInstanceResult = {
@@ -808,8 +871,7 @@ export async function startProcessInstance(
   modifiedId: string,
   tenantId?: string | null,
 ): Promise<StartProcessInstanceResult> {
-  const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${modifiedId}/start${suffix}`;
+  const path = processModelActionPath(modifiedId, 'start', tenantId);
   const response = await apiFetch(path, { method: 'POST' });
   return (await response.json()) as StartProcessInstanceResult;
 }

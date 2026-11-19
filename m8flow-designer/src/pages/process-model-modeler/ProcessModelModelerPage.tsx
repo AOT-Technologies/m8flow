@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import i18n from '@/i18n';
+import { Alert } from '@/components/library/alert/Alert';
 import {
   ApiError,
   createProcessModelFile,
@@ -16,19 +17,21 @@ import {
   fetchConnectorsGrouped,
   fetchProcessModelDetail,
   fetchProcessModelFileContent,
+  fetchProcessModelWorkingFile,
   fetchProcessModels,
+  publishProcessModel,
   saveProcessModelFileContent,
   startProcessInstance,
   updateProcessModel,
   runScriptUnitTest,
   type ProcessModelDetailFile,
+  type ProcessModelIdentity,
   type ProcessModelStatus,
+  type ProcessModelVersionState,
 } from '@/lib/api';
-import { Pill } from '@/components/library/pill/Pill';
 import {
   normalizeProcessModelStatus,
   processModelStatusHint,
-  processModelStatusToPillProps,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { startErrorMessage } from '@/lib/startProcessError';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
@@ -41,6 +44,9 @@ import { DeleteFileDialog, UnsavedChangesDialog } from './components/ModelerFile
 import { NotPrimaryBanner } from './components/ModelerBanners';
 import { ModelerFileToolbar, type ModelerSavePhase } from './components/ModelerFileToolbar';
 import { AddProcessModelFileDialog, fileOpensInModeler } from '@/pages/process-model-detail/components/AddProcessModelFileDialog';
+import { ProcessModelVersionHistory } from '@/pages/process-model-detail/components/ProcessModelVersionHistory';
+import { ProcessModelVersionStatus } from '@/pages/process-model-detail/components/ProcessModelVersionStatus';
+import { useProcessModelVersionPermissions } from '@/pages/process-model-detail/components/useProcessModelVersionPermissions';
 import { downloadTextFile } from '@/lib/download';
 import { encodeProcessModelId } from '@/lib/processModelId';
 import { useActiveTenant, useCapabilities } from '@/components/session/hooks';
@@ -159,8 +165,26 @@ export default function ProcessModelModelerPage() {
   // Lifecycle status from the detail fetch; null until it resolves so no
   // Publish/Start button flashes for the wrong state.
   const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
+  const [versionState, setVersionState] = useState<ProcessModelVersionState>({});
+  const revisionRef = useRef<string | null | undefined>(undefined);
+  const fileRevision = useRef<string | undefined>();
+  const [canvasVersion, setCanvasVersion] = useState(0);
+  const updateVersion = useCallback((version: ProcessModelVersionState) => {
+    revisionRef.current = version.working_revision;
+    setVersionState({
+      working_revision: version.working_revision,
+      published_version: version.published_version,
+      draft_version: version.draft_version,
+      has_unpublished_changes: version.has_unpublished_changes,
+    });
+  }, []);
+  const versionPermissions = useProcessModelVersionPermissions(
+    modifiedId, effectiveTenantId, Boolean(versionState.working_revision),
+  );
   const [lifecycleBusy, setLifecycleBusy] = useState<'publishing' | 'starting' | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [startedWhileEditing, setStartedWhileEditing] = useState<number | null>(null);
+  const [versionFeedback, setVersionFeedback] = useState('');
 
   useEffect(() => {
     if (!modifiedId || !file) {
@@ -172,13 +196,15 @@ export default function ProcessModelModelerPage() {
     }
 
     let cancelled = false;
+    fileRevision.current = undefined;
     setLoading(true);
     setNotFound(false);
     setError(null);
 
-    fetchProcessModelFileContent(modifiedId, file, tenantId)
-      .then((content) => {
+    fetchProcessModelWorkingFile(modifiedId, file, tenantId)
+      .then(({ content, revision }) => {
         if (!cancelled) {
+          fileRevision.current = revision;
           setXml(content);
           setSavePhase('saved');
         }
@@ -208,6 +234,7 @@ export default function ProcessModelModelerPage() {
   }, [modifiedId, file, tenantId]);
 
   useEffect(() => {
+    setVersionFeedback('');
     if (!modifiedId) {
       setGroupInfo(null);
       setModelFiles([]);
@@ -215,6 +242,8 @@ export default function ProcessModelModelerPage() {
     }
 
     let cancelled = false;
+    updateVersion({});
+    setModelStatus(null);
     fetchProcessModelDetail(modifiedId, tenantId)
       .then((detail) => {
         if (!cancelled) {
@@ -222,6 +251,7 @@ export default function ProcessModelModelerPage() {
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
+          updateVersion(detail);
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
           setResolvedTenantId(detail.tenant_id ?? null);
@@ -236,7 +266,7 @@ export default function ProcessModelModelerPage() {
     return () => {
       cancelled = true;
     };
-  }, [modifiedId, tenantId]);
+  }, [modifiedId, tenantId, updateVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -332,15 +362,19 @@ export default function ProcessModelModelerPage() {
   );
   const handleWriteModelFile = useCallback(
     async (name: string, content: string) => {
-      await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId);
+      const result = await saveProcessModelFileContent(modifiedId, name, content, effectiveTenantId, revisionRef.current);
+      fileRevision.current = result.working_revision ?? undefined;
+      updateVersion(result);
     },
-    [modifiedId, effectiveTenantId],
+    [modifiedId, effectiveTenantId, updateVersion],
   );
   const handleCreateModelFile = useCallback(
     async (name: string, content: string) => {
-      await createProcessModelFile(modifiedId, { file_name: name, content }, effectiveTenantId);
+      const result = await createProcessModelFile(modifiedId, { file_name: name, content }, effectiveTenantId, revisionRef.current);
+      fileRevision.current = result.working_revision ?? undefined;
+      updateVersion(result);
     },
-    [modifiedId, effectiveTenantId],
+    [modifiedId, effectiveTenantId, updateVersion],
   );
   const handleFormFilesChanged = useCallback(() => {
     void fetchProcessModelDetail(modifiedId, tenantId)
@@ -379,16 +413,22 @@ export default function ProcessModelModelerPage() {
   const handleSave = useCallback(async () => {
     if (!canManageCatalog || !canvasRef.current) return;
     setSavePhase('saving');
+    setLifecycleError(null);
     try {
       const { xml, baseline } = await canvasRef.current.saveXML();
-      await saveProcessModelFileContent(modifiedId, file, xml, effectiveTenantId);
+      const result = await saveProcessModelFileContent(
+        modifiedId, file, xml, effectiveTenantId, fileRevision.current ?? revisionRef.current,
+      );
+      fileRevision.current = result.working_revision ?? undefined;
+      updateVersion(result);
       const stillDirty = canvasRef.current.markSaved(baseline);
       setSavePhase(stillDirty ? 'dirty' : 'saved');
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiError && err.serverMessage) setLifecycleError(err.serverMessage);
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
-  }, [modifiedId, file, effectiveTenantId, canManageCatalog]);
+  }, [modifiedId, file, effectiveTenantId, canManageCatalog, updateVersion]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -462,7 +502,11 @@ export default function ProcessModelModelerPage() {
    * their dirty baseline, so any canvas edits the text overrode are dropped
    * along with the stale command stack. */
   async function handleSaveXml(next: string) {
-    await saveProcessModelFileContent(modifiedId, file, next, effectiveTenantId);
+    const result = await saveProcessModelFileContent(
+      modifiedId, file, next, effectiveTenantId, fileRevision.current ?? revisionRef.current,
+    );
+    fileRevision.current = result.working_revision ?? undefined;
+    updateVersion(result);
     setXml(next);
     setSavePhase('saved');
     setViewXmlOpen(false);
@@ -484,7 +528,11 @@ export default function ProcessModelModelerPage() {
   async function handleSetPrimary() {
     setSettingPrimary(true);
     try {
-      await updateProcessModel(modifiedId, { primary_file_name: file }, effectiveTenantId);
+      const result = await updateProcessModel(
+        modifiedId, { primary_file_name: file }, effectiveTenantId, fileRevision.current ?? revisionRef.current,
+      );
+      fileRevision.current = result.working_revision ?? undefined;
+      updateVersion(result);
       try {
         const detail = await fetchProcessModelDetail(modifiedId, tenantId);
         setGroupInfo({ id: detail.group_id, displayName: detail.group_display_name });
@@ -501,12 +549,13 @@ export default function ProcessModelModelerPage() {
     setLifecycleBusy('publishing');
     setLifecycleError(null);
     try {
-      const identity = await updateProcessModel(
-        modifiedId,
-        { status: 'published' },
-        effectiveTenantId,
-      );
+      const revision = fileRevision.current ?? revisionRef.current;
+      const identity = revision && modelStatus !== 'paused'
+        ? await publishProcessModel(modifiedId, revision, effectiveTenantId)
+        : await updateProcessModel(modifiedId, { status: 'published' }, effectiveTenantId, revision);
       setModelStatus(normalizeProcessModelStatus(identity.status ?? 'published'));
+      fileRevision.current = identity.working_revision ?? undefined;
+      updateVersion(identity);
     } catch (err: unknown) {
       setLifecycleError(
         err instanceof ApiError && err.serverMessage
@@ -520,11 +569,44 @@ export default function ProcessModelModelerPage() {
     }
   }
 
+  async function handleWorkingVersionChanged(identity: ProcessModelIdentity) {
+    updateVersion(identity);
+    setModelStatus(identity.status);
+    setLifecycleError(null);
+    setSavePhase('saved');
+    setViewXmlOpen(false);
+    setViewXmlDraft(null);
+    try {
+      const detail = await fetchProcessModelDetail(modifiedId, effectiveTenantId);
+      setModelFiles(detail.files);
+      if (!detail.files.some((entry) => entry.name === file)) {
+        const primary = detail.files.find((entry) => entry.primary);
+        if (primary) {
+          allowLeaveRef.current = true;
+          navigate(`/processes/${modifiedId}/modeler/${encodeURIComponent(primary.name)}${window.location.search}`, { replace: true });
+        }
+        return;
+      }
+      const next = await fetchProcessModelWorkingFile(modifiedId, file, effectiveTenantId);
+      fileRevision.current = next.revision;
+      setXml(next.content);
+      setCanvasVersion((version) => version + 1);
+    } catch (err) {
+      setLifecycleError(err instanceof Error ? err.message : t('modeler.page.loadFileFailed'));
+    }
+  }
+
   async function handleStart() {
     setLifecycleBusy('starting');
     setLifecycleError(null);
+    setStartedWhileEditing(null);
     try {
       const result = await startProcessInstance(modifiedId, effectiveTenantId);
+      if (savePhase !== 'saved') {
+        setStartedWhileEditing(result.id);
+        setLifecycleBusy(null);
+        return;
+      }
       allowLeaveRef.current = true;
       navigate(`/process-instances/${result.id}`);
     } catch (err: unknown) {
@@ -536,7 +618,7 @@ export default function ProcessModelModelerPage() {
   async function handleConfirmDelete() {
     setDeleting(true);
     try {
-      await deleteProcessModelFile(modifiedId, file, effectiveTenantId);
+      await deleteProcessModelFile(modifiedId, file, effectiveTenantId, revisionRef.current);
       allowLeaveRef.current = true;
       setSavePhase('saved');
       setDeleteOpen(false);
@@ -559,13 +641,13 @@ export default function ProcessModelModelerPage() {
   }`;
 
   return (
-    <div className="flex h-screen flex-1 flex-col">
-      <header className="flex flex-none items-center justify-between gap-3 border-b border-border px-6 py-3">
-        <div className="flex min-w-0 items-center gap-3">
+    <div className="flex h-screen min-w-0 flex-1 flex-col">
+      <header className="flex flex-none flex-col gap-3 border-b border-border px-6 py-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
           <Breadcrumbs
-            className="min-w-0 overflow-hidden text-[13.5px] text-muted-foreground"
+            className="min-w-0 max-w-full overflow-hidden text-[13.5px] text-muted-foreground lg:max-w-[55%] [&>ol]:flex-nowrap [&>ol>li]:min-w-0"
             LinkComponent={RouterBreadcrumbLink}
-            linkClassName="text-info font-normal"
+            linkClassName="min-w-0 truncate text-info font-normal"
             lastClassName="min-w-0 truncate font-mono"
             items={[
               { label: t('modeler.page.processGroups'), href: '/processes' },
@@ -574,20 +656,34 @@ export default function ProcessModelModelerPage() {
                 href: groupId ? `/processes?group=${encodeURIComponent(groupId)}` : '/processes',
               },
               { label: modelLabel, href: modelHref },
-            { label: file },
+              { label: file },
             ]}
           />
           {modelStatus ? (
             <span
-              className="flex-none"
+              className="min-w-0 max-w-full"
               title={processModelStatusHint(modelStatus)}
               data-testid="modeler-model-status"
             >
-              <Pill {...processModelStatusToPillProps(modelStatus)} />
+              <ProcessModelVersionStatus status={modelStatus} {...versionState} />
             </span>
           ) : null}
         </div>
         <ModelerFileToolbar
+          versionHistory={versionPermissions?.history && (
+            <ProcessModelVersionHistory
+              key={`${effectiveTenantId}/${modifiedId}`}
+              modifiedId={modifiedId}
+              tenantId={effectiveTenantId}
+              revision={fileRevision.current ?? versionState.working_revision}
+              canRestore={versionPermissions.restore && !needsTenantToWrite && savePhase !== 'saving'}
+              unsaved={savePhase === 'dirty' || savePhase === 'error'}
+              onChanged={(identity, message) => {
+                setVersionFeedback(message);
+                void handleWorkingVersionChanged(identity);
+              }}
+            />
+          )}
           savePhase={savePhase}
           fileLoaded={xml != null}
           canCreateFile={canCreateModelFile}
@@ -603,13 +699,32 @@ export default function ProcessModelModelerPage() {
           onSetPrimary={() => void handleSetPrimary()}
           onViewXml={() => void handleViewXml()}
           status={modelStatus}
+          pendingDraft={versionState.has_unpublished_changes}
+          versioned={Boolean(versionState.working_revision)}
           onPublish={
-            canManageProcessModels && !needsTenantToWrite ? () => void handlePublish() : undefined
+            (versionState.working_revision && modelStatus !== 'paused' ? versionPermissions?.publish : canManageProcessModels)
+              && !needsTenantToWrite ? () => void handlePublish() : undefined
           }
-          onStart={canStartProcesses && !needsTenantToWrite ? () => void handleStart() : undefined}
+          onStart={(versionState.working_revision ? versionPermissions?.start : canStartProcesses)
+            && !needsTenantToWrite ? () => void handleStart() : undefined}
           lifecycleBusy={lifecycleBusy}
         />
       </header>
+      <div role="status" className="min-w-0 flex-none px-6">
+        {versionFeedback && (
+          <Alert tone="success" role={undefined} className="mt-3 min-w-0 [overflow-wrap:anywhere]">
+            {versionFeedback}
+          </Alert>
+        )}
+      </div>
+      {startedWhileEditing != null && (
+        <p className="flex-none px-6 pt-3 text-sm" role="status">
+          {t('common.modelVersions.startedWhileEditing')}{' '}
+          <Link className="text-info underline" to={`/process-instances/${startedWhileEditing}`}>
+            {t('common.modelVersions.openInstance')}
+          </Link>
+        </p>
+      )}
       {lifecycleError ? (
         <p className="flex-none px-6 pt-3 text-sm text-destructive" role="alert">
           {lifecycleError}
@@ -649,6 +764,7 @@ export default function ProcessModelModelerPage() {
             </p>
           ) : xml != null ? (
             <DiagramCanvas
+              key={canvasVersion}
               readOnly={!canManageCatalog}
               ref={canvasRef}
               fileName={file}
@@ -706,7 +822,7 @@ export default function ProcessModelModelerPage() {
           onClose={() => setNewFileOpen(false)}
           existingNames={modelFiles.map((entry) => entry.name)}
           onCreate={async (input) => {
-            await createProcessModelFile(modifiedId, input, effectiveTenantId);
+            updateVersion(await createProcessModelFile(modifiedId, input, effectiveTenantId, revisionRef.current));
           }}
           onCreated={(fileName) => {
             setNewFileOpen(false);
