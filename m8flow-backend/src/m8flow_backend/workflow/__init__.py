@@ -875,7 +875,7 @@ def start(
         # Detected by module rather than imported: the host must not import
         # spiffworkflow (see AGENTS.md).
         if type(exc).__module__.split(".", 1)[0] == "SpiffWorkflow":
-            message = f"This process model cannot be started: {exc}"
+            message = _sanitize_automatic_step_failure_detail(f"This process model cannot be started: {exc}")
             failed_instance_id = _error_instance_after_failed_start_script(
                 tenant_id=tenant_id,
                 user_id=user_id,
@@ -883,7 +883,6 @@ def start(
                 exc=exc,
             )
             if failed_instance_id is not None:
-                message = _sanitize_automatic_step_failure_detail(message)
                 message += f" Process instance {failed_instance_id} is now in Error."
             raise ApiError(
                 "invalid_process_model",
@@ -1002,31 +1001,40 @@ def _error_instance_after_failed_start_script(
                 return None
             # Same scope as `start`'s own command: a super-admin acting in a
             # tenant they don't belong to only passes core's membership check
-            # inside it, and this session opens after that scope has ended.
+            # inside it, and this session opens after that scope has ended. The
+            # scope commits on entry and on exit, so every recovery write goes
+            # inside it as one transaction, and a failed write is rolled back
+            # before the exit commit restores the temporary membership: no
+            # partial Error, and no membership left behind.
             with _acting_tenant_membership(error_session, tenant_id=tenant_id, user_id=user_id):
-                api.execute_command(
-                    error_session,
-                    api.ErrorProcessInstanceCommand(
-                        tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
-                    ),
-                )
-                api.execute_command(
-                    error_session,
-                    api.RecordProcessInstanceEventCommand(
+                try:
+                    api.execute_command(
+                        error_session,
+                        api.ErrorProcessInstanceCommand(
+                            tenant_id=tenant_id, process_instance_id=process_instance_id, user_id=user_id
+                        ),
+                    )
+                    api.execute_command(
+                        error_session,
+                        api.RecordProcessInstanceEventCommand(
+                            tenant_id=tenant_id,
+                            process_instance_id=process_instance_id,
+                            event_type="task_failed",
+                            task_guid=failed_task_guid,
+                            user_id=user_id,
+                        ),
+                    )
+                    _record_process_instance_error(
+                        error_session,
                         tenant_id=tenant_id,
                         process_instance_id=process_instance_id,
-                        event_type="task_failed",
                         task_guid=failed_task_guid,
-                        user_id=user_id,
-                    ),
-                )
-            _record_process_instance_error(
-                error_session,
-                tenant_id=tenant_id,
-                process_instance_id=process_instance_id,
-                task_guid=failed_task_guid,
-                message=_sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}"),
-            )
+                        message=_sanitize_automatic_step_failure_detail(f"{failed_task_name}: {exc}"),
+                    )
+                    error_session.flush()
+                except Exception:
+                    error_session.rollback()
+                    raise
     except Exception:
         # Recording must never replace the script error the caller sees.
         LOGGER.exception(
@@ -1577,31 +1585,99 @@ def list_instance_errors(
     ]
 
 
-def _unhandled_error_message(
+# Events that begin an execution attempt. A failure belongs to the attempt it
+# happened in, whichever side of that attempt's Error event its task_failed
+# landed on: core records task_failed first, the host's script paths after.
+_ATTEMPT_START_EVENTS = frozenset(
+    {"process_instance_created", "process_instance_retried", "process_instance_resumed"}
+)
+
+
+def _failure_messages(
     session: Session, *, tenant_id: str, process_instance_id: int
-) -> str | None:
-    """Why the instance is in Error: the newest message recorded for the task
-    of its latest ``task_failed`` event, or one recorded without a task. A
-    caught connector error has a row but no ``task_failed`` event, so a later,
-    unrelated failure never shows it (M8F-675)."""
+) -> tuple[dict[int, str | None], str | None]:
+    """The recorded failure message for each ``task_failed`` and
+    ``process_instance_error`` event, taken from that event's own execution
+    attempt, and the message of the latest Error (M8F-675 review). A caught
+    connector error has a row but no ``task_failed`` event, so it never
+    becomes an Error's message, and an attempt with no failure message of its
+    own never reaches back to an earlier one."""
+    import math
+
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
 
-    failed_task_guid = session.scalar(
-        select(ProcessInstanceEventModel.task_guid)
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    events = session.execute(
+        select(
+            ProcessInstanceEventModel.id,
+            ProcessInstanceEventModel.event_type,
+            ProcessInstanceEventModel.task_guid,
+            ProcessInstanceEventModel.occurred_at,
+        )
         .where(
             ProcessInstanceEventModel.m8f_tenant_id == tenant_id,
             ProcessInstanceEventModel.process_instance_id == process_instance_id,
-            ProcessInstanceEventModel.event_type == "task_failed",
-            ProcessInstanceEventModel.task_guid.is_not(None),
         )
-        .order_by(ProcessInstanceEventModel.id.desc())
-        .limit(1)
-    )
-    errors = list_instance_errors(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
-    return next(
-        (message for task_guid, message in reversed(errors) if task_guid in (None, failed_task_guid)),
-        None,
-    )
+        .order_by(ProcessInstanceEventModel.occurred_at, ProcessInstanceEventModel.id)
+    ).all()
+    rows = session.execute(
+        select(
+            ProcessInstanceErrorModel.task_guid,
+            ProcessInstanceErrorModel.message,
+            ProcessInstanceErrorModel.created_at_in_seconds,
+        )
+        .where(
+            ProcessInstanceErrorModel.m8f_tenant_id == tenant_id,
+            ProcessInstanceErrorModel.process_instance_id == process_instance_id,
+        )
+        .order_by(ProcessInstanceErrorModel.id)
+    ).all()
+
+    attempts: list[list[Any]] = [[]]
+    begins: list[float] = [-math.inf]
+    for event in events:
+        if event.event_type in _ATTEMPT_START_EVENTS and attempts[-1]:
+            attempts.append([])
+            occurred_at = event.occurred_at
+            if occurred_at is not None and occurred_at.tzinfo is None:
+                occurred_at = occurred_at.replace(tzinfo=timezone.utc)  # stored as UTC; SQLite drops the zone
+            begins.append(occurred_at.timestamp() if occurred_at else -math.inf)
+        attempts[-1].append(event)
+
+    messages: dict[int, str | None] = {}
+    latest_error: str | None = None
+    seen_error_event = False
+    attempt_message: str | None = None
+    for index, attempt in enumerate(attempts):
+        # Rows carry whole seconds. ponytail: two attempts in the same second
+        # that fail on the same task can't be told apart; the newer row wins.
+        begin = begins[index] if math.isinf(begins[index]) else math.floor(begins[index])
+        end = math.floor(begins[index + 1]) if index + 1 < len(begins) else math.inf
+        in_attempt = [row for row in rows if begin <= row.created_at_in_seconds <= end]
+
+        def newest(task_guid: str | None) -> str | None:
+            return next((row.message for row in reversed(in_attempt) if row.task_guid == task_guid), None)
+
+        failed = [event.task_guid for event in attempt if event.event_type == "task_failed" and event.task_guid]
+        attempt_message = (newest(failed[-1]) if failed else None) or newest(None)
+        for event in attempt:
+            if event.event_type == "task_failed":
+                messages[event.id] = newest(event.task_guid) if event.task_guid else None
+            elif event.event_type == "process_instance_error":
+                messages[event.id] = latest_error = attempt_message
+                seen_error_event = True
+    # No Error event at all (older data): the latest attempt's failure, never an
+    # earlier attempt's.
+    return messages, latest_error if seen_error_event else attempt_message
+
+
+def _unhandled_error_message(
+    session: Session, *, tenant_id: str, process_instance_id: int
+) -> str | None:
+    """Why the instance is in Error: the failure message of the attempt that
+    ended in its latest ``process_instance_error`` event."""
+    return _failure_messages(session, tenant_id=tenant_id, process_instance_id=process_instance_id)[1]
 
 
 def suspend_instance(
@@ -3167,8 +3243,8 @@ def list_instance_events_for_designer(
     )
 
     errors = list_instance_errors(session, tenant_id=tenant_id, process_instance_id=process_instance_id)
-    error_by_guid = dict(errors)
-    latest_error = _unhandled_error_message(
+    error_by_guid = dict(errors)  # for task_failed rows synthesized from task state (no event id)
+    message_by_event, _ = _failure_messages(
         session, tenant_id=tenant_id, process_instance_id=process_instance_id
     )
 
@@ -3213,9 +3289,13 @@ def list_instance_events_for_designer(
 
     for row in rows:
         if row["event_type"] == "task_failed":
-            row["error_message"] = error_by_guid.get(row["task_guid"])
+            row["error_message"] = (
+                message_by_event.get(row["id"])
+                if row["id"] is not None
+                else error_by_guid.get(row["task_guid"])
+            )
         elif row["event_type"] == "process_instance_error":
-            row["error_message"] = latest_error
+            row["error_message"] = message_by_event.get(row["id"])
         else:
             row["error_message"] = None
 

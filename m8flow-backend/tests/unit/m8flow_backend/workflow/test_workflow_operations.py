@@ -625,6 +625,127 @@ def test_super_admin_start_failure_in_another_tenant_reaches_error(db_session, t
     assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
 
 
+def _cross_tenant_super_admin(db_session, tmp_path, monkeypatch):
+    """A tenant with a script-failing model, and a super-admin from another tenant."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, admin = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=admin.id,
+    )
+    home = identity.ensure_tenant(db_session, tenant_id="home", slug="home")
+    root = identity.ensure_user(
+        db_session,
+        username="root",
+        service="https://example.test/realms/home",
+        service_id="root-1",
+        email="root@example.test",
+    )
+    identity.ensure_membership(db_session, root, home)
+    identity.sync_groups(db_session, user=root, group_identifiers=["super-admin"], tenant_id="home")
+    db_session.commit()
+    return tenant, root
+
+
+@pytest.mark.parametrize("failing_write", ["task_failed event", "error message"])
+def test_failed_recovery_write_rolls_back_before_restoring_temporary_membership(
+    db_session, tmp_path, monkeypatch, failing_write
+):
+    """The cross-tenant membership scope commits on entry and exit. If any
+    recovery write fails, every recovery write is rolled back before the exit
+    commit, so the super-admin's temporary membership is still restored and the
+    instance is never left half in Error (M8F-675 review)."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+    from sqlalchemy import text
+
+    from m8flow_backend.authorization import HostAuthorizationPolicy
+    from m8flow_backend.errors import ApiError
+
+    tenant, root = _cross_tenant_super_admin(db_session, tmp_path, monkeypatch)
+    external_user_id_before = root.external_user_id
+
+    if failing_write == "task_failed event":
+        real_execute_command = workflow.api.execute_command
+
+        def _execute_command(session, command):
+            if getattr(command, "event_type", None) == "task_failed":
+                session.execute(text("INSERT INTO no_such_table VALUES (1)"))  # a real database error
+            return real_execute_command(session, command)
+
+        monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+    else:
+
+        def _failing_record(*_args, **_kwargs):
+            raise RuntimeError("error table unavailable")
+
+        monkeypatch.setattr(workflow, "_record_process_instance_error", _failing_record)
+
+    with workflow.api.authorization_policy_scope(HostAuthorizationPolicy()):
+        with pytest.raises(ApiError) as raised:
+            workflow.start(
+                db_session,
+                tenant_id=tenant.id,
+                user_id=root.id,
+                process_model_identifier="examples/fails-at-start",
+            )
+
+    db_session.expire_all()
+    root = db_session.get(UserModel, root.id)
+    assert root.external_user_id == external_user_id_before
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
+    assert raised.value.status_code == 422
+    assert raised.value.process_instance_id is None
+    (instance,) = db_session.query(ProcessInstanceModel).filter_by(m8f_tenant_id=tenant.id).all()
+    assert instance.status == ProcessInstanceStatus.not_started.value
+    assert (
+        db_session.query(ProcessInstanceEventModel)
+        .filter_by(process_instance_id=instance.id, event_type="task_failed")
+        .count()
+        == 0
+    )
+    assert workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=instance.id) == []
+
+
+def test_start_failure_message_is_redacted_even_without_an_instance(db_session, tmp_path, monkeypatch):
+    """The 422 echoes the Spiff error text, which can carry a secret from a
+    script or model. It is redacted whether or not an instance was marked."""
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    spiff_error = type("ValidationException", (RuntimeError,), {"__module__": "SpiffWorkflow.bpmn.parser"})
+
+    def _execute_command(_session, _command):
+        raise spiff_error("bad expression token=start-secret-123")
+
+    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    assert raised.value.status_code == 422
+    assert raised.value.process_instance_id is None
+    assert "start-secret-123" not in raised.value.message
+
+
 def test_failing_to_record_a_start_failure_still_reports_the_script_error(
     db_session, tmp_path, monkeypatch
 ):
@@ -656,6 +777,89 @@ def test_failing_to_record_a_start_failure_still_reports_the_script_error(
     assert raised.value.status_code == 422
     assert "boom at start" in raised.value.message
     assert raised.value.process_instance_id is None
+
+
+@pytest.mark.parametrize("last_attempt_fails_a_task", [True, False])
+def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attempt_fails_a_task):
+    """Error -> retry -> Error with different tasks and messages, then (when the
+    last attempt records no task_failed) an Error with no failure of its own.
+    Each Error event row shows its own attempt's message, never another
+    attempt's, and the banner follows the latest Error (M8F-675 review). The
+    host's script paths record task_failed after the Error event and core's
+    service-task path before it; both belong to the same attempt."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/retried",
+        process_model_display_name="Retried",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    t0 = datetime(2026, 11, 18, 10, 0, 0, tzinfo=UTC)
+
+    def event(event_type, seconds, task_guid=None):
+        row = ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type=event_type,
+            occurred_at=t0 + timedelta(seconds=seconds),
+            task_guid=task_guid,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row.id
+
+    def error_row(task_guid, message, seconds):
+        db_session.add(
+            ProcessInstanceErrorModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                task_guid=task_guid,
+                message=message,
+                created_at_in_seconds=int((t0 + timedelta(seconds=seconds)).timestamp()),
+            )
+        )
+        db_session.flush()
+
+    event("process_instance_created", 0)
+    error_row("g-first", "first failure", 10)
+    first_failed = event("task_failed", 10, "g-first")  # core: task_failed, then Error
+    first_error = event("process_instance_error", 10)
+    event("process_instance_retried", 20)
+    error_row("g-second", "second failure", 30)
+    second_error = event("process_instance_error", 30)
+    second_failed = event("task_failed", 30, "g-second")  # host script path: Error, then task_failed
+    event("process_instance_retried", 40)
+    third_error = None
+    if not last_attempt_fails_a_task:
+        third_error = event("process_instance_error", 50)  # no task_failed, no message of its own
+
+    rows = workflow.list_instance_events_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )["results"]
+    message_by_event = {row["id"]: row["error_message"] for row in rows if row["id"] is not None}
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert message_by_event[first_failed] == "first failure"
+    assert message_by_event[first_error] == "first failure"
+    assert message_by_event[second_error] == "second failure"
+    assert message_by_event[second_failed] == "second failure"
+    if last_attempt_fails_a_task:
+        assert detail["error_message"] == "second failure"
+    else:
+        assert message_by_event[third_error] is None
+        assert detail["error_message"] is None
 
 
 def test_caught_service_task_error_row_is_not_shown_on_a_completed_instance(db_session):
