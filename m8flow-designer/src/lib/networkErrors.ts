@@ -9,9 +9,15 @@ export class NetworkError extends Error {
   readonly cause?: unknown;
 
   constructor(cause?: unknown) {
-    super(i18n.t('shell.network.unableToConnect'));
+    super();
     this.name = 'NetworkError';
     this.cause = cause;
+  }
+
+  // Keep the stable error type and resolve its display text when read, so a
+  // locale change while a request is pending does not freeze the old language.
+  get message(): string {
+    return i18n.t('shell.network.unableToConnect');
   }
 }
 

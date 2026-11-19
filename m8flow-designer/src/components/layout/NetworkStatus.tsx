@@ -10,7 +10,8 @@ import { useOnline } from '@/lib/useOnline';
 /** App-wide notice while the browser is offline; pages stay mounted, so typed input survives. */
 export function OfflineBanner() {
   const { t } = useTranslation();
-  if (useOnline()) return null;
+  const online = useOnline();
+  if (online) return null;
   return (
     <div className="fixed inset-x-0 top-3 z-50 mx-auto w-fit max-w-[calc(100%-2rem)] rounded-[10px] bg-background shadow-md">
       <Alert tone="warning">{t('shell.network.offline')}</Alert>

@@ -93,6 +93,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [permissionsReloadKey, setPermissionsReloadKey] = useState(0);
   const [organizationsReloadKey, setOrganizationsReloadKey] = useState(0);
+  const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
   const failedReads = useRef({ permissions: false, tenants: false, organizations: false });
   const online = useOnline();
   const wasOnline = useRef(online);
@@ -124,7 +125,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [operationPermissions, setOperationPermissions] = useState(NO_OPERATION_PERMISSIONS);
 
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
-  const [tenantsReloadKey, setTenantsReloadKey] = useState(0);
   const [organizationMemberships, setOrganizationMemberships] = useState<OrganizationMembership[]>([]);
   const [activeTenantLabel, setActiveTenantLabel] = useState<string | null>(() =>
     superAdmin ? null : getActiveTenantDisplayLabel(),

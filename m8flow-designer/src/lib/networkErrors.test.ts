@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import i18n from '@/i18n';
 
 import { isNetworkFailure, NetworkError, toNetworkError } from './networkErrors';
 
 describe('network error classification', () => {
+  it('uses the current locale when an existing error is displayed', async () => {
+    const error = new NetworkError();
+    const english = error.message;
+    await i18n.changeLanguage('es');
+    expect(error.message).toBe(i18n.t('shell.network.unableToConnect'));
+    expect(error.message).not.toBe(english);
+    expect(isNetworkFailure(error)).toBe(true);
+  });
   it.each(['Failed to fetch', 'Load failed', 'NetworkError when attempting to fetch resource.'])(
     'normalizes the browser fetch failure %s and retains its cause', (message) => {
       const cause = new TypeError(message);
