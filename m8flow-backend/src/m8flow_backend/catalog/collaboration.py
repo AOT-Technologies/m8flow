@@ -6,6 +6,8 @@ from typing import TypedDict
 
 from lxml import etree
 
+from m8flow_backend.errors import ApiError
+
 BPMN = "{http://www.omg.org/spec/BPMN/20100524/MODEL}"
 MESSAGE_EVENT_PARENTS = {
     BPMN + name
@@ -32,18 +34,31 @@ class CollaborationParticipant(TypedDict):
     startable: bool
 
 
-def collaboration_participants(source: str) -> list[CollaborationParticipant] | None:
-    """Preview executable participants of the primary BPMN for the Start picker."""
+def collaboration_participants(
+    source: str, *, strict: bool = False
+) -> list[CollaborationParticipant] | None:
+    """Preview executable participants; strict Start validation rejects invalid models.
+
+    Valid models with fewer than two executable participants retain the ordinary
+    single-process start path. Preview callers omit invalid collaboration data.
+    """
+    def invalid(message: str) -> None:
+        if strict:
+            raise ApiError("invalid_process_model", message, 400)
+        return None
+
     parser = etree.XMLParser(resolve_entities=False, no_network=True)
     try:
         root = etree.fromstring(source.encode("utf-8"), parser)
     except etree.XMLSyntaxError:
-        return None
+        return invalid("The primary BPMN contains malformed XML.")
     if root.getroottree().docinfo.doctype:
-        return None
+        return invalid("DOCTYPE declarations are not supported in BPMN models.")
     collaborations = root.findall(BPMN + "collaboration")
-    if len(collaborations) != 1:
+    if not collaborations:
         return None
+    if len(collaborations) != 1:
+        return invalid("The primary BPMN must contain at most one collaboration.")
     processes = {
         node.get("id"): node
         for node in root.findall(BPMN + "process")
@@ -60,10 +75,12 @@ def collaboration_participants(source: str) -> list[CollaborationParticipant] | 
             prefix, process_id = process_id.split(":", 1)
             # Core resolves qualified references only within this document.
             if namespace is None or participant.nsmap.get(prefix) != namespace:
-                return None
+                return invalid("Collaboration participant processRef must resolve within this BPMN document.")
         process = processes.get(process_id)
-        if process is None or process_id in seen_process_ids:
-            return None
+        if process is None:
+            return invalid("Collaboration participant processRef references a missing process.")
+        if process_id in seen_process_ids:
+            return invalid("Collaboration participants must reference distinct processes.")
         seen_process_ids.add(process_id)
         if process.get("isExecutable") not in {"true", "1"}:
             continue

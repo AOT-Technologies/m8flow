@@ -21,8 +21,9 @@ def collaboration_xml():
 @pytest.mark.parametrize(
     "namespace_scope", ["OrderDefinitions", "OrderCollaboration", "OrderPool"]
 )
+@pytest.mark.parametrize("strict", [False, True])
 def test_preview_keeps_local_qnames_and_unprefixed_ids_in_pool_order(
-    collaboration_xml, namespace_scope
+    collaboration_xml, namespace_scope, strict
 ):
     xml = collaboration_xml.replace(
         'processRef="orders:Order"', 'processRef="local:Order"'
@@ -31,7 +32,7 @@ def test_preview_keeps_local_qnames_and_unprefixed_ids_in_pool_order(
         f'id="{namespace_scope}" xmlns:local="urn:m8flow:orders"',
         1,
     )
-    assert collaboration_participants(xml) == [
+    assert collaboration_participants(xml, strict=strict) == [
         {"id": "Order", "name": "Order", "startable": True},
         {"id": "Fulfilment", "name": "Fulfilment", "startable": True},
     ]
@@ -48,6 +49,10 @@ def test_preview_rejects_invalid_process_refs_even_with_two_valid_pools(
         f'id="ExternalPool" name="External" xmlns:foreign="urn:foreign" processRef="{process_ref}"',
     )
     assert collaboration_participants(xml) is None
+    with pytest.raises(ApiError) as error:
+        collaboration_participants(xml, strict=True)
+    assert error.value.error_code == "invalid_process_model"
+    assert error.value.status_code == 400
 
 
 def test_preview_requires_two_executable_participants(collaboration_xml):
@@ -55,11 +60,20 @@ def test_preview_requires_two_executable_participants(collaboration_xml):
         'id="Fulfilment" isExecutable="true"', 'id="Fulfilment" isExecutable="false"'
     )
     assert collaboration_participants(xml) is None
+    assert collaboration_participants(xml, strict=True) is None
+
+
+@pytest.mark.parametrize("fixture", ["invoice_approval_poc.bpmn", "submitters_lane.bpmn"])
+def test_strict_validation_preserves_ordinary_and_single_pool_models(fixture):
+    xml = (Path(__file__).resolve().parents[2] / "fixtures" / fixture).read_text(encoding="utf-8")
+    assert collaboration_participants(xml, strict=True) is None
 
 
 def test_preview_rejects_doctype(collaboration_xml):
     xml = collaboration_xml.replace("<!-- SPDX", "<!DOCTYPE definitions>\n<!-- SPDX", 1)
     assert collaboration_participants(xml) is None
+    with pytest.raises(ApiError, match="DOCTYPE"):
+        collaboration_participants(xml, strict=True)
 
 
 def test_preview_rejects_malformed_xml(collaboration_xml):
@@ -69,6 +83,19 @@ def test_preview_rejects_malformed_xml(collaboration_xml):
         )
         is None
     )
+    with pytest.raises(ApiError, match="malformed XML"):
+        collaboration_participants(
+            collaboration_xml.removesuffix("</bpmn:definitions>\n"), strict=True
+        )
+
+
+def test_strict_validation_rejects_multiple_collaborations(collaboration_xml):
+    xml = collaboration_xml.replace(
+        "</bpmn:collaboration>", '</bpmn:collaboration><bpmn:collaboration id="Other"/>'
+    )
+    assert collaboration_participants(xml) is None
+    with pytest.raises(ApiError, match="at most one collaboration"):
+        collaboration_participants(xml, strict=True)
 
 
 def test_message_filter_accepts_supported_collaboration(collaboration_xml):

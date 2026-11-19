@@ -3185,7 +3185,7 @@ def _definition_id_for_start(
             "not_found", f"No BPMN file for process model {process_model_identifier}", 404
         )
     file_name, xml = found
-    participants = catalog.collaboration_participants(xml)
+    participants = catalog.collaboration_participants(xml, strict=True)
     if participants is not None:
         if not hasattr(api.InitializeProcessInstanceFromDefinitionCommand, "collaboration_correlation_key"):
             raise ApiError(

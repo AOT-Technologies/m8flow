@@ -921,12 +921,21 @@ def start_invoice(request, client):
     return post
 
 
-def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_path, monkeypatch):
+@pytest.mark.parametrize("single_pool", [False, True])
+def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_path, monkeypatch, single_pool):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="starter", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
     )
     _import_definition(db_session, tenant_id="t1", user_id=user.id, model_id="finance/invoice-approval")
+    if single_pool:
+        xml = VALID_BPMN.read_text(encoding="utf-8").replace(
+            "</bpmn:definitions>",
+            '<bpmn:collaboration id="SinglePool"><bpmn:participant id="Pool" '
+            'processRef="simple_approval"/></bpmn:collaboration></bpmn:definitions>',
+        )
+        primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+        primary.write_text(xml, encoding="utf-8")
 
     response = start_invoice({"Authorization": f"Bearer {token}"})
     assert response.status_code == 201, response.get_json()
@@ -941,6 +950,59 @@ def test_editor_starts_process_instance(start_invoice, db_session, client, tmp_p
     assert instance is not None
     assert instance.m8f_tenant_id == "t1"
     assert instance.process_model_identifier == "finance/invoice-approval"
+
+
+@pytest.mark.parametrize("process_ref", ["foreign:Order", "unbound:Order", "Missing", "Order", ""])
+@pytest.mark.parametrize(
+    "options",
+    [{}, {"bpmn_process_id": "Order"}, {"collaboration_correlation_key": "order-123"}],
+    ids=["no-options", "participant", "correlation-key"],
+)
+def test_invalid_collaboration_cannot_start(
+    start_invoice, client, db_session, tmp_path, monkeypatch, process_ref, options
+):
+    from lxml import etree
+    from sqlalchemy import func, select
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1", v1_role="admin"
+    )
+    xml = VALID_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_text(encoding="utf-8")
+    xml = xml.replace(
+        'id="ExternalPool" name="External"',
+        f'id="ExternalPool" name="External" xmlns:foreign="urn:foreign" processRef="{process_ref}"',
+    )
+    # Message events trigger an earlier unsupported-BPMN check. Exercise the
+    # invalid-reference fall-through without relying on that separate guard.
+    root = etree.fromstring(xml.encode("utf-8"))
+    for event_definition in list(root.iter("{http://www.omg.org/spec/BPMN/20100524/MODEL}messageEventDefinition")):
+        event_definition.getparent().remove(event_definition)
+    xml = etree.tostring(root, encoding="unicode")
+    primary = tmp_path / "bpmn/t1/finance/invoice-approval/invoice-approval.bpmn"
+    primary.write_text(xml, encoding="utf-8")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Invalid preview data must not break the model detail response.
+    detail = client.get("/v1.0/m8flow/process-models/finance:invoice-approval", headers=headers)
+    assert detail.status_code == 200, detail.get_json()
+    assert detail.get_json()["collaboration_participants"] is None
+
+    import_definition = Mock(side_effect=AssertionError("Invalid BPMN must not be imported"))
+    initialize = Mock(wraps=workflow.api.InitializeProcessInstanceFromDefinitionCommand)
+    monkeypatch.setattr(workflow, "import_definition", import_definition)
+    monkeypatch.setattr(workflow.api, "InitializeProcessInstanceFromDefinitionCommand", initialize)
+
+    response = start_invoice(headers, **options)
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == "invalid_process_model"
+    import_definition.assert_not_called()
+    initialize.assert_not_called()
+    assert db_session.scalar(select(func.count()).select_from(ProcessInstanceModel)) == 0
 
 
 @pytest.mark.parametrize("start_option", ["bpmn_process_id", "collaboration_correlation_key"])
