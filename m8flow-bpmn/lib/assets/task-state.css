@@ -66,9 +66,37 @@
 }
 
 .m8flow-bpmn-legend-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
   margin-bottom: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
   font-weight: 600;
   color: var(--color-foreground, #1f2937);
+  cursor: pointer;
+}
+
+.m8flow-bpmn-legend-chevron {
+  flex: none;
+  color: var(--color-muted-foreground, #6b7280);
+  transition: transform 0.15s;
+}
+
+.m8flow-bpmn-legend--collapsed .m8flow-bpmn-legend-title {
+  margin-bottom: 0;
+}
+
+.m8flow-bpmn-legend--collapsed .m8flow-bpmn-legend-chevron {
+  transform: rotate(180deg);
+}
+
+.m8flow-bpmn-legend--collapsed .m8flow-bpmn-legend-row {
+  display: none;
 }
 
 .m8flow-bpmn-legend-row {

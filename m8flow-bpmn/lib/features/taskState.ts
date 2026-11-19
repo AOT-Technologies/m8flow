@@ -91,19 +91,35 @@ export function applyTaskStateMarkers(viewer: any, tasks: BpmnInstanceTask[]) {
     });
 }
 
+const CHEVRON_ICON =
+  '<svg class="m8flow-bpmn-legend-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>';
+
 function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (template: string) => string) {
   const parent = canvas.getContainer();
   parent.classList.add('m8flow-bpmn');
 
   const root = document.createElement('div');
   root.className = 'm8flow-bpmn-legend';
+  // Open by default; the title doubles as the minimize toggle.
+  let collapsed = false;
 
   // textContent, not innerHTML: labels come from translators. Re-run on
   // i18n.changed so a language switch reaches an open diagram.
   const render = () => {
-    const title = document.createElement('div');
+    const title = document.createElement('button');
+    title.type = 'button';
     title.className = 'm8flow-bpmn-legend-title';
-    title.textContent = translate('Task state');
+    title.title = translate(collapsed ? 'Expand' : 'Minimize');
+    title.setAttribute('aria-expanded', String(!collapsed));
+    const label = document.createElement('span');
+    label.textContent = translate('Task state');
+    title.append(label);
+    title.insertAdjacentHTML('beforeend', CHEVRON_ICON);
+    title.addEventListener('click', () => {
+      collapsed = !collapsed;
+      render();
+    });
+    root.classList.toggle('m8flow-bpmn-legend--collapsed', collapsed);
     const rows = LEGEND_ROWS.map(({ swatch, label }) => {
       const row = document.createElement('div');
       row.className = 'm8flow-bpmn-legend-row';

@@ -29,7 +29,7 @@ vi.mock('m8flow-bpmn/lib/Modeler', () => ({
     }
     get(name: string) {
       if (name === 'commandStack') return stack;
-      if (name === 'canvas') return { zoom: () => {} };
+      if (name === 'canvas') return { zoom: () => {}, resized: () => {} };
       if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }
@@ -95,6 +95,17 @@ describe('BpmnCanvas undo/redo', () => {
   });
 });
 
+describe('BpmnCanvas toolbar', () => {
+  it('mounts the zoom controls in the top toolbar, beside undo/redo', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await waitFor(() => expect(constructed[constructed.length - 1]?.zoomControls).toBeDefined());
+
+    const slot = (constructed[constructed.length - 1].zoomControls as { parent: HTMLElement }).parent;
+    expect(slot).toBeInstanceOf(HTMLElement);
+    expect(slot.parentElement).toContainElement(screen.getByRole('button', { name: 'Undo' }));
+  });
+});
+
 describe('BpmnCanvas properties panel', () => {
   beforeEach(() => {
     listeners.clear();
@@ -112,6 +123,34 @@ describe('BpmnCanvas properties panel', () => {
     });
 
     expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+  });
+
+  it('hides the panel in expanded view until the user opens it, and restores it on exit', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await screen.findByTitle('Hide properties panel');
+    const fire = (event: string, payload: unknown) =>
+      act(() => {
+        for (const handler of listeners.get(event) ?? []) handler(payload);
+      });
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+
+    // Clicking diagram elements does not bring it back; the toggle does.
+    fire('element.click', { element: { id: 'Task_1' } });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Show properties panel'));
+    expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Hide properties panel'));
+
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+
+    // A panel hidden before expanding stays hidden after leaving.
+    fireEvent.click(screen.getByTitle('Hide properties panel'));
+    fire('m8flow.expand.changed', { expanded: true });
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
   });
 
   it('keeps the properties panel visible while making the modeler read-only', async () => {

@@ -5,16 +5,18 @@ import { ZoomControls, zoomControlsModule } from '../lib/features/zoomControls';
 function mountZoomControls(translate: (template: string) => string = (template) => template) {
   const parent = document.createElement('div');
   const zoom = vi.fn((level?: unknown) => (typeof level === 'number' ? level : 1));
-  const canvas = { getContainer: () => parent, zoom };
+  const resized = vi.fn();
+  const canvas = { getContainer: () => parent, zoom, resized };
   const handlers = new Map<string, Array<() => void>>();
   const eventBus = {
     on: (event: string, handler: () => void) => {
       handlers.set(event, [...(handlers.get(event) ?? []), handler]);
     },
+    fire: vi.fn(),
   };
   new (ZoomControls as unknown as new (c: unknown, e: unknown, t: unknown) => void)(canvas, eventBus, translate);
   const fire = (event: string) => (handlers.get(event) ?? []).forEach((handler) => handler());
-  return { parent, zoom, fire };
+  return { parent, zoom, resized, fire, busFire: eventBus.fire };
 }
 
 describe('zoomControlsModule', () => {
@@ -42,6 +44,53 @@ describe('zoomControlsModule', () => {
     expect(zoom).toHaveBeenCalledWith('fit-viewport', 'auto');
   });
 
+  it('expands the host expand-root over the viewport and collapses on Escape', () => {
+    const host = document.createElement('div');
+    host.setAttribute('data-m8flow-expand-root', '');
+    document.body.appendChild(host);
+    const { parent, zoom, resized, fire, busFire } = mountZoomControls();
+    host.appendChild(parent);
+    const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
+
+    (expand.querySelector('svg') as SVGElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(true);
+    expect(parent.classList.contains('m8flow-bpmn--expanded')).toBe(false);
+    expect(expand.getAttribute('aria-pressed')).toBe('true');
+    expect(expand.title).toBe('Exit expanded view');
+    expect(resized).toHaveBeenCalled();
+    expect(zoom).toHaveBeenCalledWith('fit-viewport', 'auto');
+    expect(busFire).toHaveBeenLastCalledWith('m8flow.expand.changed', { expanded: true });
+
+    // Escape from outside the diagram (an open dialog) leaves it expanded.
+    const dialog = document.createElement('div');
+    document.body.appendChild(dialog);
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(true);
+
+    expand.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(false);
+    expect(expand.title).toBe('Expand view');
+    expect(busFire).toHaveBeenLastCalledWith('m8flow.expand.changed', { expanded: false });
+
+    expand.click();
+    fire('diagram.destroy');
+    expect(host.classList.contains('m8flow-bpmn--expanded')).toBe(false);
+    host.remove();
+    dialog.remove();
+  });
+
+  it('mounts in config.zoomControls.parent when the host gives one', () => {
+    const parent = document.createElement('div');
+    const slot = document.createElement('div');
+    const canvas = { getContainer: () => parent, zoom: vi.fn(), resized: vi.fn() };
+    const eventBus = { on: vi.fn() };
+    new (ZoomControls as unknown as new (...args: unknown[]) => void)(canvas, eventBus, (t: string) => t, { parent: slot });
+
+    expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeNull();
+    expect(slot.querySelector('.m8flow-bpmn-zoom.m8flow-bpmn-zoom--inline')).toBeTruthy();
+    expect((ZoomControls as unknown as { $inject: string[] }).$inject).toContain('config.zoomControls');
+  });
+
   it('removes the chrome on diagram.destroy', () => {
     const { parent, fire } = mountZoomControls();
     expect(parent.querySelector('.m8flow-bpmn-zoom')).toBeTruthy();
@@ -58,11 +107,11 @@ describe('zoomControlsModule', () => {
     const { parent, fire } = mountZoomControls((template) => dictionaries[language][template] ?? template);
     const titles = () => Array.from(parent.querySelectorAll('button')).map((button) => button.title);
 
-    expect(titles()).toEqual(['Vergrößern', 'Verkleinern', 'An Ansicht anpassen']);
+    expect(titles()).toEqual(['Vergrößern', 'Verkleinern', 'An Ansicht anpassen', 'Expand view']);
 
     language = 'es';
     fire('i18n.changed');
-    expect(titles()).toEqual(['Acercar', 'Zoom out', 'Fit to viewport']);
+    expect(titles()).toEqual(['Acercar', 'Zoom out', 'Fit to viewport', 'Expand view']);
   });
 
   it('keeps one set of controls across repeated language switches', () => {
@@ -76,7 +125,7 @@ describe('zoomControlsModule', () => {
     }
 
     expect(parent.querySelectorAll('.m8flow-bpmn-zoom')).toHaveLength(1);
-    expect(parent.querySelectorAll('button')).toHaveLength(3);
+    expect(parent.querySelectorAll('button')).toHaveLength(4);
     expect((parent.querySelector('[data-zoom="in"]') as HTMLButtonElement).title).toBe('Acercar');
   });
 

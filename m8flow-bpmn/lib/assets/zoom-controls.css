@@ -15,6 +15,11 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+/* Mounted in a host toolbar (config.zoomControls.parent): the host lays it out. */
+.m8flow-bpmn-zoom--inline {
+  position: static;
+}
+
 .m8flow-bpmn-zoom button {
   display: flex;
   align-items: center;
@@ -31,4 +36,23 @@
 
 .m8flow-bpmn-zoom button:hover {
   background: var(--color-border, #e5e7eb);
+}
+
+/* Expanded view: the canvas (or the host's [data-m8flow-expand-root]) covers
+   the viewport. z-index 40 stays under the host's z-50 dialogs. */
+.m8flow-bpmn--expanded {
+  position: fixed !important;
+  inset: 0;
+  z-index: 40;
+  width: auto !important;
+  height: auto !important;
+  background: var(--color-background, #ffffff);
+}
+
+/* Instance viewer: the diagram card usually starts below the fold, so a
+   bottom pill (and its expand button) goes unseen. Top-left; the task-state
+   legend owns top-right. */
+.m8flow-bpmn--viewer .m8flow-bpmn-zoom {
+  top: 20px;
+  bottom: auto;
 }

@@ -168,6 +168,31 @@ describe('task state legend', () => {
     expect(container.querySelectorAll('.m8flow-bpmn-legend')).toHaveLength(1);
   });
 
+  it('starts open and minimizes / reopens from the title button', () => {
+    let dictionary: Record<string, string> = {};
+    const { container, fire } = mountLegend((template) => dictionary[template] ?? template);
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(false);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().title).toBe('Minimize');
+
+    toggle().click();
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().title).toBe('Expand');
+
+    // A language switch keeps it minimized.
+    dictionary = { Expand: 'Erweitern' };
+    fire('i18n.changed');
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(true);
+    expect(toggle().title).toBe('Erweitern');
+
+    toggle().click();
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(false);
+  });
+
   it('renders translated labels as text, not markup', () => {
     const { container } = mountLegend((template) => (template === 'Completed' ? '<b>x</b>' : template));
     expect(container.querySelector('b')).toBeNull();
