@@ -87,7 +87,7 @@ _PG_URI = os.environ.get("M8FLOW_TEST_POSTGRES_URI")
 _needs_postgres = pytest.mark.skipif(
     not _PG_URI, reason="Set M8FLOW_TEST_POSTGRES_URI to a disposable database."
 )
-_PREVIOUS = "fbcad9e02138"
+_PREVIOUS = "9f2c6d4b8e71"
 _HEAD = "e9c4b2a71f53"
 
 

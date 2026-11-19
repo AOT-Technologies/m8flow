@@ -10,7 +10,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from m8flow_backend import catalog
+from m8flow_backend.errors import ApiError
 
 VALID_BPMN = (Path(__file__).resolve().parents[2] / "fixtures" / "invoice_approval_poc.bpmn").read_text(
     encoding="utf-8"
@@ -167,15 +170,21 @@ def test_list_rows_keep_an_unparseable_published_bpmn_listable(tmp_path, monkeyp
     ]
 
 
-def test_list_rows_skip_bpmn_entries_that_escape_the_tenant_or_are_not_files(tmp_path, monkeypatch):
-    """PR review: listing .bpmn names directly keeps read_model_file's guard. A
-    symlink out of the tenant root and a folder named *.bpmn add no processes."""
+def test_list_rows_refuse_a_bpmn_symlink_out_of_the_tenant(tmp_path, monkeypatch):
+    """A model file that is a symlink out of the tenant root never lists its target:
+    process versioning's legacy snapshot refuses it, so listing fails closed."""
     _seed_catalog(tmp_path, monkeypatch)
     outside = tmp_path / "elsewhere" / "secret.bpmn"
     _write(outside, VALID_BPMN.replace("simple_approval", "outside_process"))
-    model_dir = tmp_path / "bpmn" / "t1" / "finance" / "approve"
-    (model_dir / "escape.bpmn").symlink_to(outside)
-    (model_dir / "folder.bpmn").mkdir()
+    (tmp_path / "bpmn" / "t1" / "finance" / "approve" / "escape.bpmn").symlink_to(outside)
+
+    with pytest.raises(ApiError):
+        catalog.list_model_rows(tenant_id="t1")
+
+
+def test_list_rows_ignore_a_folder_named_like_a_bpmn(tmp_path, monkeypatch):
+    _seed_catalog(tmp_path, monkeypatch)
+    (tmp_path / "bpmn" / "t1" / "finance" / "approve" / "folder.bpmn").mkdir()
 
     rows = {row["id"]: row for row in catalog.list_model_rows(tenant_id="t1")}
 
