@@ -521,6 +521,45 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 
+  it('keeps Publish for a versioned model while its permissions are re-checked', async () => {
+    // A status change refetches the list. Publish must not vanish until the
+    // new permissions-check answers: the grant doesn't depend on the status.
+    const user = userEvent.setup();
+    let status = 'published';
+    let permissionChecks = 0;
+    const reply = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/permissions-check')) {
+        permissionChecks += 1;
+        if (permissionChecks > 1) return new Promise(() => {}); // the re-check is still pending
+        const paths = Object.keys(JSON.parse(String(init?.body)).requests_to_check);
+        return reply({ results: Object.fromEntries(paths.map((path) => [path, { POST: true }])) });
+      }
+      if (init?.method === 'PUT') {
+        status = 'draft';
+        return reply({});
+      }
+      return reply(url.includes('/process-models') ? [{
+        id: 'finance/invoice-approval', display_name: 'Invoice Approval', group_id: 'finance',
+        group_display_name: 'Finance', last_run_at: null, runs_30d: 0, status, working_revision: 'r1',
+      }] : []);
+    }));
+    renderWithOutlet({
+      scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false,
+      canManageProcesses: true, canManageProcessModels: true,
+    });
+    await screen.findByRole('button', { name: 'Start' });
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Unpublish' }));
+    await screen.findByText('Draft');
+    await waitFor(() => expect(permissionChecks).toBe(2));
+
+    await user.click(screen.getByRole('button', { name: 'More actions' }));
+    expect(await screen.findByRole('menuitem', { name: 'Publish' })).toBeInTheDocument();
+  });
+
   it('creates a process group from the page header, not only via the filter pill', async () => {
     stubOneModel();
     renderWithOutlet({
