@@ -1046,84 +1046,21 @@ function remove_default_organization_seed_user_realm_roles() {
   done
 }
 
-function resolve_browser_execution_id_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
+# Use the same provider-ID policy as Docker bootstraps. This launcher already
+# authenticates through curl; only the admin transport differs from kcadm.
+source "${script_dir}/../../docker/keycloak-login-flow.sh"
 
-  curl -s -X GET "${keycloak_base_url}/admin/realms/${realm_name}/authentication/flows/browser/executions" \
-    -H "Authorization: Bearer ${admin_token}" \
-    | jq -r --arg display_name "${display_name}" '.[] | select(.displayName == $display_name) | .id' \
-    | head -n 1
+_keycloak_get_browser_executions() {
+  curl --fail --silent --show-error \
+    "${keycloak_base_url}/admin/realms/$1/authentication/flows/browser/executions" \
+    -H "Authorization: Bearer ${admin_token}"
 }
 
-function update_browser_execution_requirement() {
-  local realm_name="$1"
-  local execution_id="$2"
-  local requirement="$3"
-  local response
-  local http_code
-  local response_body
-
-  response=$(curl -s -w "\n%{http_code}" -X PUT "${keycloak_base_url}/admin/realms/${realm_name}/authentication/flows/browser/executions" \
-    -H "Authorization: Bearer ${admin_token}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"id\":\"${execution_id}\",\"requirement\":\"${requirement}\"}" 2>&1)
-  http_code=$(echo "$response" | tail -n1)
-  response_body=$(echo "$response" | sed '$d')
-
-  if [[ "$http_code" -ge 200 && "$http_code" -lt 300 ]]; then
-    return 0
-  fi
-
-  echo >&2 "ERROR: Failed to update browser execution ${execution_id} in realm ${realm_name}. HTTP ${http_code}: ${response_body}"
-  return 1
-}
-
-function set_browser_execution_requirement_by_name() {
-  local realm_name="$1"
-  local display_name="$2"
-  local requirement="$3"
-  local execution_id
-
-  execution_id="$(resolve_browser_execution_id_by_name "${realm_name}" "${display_name}")"
-  if [[ -z "${execution_id}" ]]; then
-    if [[ "${display_name}" == "Username Password Form" ]]; then
-      echo >&2 "ERROR: Realm ${realm_name} has no Username Password Form."
-      return 1
-    fi
-    echo ":: Realm ${realm_name}: browser execution '${display_name}' not found; nothing to update."
-    return 0
-  fi
-
-  if update_browser_execution_requirement "${realm_name}" "${execution_id}" "${requirement}"; then
-    echo ":: Realm ${realm_name}: browser execution '${display_name}' set to ${requirement}."
-    return 0
-  fi
-
-  return 1
-}
-
-function disable_shared_realm_identity_first_login() {
-  local realm_name="$1"
-  local display_name
-
-  for display_name in "Organization" "Organization Identity-First Login"; do
-    if ! set_browser_execution_requirement_by_name "${realm_name}" "${display_name}" "DISABLED"; then
-      return 1
-    fi
-  done
-}
-
-function ensure_shared_realm_single_page_login() {
-  local realm_name="$1"
-
-  if ! set_browser_execution_requirement_by_name "${realm_name}" "Username" "DISABLED"; then
-    return 1
-  fi
-
-  if ! set_browser_execution_requirement_by_name "${realm_name}" "Username Password Form" "REQUIRED"; then
-    return 1
-  fi
+_keycloak_update_browser_execution() {
+  curl --fail --silent --show-error --request PUT \
+    "${keycloak_base_url}/admin/realms/$1/authentication/flows/browser/executions" \
+    -H "Authorization: Bearer ${admin_token}" -H 'Content-Type: application/json' \
+    --data-binary "@$2" >/dev/null
 }
 
 # Start Keycloak container
@@ -1416,11 +1353,7 @@ if ! ensure_shared_realm_user_policy "$keycloak_shared_realm_name"; then
 fi
 
 for realm_name in "$keycloak_master_realm_name" "$keycloak_shared_realm_name"; do
-  if ! disable_shared_realm_identity_first_login "$realm_name"; then
-    echo >&2 "ERROR: Failed to disable identity-first browser login in realm ${realm_name}"
-    exit 1
-  fi
-  if ! ensure_shared_realm_single_page_login "$realm_name"; then
+  if ! ensure_realm_single_page_login "$realm_name"; then
     echo >&2 "ERROR: Failed to enforce single-page browser login in realm ${realm_name}"
     exit 1
   fi
@@ -1450,6 +1383,13 @@ if ! remove_default_organization_seed_user_realm_roles "$keycloak_shared_realm_n
   echo >&2 "ERROR: Failed to remove direct default organization user roles in realm ${keycloak_shared_realm_name}"
   exit 1
 fi
+
+for realm_name in "$keycloak_master_realm_name" "$keycloak_shared_realm_name"; do
+  if ! ensure_realm_single_page_login "$realm_name"; then
+    echo >&2 "ERROR: Failed to enforce single-page browser login in realm ${realm_name}"
+    exit 1
+  fi
+done
 
 echo ":: Realm import process completed successfully"
 echo ":: Keycloak is running with shared realm: ${keycloak_shared_realm_name} and admin realm: ${keycloak_master_realm_name}"

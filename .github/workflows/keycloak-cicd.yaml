@@ -27,6 +27,7 @@ on:
       - "docker/keycloak-init-realms.sh"
       - "docker/keycloak-client-secret.sh"
       - "docker/keycloak-login-flow.sh"
+      - "docker/tests/test-keycloak-login-flow.sh"
       - ".github/workflows/keycloak-cicd.yaml"
 
   pull_request:
@@ -42,6 +43,7 @@ on:
       - "docker/keycloak-init-realms.sh"
       - "docker/keycloak-client-secret.sh"
       - "docker/keycloak-login-flow.sh"
+      - "docker/tests/test-keycloak-login-flow.sh"
       - ".github/workflows/keycloak-cicd.yaml"
 
   workflow_dispatch:

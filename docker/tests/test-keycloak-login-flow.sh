@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run with bash/jq, or inside the Keycloak image with the repo mounted read-only.
 set -euo pipefail
-source "$(dirname "$0")/../keycloak-login-flow.sh"
+source "${1:-$(dirname "$0")/../keycloak-login-flow.sh}"
 test_dir="$(mktemp -d)"
 trap 'rm -rf "${test_dir}"' EXIT
 export MOCK_FLOW_STATE="${test_dir}/flow.json"

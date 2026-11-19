@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Configure credential collection before slower organization/user seeding. Keep
-# OTP, SSO and tenant membership configuration intact. Sourced by both bootstraps.
+# OTP, SSO and tenant membership configuration intact. Shared by all bootstraps.
+_keycloak_get_browser_executions() {
+  local kcadm_bin="${M8FLOW_KEYCLOAK_KCADM_BIN:-/opt/keycloak/bin/kcadm.sh}"
+  "${kcadm_bin}" get authentication/flows/browser/executions -r "$1"
+}
+
+_keycloak_update_browser_execution() {
+  local kcadm_bin="${M8FLOW_KEYCLOAK_KCADM_BIN:-/opt/keycloak/bin/kcadm.sh}"
+  "${kcadm_bin}" update authentication/flows/browser/executions -r "$1" -f "$2"
+}
+
 ensure_realm_single_page_login() {
   local realm_name="$1"
-  local kcadm_bin="${M8FLOW_KEYCLOAK_KCADM_BIN:-/opt/keycloak/bin/kcadm.sh}"
   local executions changes execution_id requirement payload
 
-  if ! executions="$("${kcadm_bin}" get authentication/flows/browser/executions -r "${realm_name}")"; then
+  if ! executions="$(_keycloak_get_browser_executions "${realm_name}")"; then
     echo "[keycloak-login] Cannot read browser flow for realm ${realm_name}." >&2
     return 1
   fi
@@ -31,8 +40,7 @@ ensure_realm_single_page_login() {
     payload="$(mktemp)"
     jq -n --arg id "${execution_id}" --arg requirement "${requirement}" \
       '{id: $id, requirement: $requirement}' > "${payload}"
-    if ! "${kcadm_bin}" update authentication/flows/browser/executions -r "${realm_name}" \
-      -f "${payload}"; then
+    if ! _keycloak_update_browser_execution "${realm_name}" "${payload}"; then
       rm -f "${payload}"
       echo "[keycloak-login] Cannot configure browser flow for realm ${realm_name}." >&2
       return 1
@@ -43,7 +51,7 @@ ensure_realm_single_page_login() {
   # The initial GET already verifies an unchanged flow. After writes, read back
   # persisted state so a failed or ignored update cannot satisfy readiness.
   if [ -n "${changes}" ]; then
-    if ! executions="$("${kcadm_bin}" get authentication/flows/browser/executions -r "${realm_name}")"; then
+    if ! executions="$(_keycloak_get_browser_executions "${realm_name}")"; then
       return 1
     fi
   fi

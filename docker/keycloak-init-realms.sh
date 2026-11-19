@@ -5,6 +5,10 @@
 # Env: KEYCLOAK_SERVER_URL (default http://localhost:8080), KEYCLOAK_ADMIN, KEYCLOAK_ADMIN_PASSWORD.
 
 set -e
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[keycloak-init-realms] ERROR: Required dependency 'jq' was not found in PATH." >&2
+  exit 1
+fi
 source /opt/keycloak/bin/keycloak-login-flow.sh
 
 BASE="${KEYCLOAK_SERVER_URL:-http://localhost:8080}"
@@ -889,4 +893,10 @@ ensure_all_organization_role_groups "${SHARED_REALM}"
 ensure_default_organization_seed_members
 ensure_default_organization_seed_roles
 remove_default_organization_seed_user_realm_roles "${SHARED_REALM}"
+for realm in master "${SHARED_REALM}"; do
+  if ! ensure_realm_single_page_login "${realm}"; then
+    echo "[keycloak-init-realms] ERROR: Final login-flow verification failed for ${realm}." >&2
+    exit 1
+  fi
+done
 echo "[keycloak-init-realms] Realm configuration complete."

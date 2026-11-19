@@ -56,6 +56,10 @@ def test_bootstrap_applies_m8flow_theme_to_master_and_shared_realms():
     for script in (entrypoint, init_realms):
         assert 'source /opt/keycloak/bin/keycloak-login-flow.sh' in script
         assert 'ensure_realm_single_page_login "${realm}"' in script
+    standalone = (LOGIN_FTL.parents[3] / "start_keycloak.sh").read_text()
+    assert 'source "${script_dir}/../../docker/keycloak-login-flow.sh"' in standalone
+    assert 'ensure_realm_single_page_login "$realm_name"' in standalone
+    assert 'set_browser_execution_requirement_by_name' not in standalone
 
 
 def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
@@ -79,6 +83,17 @@ def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["restart"] is True
     assert services["m8flow-backend"]["build"]["target"] == "dev"
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
+def test_realm_init_reports_missing_jq_before_loading_helpers(tmp_path):
+    env = {**os.environ, "PATH": str(tmp_path)}
+    result = subprocess.run(
+        [shutil.which("bash"), str(INIT_REALMS)], env=env, capture_output=True, text=True, timeout=5
+    )
+    assert result.returncode == 1
+    assert "Required dependency 'jq' was not found in PATH" in result.stderr
+    assert "No such file or directory" not in result.stderr
 
 
 @pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")

@@ -67,6 +67,10 @@ RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar \
   && chown -R keycloak:keycloak /opt/keycloak/themes/m8flow \
   && chmod +x /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-client-secret.sh \
   && chown keycloak:keycloak /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-client-secret.sh
+# Run the source-owned policy regressions in every image build without shipping
+# their mocked commands or fixtures in the runtime image.
+RUN --mount=type=bind,source=docker/tests/test-keycloak-login-flow.sh,target=/tmp/test-keycloak-login-flow.sh \
+    bash /tmp/test-keycloak-login-flow.sh /opt/keycloak/bin/keycloak-login-flow.sh
 USER keycloak
 
 ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]
