@@ -27,7 +27,10 @@ npx playwright test --config playwright.keycloak.config.ts
 Set `PLAYWRIGHT_CHANNEL=msedge` or `chrome` to use an installed browser.
 Each test has a fresh browser context. Normal/Slow 3G coverage lives in
 `e2e/login-resilience.spec.ts`, which exercises the real application and disables
-cache with 400 ms latency and 400 kbps upload/download through Chromium CDP.
+cache with 400 ms latency and 400 kbps upload/download on the Keycloak origin
+through Chromium CDP. It asserts that authentication requests matched the
+throttling rule. Vite's unbundled designer modules remain unthrottled so CI tests
+authentication loading rather than development-server download size.
 Controlled recovery responses use actual FreeMarker-rendered challenge HTML.
 These tests verify Keycloak credentials and theme behavior; host tenant/RBAC
 integration is covered by the application's login and protected-route tests.
