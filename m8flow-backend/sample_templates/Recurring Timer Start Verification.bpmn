@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  id="Definitions_timer_start_verification"
+  targetNamespace="https://m8flow.org/examples/timer-start">
+  <bpmn:process id="Process_recurring_timer_start_verification"
+    name="Recurring Timer Start Verification" isExecutable="true">
+    <bpmn:startEvent id="Start_timer" name="Every minute">
+      <bpmn:timerEventDefinition id="TimerDefinition_every_minute">
+        <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">'R/PT1M'</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="Flow_timer_to_review" sourceRef="Start_timer" targetRef="Task_inspect_occurrence" />
+    <bpmn:userTask id="Task_inspect_occurrence" name="Inspect scheduled occurrence" />
+    <bpmn:sequenceFlow id="Flow_review_to_end" sourceRef="Task_inspect_occurrence" targetRef="End_timer" />
+    <bpmn:endEvent id="End_timer" name="Occurrence completed" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="Diagram_timer_start_verification">
+    <bpmndi:BPMNPlane id="Plane_timer_start_verification" bpmnElement="Process_recurring_timer_start_verification">
+      <bpmndi:BPMNShape id="Start_timer_di" bpmnElement="Start_timer">
+        <dc:Bounds x="160" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Task_inspect_occurrence_di" bpmnElement="Task_inspect_occurrence">
+        <dc:Bounds x="280" y="120" width="120" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="End_timer_di" bpmnElement="End_timer">
+        <dc:Bounds x="490" y="142" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="Flow_timer_to_review_di" bpmnElement="Flow_timer_to_review">
+        <di:waypoint x="196" y="160" />
+        <di:waypoint x="280" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_review_to_end_di" bpmnElement="Flow_review_to_end">
+        <di:waypoint x="400" y="160" />
+        <di:waypoint x="490" y="160" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

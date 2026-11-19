@@ -13,6 +13,7 @@ Pre-built workflow templates that can be loaded into the database on startup.
 | [`Salesforce Lead Creation with Slack Notification.zip`](#template-5) | Salesforce Lead Creation with Slack Notification |
 | [`PostgreSQL Table Lifecycle Management.zip`](#template-6) | PostgreSQL Table Lifecycle Management |
 | [`Expense Claim with DMN and SMTP Connector.zip`](#template-7) | Expense claim approval combining a form, DMN auto-approval routing, and SMTP email notifications |
+| [`Recurring Timer Start Verification.zip`](#template-8) | Verifies that a published recurring timer start creates independent process instances automatically |
 
 
 
@@ -245,3 +246,23 @@ DMN routing (`amount <= 1000` → auto-approve) and the approval / rejection ema
   - **Password** — your SMTP password or app-specific password
   - **SMTP Host** — your SMTP host
   - **SMTP Port** — 25, 587 (STARTTLS) or 465 (SSL/TLS)
+
+---
+
+<a id="template-8"></a>
+
+#### 8. `Recurring Timer Start Verification.zip`
+
+This minimal process is for checking automatic recurring timer starts in a running M8Flow deployment. It has a timer start event configured with `R/PT1M` (once per minute), followed by a user task. The user task intentionally remains open so each automatically created process instance stays visible while you inspect the results.
+
+**How to verify it:**
+
+1. Import the ZIP from **Templates**, create a process model from it, then publish the model. Do not use **Start process**; timer-start models should create instances without a manual start.
+2. Wait up to about 70 seconds for the first instance. The Compose Beat poll interval is 10 seconds by default, so an occurrence may appear shortly after its one-minute due time.
+3. Open **Process Instances**, filter to this model, and confirm a new instance appears about once per minute with the **User Input Required** status.
+4. Leave the first instance open while waiting for the next occurrence. A second independent instance should appear even though the first has not completed.
+5. Complete the user tasks if desired. Pause or unpublish the model to stop future timer occurrences.
+
+If no instance appears after two minutes, check that the model is published, the Celery Beat and worker services are healthy, and only one timer polling owner is enabled. In Compose, the API's in-process background scheduler should remain disabled when Celery Beat is running.
+
+The editable BPMN source is [`Recurring Timer Start Verification.bpmn`](Recurring%20Timer%20Start%20Verification.bpmn).
