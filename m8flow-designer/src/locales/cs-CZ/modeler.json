@@ -23,7 +23,13 @@
     "resume": "Obnovit",
     "resuming": "Obnovování…",
     "startProcess": "Spustit proces",
-    "starting": "Spouštění…"
+    "starting": "Spouštění…",
+    "timerStartsActive_one": "Casovace spousteji: {{count}} aktivni; dalsi {{date}}",
+    "timerStartsActive_few": "Casovace spousteji: {{count}} aktivni; dalsi {{date}}",
+    "timerStartsActive_many": "Casovace spousteji: {{count}} aktivnich; dalsi {{date}}",
+    "timerStartsActive_other": "Casovace spousteji: {{count}} aktivnich; dalsi {{date}}",
+    "timerStartsNoneActive": "Zadne aktivni casovacove spousteni",
+    "timerStartsNextRun": "Dalsi spusteni casovace: {{date}}"
   },
   "saveStatus": {
     "saved": "Uloženo",

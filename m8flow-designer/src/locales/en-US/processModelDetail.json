@@ -33,6 +33,13 @@
     "medianTime": "Median time",
     "errors30d": "Errors 30d"
   },
+  "timerSchedules": {
+    "title": "Timer start schedules",
+    "activeCount_one": "{{count}} active schedule",
+    "activeCount_other": "{{count}} active schedules",
+    "noneActive": "There are no active timer start schedules for this model.",
+    "nextRun": "Next run {{number}}:"
+  },
   "facts": {
     "group": "Group",
     "identifier": "Identifier"

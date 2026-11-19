@@ -483,6 +483,12 @@ def test_super_admin_lists_groups_across_tenants(client, db_session, tmp_path, m
 
 
 def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.bpmn_process_definition import (
+        BpmnProcessDefinitionModel,
+        PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
+    )
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="admin-detail", groups=["t1:tenant-admin"], tenant_id="t1"
@@ -504,6 +510,52 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
         start=now - 30,
         status="running",
     )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    schedule_times = [
+        datetime(2026, 2, 3, 4, 5, tzinfo=UTC),
+        datetime(2026, 2, 3, 5, 5, tzinfo=UTC),
+    ]
+    schedule_definitions = []
+    for tenant_id, suffix in (("t1", "first"), ("t1", "second"), ("t2", "other-tenant")):
+        definition = BpmnProcessDefinitionModel(
+            process_xml_digest=f"timer-{tenant_id}-{suffix}",
+            bpmn_identifier="finance/invoice-approval",
+            properties_json={
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY: "finance/invoice-approval",
+            },
+            m8f_tenant_id=tenant_id,
+        )
+        db_session.add(definition)
+        schedule_definitions.append((tenant_id, suffix, definition))
+    db_session.flush()
+    for index, (tenant_id, suffix, definition) in enumerate(schedule_definitions):
+        run_at = schedule_times[index] if tenant_id == "t1" else datetime(2026, 2, 3, 3, 5, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key=f"timer-start-{tenant_id}-{suffix}",
+                job_type="timer_start",
+                bpmn_process_definition_id=definition.id,
+                run_at=run_at,
+                payload_json={},
+                created_at=run_at,
+                updated_at=run_at,
+                m8f_tenant_id=tenant_id,
+            )
+        )
+    # Pending one-shot occurrences must not be advertised as recurring schedules.
+    occurrence_run_at = datetime(2026, 2, 3, 2, 5, tzinfo=UTC)
+    db_session.add(
+        SchedulerJobModel(
+            job_key="timer-occurrence-t1",
+            job_type="timer_start_occurrence",
+            bpmn_process_definition_id=schedule_definitions[0][2].id,
+            run_at=occurrence_run_at,
+            payload_json={},
+            created_at=occurrence_run_at,
+            updated_at=occurrence_run_at,
+            m8f_tenant_id="t1",
+        )
+    )
     db_session.commit()
 
     response = client.get(
@@ -520,6 +572,10 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
     assert body["last_run_at"] == datetime.fromtimestamp(now - 30, UTC).isoformat()
     assert body["running_now"] == 1
     assert body["runs_30d"] == 2
+    assert body["timer_start_schedules"] == [
+        {"next_run_at": "2026-02-03T04:05:00+00:00"},
+        {"next_run_at": "2026-02-03T05:05:00+00:00"},
+    ]
     assert len(body["recent_instances"]) == 2
     assert body["recent_instances"][0]["status"] == "running"
     assert body["recent_instances"][0]["started_by"] == "admin-detail"

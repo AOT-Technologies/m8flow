@@ -1,8 +1,9 @@
-import { CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { Clock3, CodeXml, Download, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
-import type { ProcessModelStatus } from '@/lib/api';
+import type { ProcessModelStatus, ProcessModelTimerStartSchedule } from '@/lib/api';
+import { formatLocale } from '@/i18n';
 import { SaveButton } from './SaveButton';
 import { SavedStatusPill, type SaveStatus } from './SavedStatusPill';
 
@@ -25,6 +26,8 @@ export type ModelerFileToolbarProps = {
   onViewXml?: () => void;
   /** Model lifecycle status; unknown until the detail fetch resolves. */
   status?: ProcessModelStatus | null;
+  /** Active schedule records from the tenant-scoped process-model detail API. */
+  timerStartSchedules?: ProcessModelTimerStartSchedule[] | null;
   /** Publishes (or resumes) the model. Absent without the lifecycle permission. */
   onPublish?: () => void;
   /** Starts an instance. Absent without the start permission. */
@@ -64,6 +67,7 @@ export function ModelerFileToolbar({
   onSetPrimary,
   onViewXml,
   status,
+  timerStartSchedules,
   onPublish,
   onStart,
   lifecycleBusy = null,
@@ -72,6 +76,11 @@ export function ModelerFileToolbar({
   const dirty = savePhase === 'dirty' || savePhase === 'saving';
   const canDelete = canDeleteFile && !isPrimary && Boolean(onDelete);
   const canPrimary = canChangePrimary && isBpmn && !isPrimary && Boolean(onSetPrimary);
+  const activeTimerCount = status === 'published' ? (timerStartSchedules?.length ?? 0) : 0;
+  const nextRun = activeTimerCount > 0 ? timerStartSchedules?.[0]?.next_run_at : undefined;
+  const formattedNextRun = nextRun
+    ? new Intl.DateTimeFormat(formatLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(new Date(nextRun))
+    : undefined;
 
   return (
     <div className="flex flex-none flex-wrap items-center justify-end gap-2">
@@ -80,6 +89,22 @@ export function ModelerFileToolbar({
       ) : (
         <SavedStatusPill status={pillStatus(savePhase)} />
       )}
+      {status && timerStartSchedules ? (
+        <span
+          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+            activeTimerCount > 0 ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'
+          }`}
+          data-testid="modeler-timer-schedule-status"
+          title={activeTimerCount > 0 && nextRun
+            ? t('modeler.toolbar.timerStartsNextRun', { date: new Date(nextRun).toLocaleString(formatLocale()) })
+            : t('modeler.toolbar.timerStartsNoneActive')}
+        >
+          <Clock3 className="size-3.5" strokeWidth={1.9} aria-hidden />
+          {activeTimerCount > 0
+            ? t('modeler.toolbar.timerStartsActive', { count: activeTimerCount, date: formattedNextRun })
+            : t('modeler.toolbar.timerStartsNoneActive')}
+        </span>
+      ) : null}
       {canCreateFile && onNewFile ? (
         <Button type="button" variant="outline" size="sm" onClick={onNewFile} className="gap-1.5">
           <Plus className="size-3.5" strokeWidth={2.2} />

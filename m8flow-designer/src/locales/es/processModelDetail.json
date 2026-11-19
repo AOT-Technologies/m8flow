@@ -150,5 +150,13 @@
     "expectedOutputJson": "JSON de salida esperado",
     "invalidJson": "{{label}} debe ser un JSON válido",
     "notJsonObject": "{{label}} debe ser un objeto JSON"
+  },
+  "timerSchedules": {
+    "title": "Programaciones de inicio por temporizador",
+    "activeCount_one": "{{count}} programacion activa",
+    "activeCount_many": "{{count}} programaciones activas",
+    "activeCount_other": "{{count}} programaciones activas",
+    "noneActive": "No hay programaciones de inicio por temporizador activas para este modelo.",
+    "nextRun": "Siguiente ejecucion {{number}}:"
   }
 }

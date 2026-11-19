@@ -133,7 +133,7 @@ def save(
         process_model_identifier=path,
         bpmn_xml=xml,
     )
-    workflow.import_definition(
+    definition = workflow.import_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
@@ -151,6 +151,17 @@ def save(
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
     # bytes must remain byte-for-byte identical after the BPMN re-import.
     disk_path.write_bytes(xml.encode("utf-8"))
+    workflow.reconcile_process_model_timer_starts(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=path,
+        status=process_model_status(
+            tenant_id=tenant_id,
+            process_model_identifier=path,
+        ),
+        user_id=user_id,
+        active_definition_id=definition.id,
+    )
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:

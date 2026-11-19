@@ -1,10 +1,10 @@
-import { ChevronLeft, Download, Eye, Folder, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
+import { ChevronLeft, Clock3, Download, Eye, Folder, Pencil, Play, Plus, Send, Star, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
-import i18n from '@/i18n';
+import i18n, { formatLocale } from '@/i18n';
 
 import {
   ApiError,
@@ -71,6 +71,13 @@ export function formatBytes(size: number): string {
     return `${size} B`;
   }
   return `${Math.round(size / 1024)} KB`;
+}
+
+function formatScheduleTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime())
+    ? timestamp
+    : new Intl.DateTimeFormat(formatLocale(), { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
 const recentInstanceColumns = (t: TFunction): DataTableColumn<ProcessModelDetailInstance>[] => [
@@ -541,6 +548,38 @@ export function ProcessModelOverview({
           <KeyNumber label={t('processModelDetail.stats.errors30d')} value="—" mono placeholder />
         </div>
       ) : null}
+
+      <Card variant="bordered" className="mb-[22px]">
+        <div className="flex flex-wrap items-start justify-between gap-3 px-[22px] py-4">
+          <div className="flex items-start gap-3">
+            <Clock3 className="mt-0.5 size-4 text-info" strokeWidth={1.8} aria-hidden />
+            <div>
+              <h2 className="text-[15px] font-semibold text-foreground">
+                {t('processModelDetail.timerSchedules.title')}
+              </h2>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">
+                {isPublished && detail.timer_start_schedules.length > 0
+                  ? t('processModelDetail.timerSchedules.activeCount', {
+                      count: detail.timer_start_schedules.length,
+                    })
+                  : t('processModelDetail.timerSchedules.noneActive')}
+              </p>
+            </div>
+          </div>
+          {isPublished && detail.timer_start_schedules.length > 0 ? (
+            <ul className="min-w-0 space-y-1 text-right text-[12.5px] text-muted-foreground">
+              {detail.timer_start_schedules.map((schedule, index) => (
+                <li key={`${schedule.next_run_at}-${index}`}>
+                  <span className="font-medium text-foreground">
+                    {t('processModelDetail.timerSchedules.nextRun', { number: index + 1 })}
+                  </span>{' '}
+                  <time dateTime={schedule.next_run_at}>{formatScheduleTime(schedule.next_run_at)}</time>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </Card>
 
       <div className="mb-[22px] grid grid-cols-1 gap-x-7 gap-y-3.5 rounded-[14px] border border-border bg-card px-[22px] py-[18px] shadow-xs sm:grid-cols-2">
         <Fact label={t('processModelDetail.facts.group')}>

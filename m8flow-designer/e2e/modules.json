@@ -141,6 +141,7 @@
         "e2e/modeler-call-activity.spec.ts",
         "e2e/modeler-data-store.spec.ts",
         "e2e/modeler-messages.spec.ts",
+        "e2e/modeler-timer-start.spec.ts",
         "e2e/modeler-service-task.spec.ts",
         "e2e/modeler-user-task-form.spec.ts",
         "e2e/run-service-task.spec.ts",

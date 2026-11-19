@@ -2832,7 +2832,8 @@ paths:
       summary: Processes page — process model detail
       description: >-
         Combined detail for one process model: identity, description, group,
-        last_run_at, running_now, runs_30d, recent_instances, files.
+        last_run_at, running_now, runs_30d, recent_instances,
+        timer_start_schedules, files.
         Path uses colon-encoded nested ids (finance:invoice-approval).
         Concrete tenant required. Missing model or denied list permission → 404.
       operationId: m8flow_backend.routes.processes_controller.get_process_model
@@ -6733,6 +6734,7 @@ components:
         - running_now
         - runs_30d
         - recent_instances
+        - timer_start_schedules
         - files
         - status
       properties:
@@ -6769,6 +6771,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessModelDetailRecentInstance"
+        timer_start_schedules:
+          type: array
+          description: >-
+            Active recurring timer-start schedules for this model. Each item
+            is backed by the tenant-scoped scheduler record for one timer
+            start event; one-shot timer occurrences are excluded.
+          items:
+            type: object
+            required:
+              - next_run_at
+            properties:
+              next_run_at:
+                type: string
+                format: date-time
         files:
           type: array
           items:

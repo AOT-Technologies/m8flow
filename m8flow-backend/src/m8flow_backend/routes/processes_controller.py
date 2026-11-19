@@ -338,6 +338,14 @@ def update_process_model(modified_process_model_identifier: str, body: dict | No
         primary_file_name=payload.get("primary_file_name") if "primary_file_name" in payload else None,
         status=payload.get("status") if "status" in payload else None,
     )
+    if "status" in payload or "primary_file_name" in payload:
+        workflow.reconcile_process_model_timer_starts(
+            g.db_session,
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            status=identity["status"],
+            user_id=user.id,
+        )
     return success_response(identity, 200)
 
 
@@ -584,6 +592,11 @@ def get_process_model(modified_process_model_identifier: str):
         limit=recent_limit,
         viewer_id=initiator_id,
     )
+    timer_start_schedules = workflow.list_process_model_timer_start_schedules(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+    )
     can_read_files = user_has_permission(
         user,
         "GET",
@@ -602,6 +615,7 @@ def get_process_model(modified_process_model_identifier: str):
             **identity,
             **stats,
             "recent_instances": recent,
+            "timer_start_schedules": timer_start_schedules,
             "files": files,
         },
         200,
@@ -819,6 +833,13 @@ def delete_process_model(modified_process_model_identifier: str):
             409,
         )
 
+    workflow.reconcile_process_model_timer_starts(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+        status=catalog.PROCESS_MODEL_STATUS_DRAFT,
+        user_id=user.id,
+    )
     catalog.delete_process_model(
         tenant_id=tenant_id, process_model_identifier=process_model_identifier
     )

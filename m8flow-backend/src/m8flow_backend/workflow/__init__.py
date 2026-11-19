@@ -15,14 +15,19 @@ from threading import Lock
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
+from sqlalchemy import case, column, delete, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
 from m8flow_core.errors import BpmnCoreError, InvalidStateError, ServiceTaskExecutionError
+from m8flow_core.models.bpmn_process_definition import (
+    BpmnProcessDefinitionModel,
+    PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
+)
 from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
 from m8flow_core.models.work_item import WorkItemModel
 from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
@@ -324,6 +329,124 @@ def import_definition(
             )
     except BpmnCoreError as exc:
         raise map_bpmn_error(exc) from exc
+
+
+# ``timer_start_occurrence`` is present in the core development version used by
+# the timer-start integration, but not in the currently pinned b3 release.
+# Keep this cleanup query compatible with both: the host may encounter these
+# occurrence rows after upgrading core, and importing the host must still work
+# against the pinned release.
+_TIMER_START_OCCURRENCE_JOB_TYPE = getattr(
+    SchedulerJobType, "timer_start_occurrence", None
+)
+_TIMER_START_JOB_TYPES = (
+    SchedulerJobType.timer_start.value,
+    _TIMER_START_OCCURRENCE_JOB_TYPE.value
+    if _TIMER_START_OCCURRENCE_JOB_TYPE is not None
+    else "timer_start_occurrence",
+)
+
+
+def reconcile_process_model_timer_starts(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    status: str,
+    user_id: int,
+    active_definition_id: int | None = None,
+) -> None:
+    """Keep core timer-start jobs aligned with the catalog's deployed state.
+
+    Core owns BPMN parsing, timer evaluation, and scheduler execution. The host
+    owns the catalog lifecycle, so it removes jobs for draft/paused models and
+    retains jobs only for the current imported definition while published.
+    When called during publication, re-import the current primary BPMN through
+    core to create/sync its timer jobs before retiring historical definitions.
+    """
+    from m8flow_backend import catalog
+
+    if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED and active_definition_id is None:
+        files = catalog.list_model_files(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+        )
+        primary_bpmn = next(
+            (
+                row["name"]
+                for row in files
+                if row.get("primary") and str(row.get("name", "")).lower().endswith(".bpmn")
+            ),
+            None,
+        )
+        if primary_bpmn is None:
+            primary_bpmn = next(
+                (
+                    row["name"]
+                    for row in files
+                    if str(row.get("name", "")).lower().endswith(".bpmn")
+                ),
+                None,
+            )
+        if primary_bpmn is None:
+            raise ApiError(
+                "process_model_primary_file_not_set",
+                "The published process model has no BPMN file.",
+                400,
+            )
+        source_bpmn_xml = catalog.read_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=primary_bpmn,
+        )
+        if source_bpmn_xml is None:
+            raise ApiError("not_found", "Process model BPMN file not found", 404)
+        try:
+            bpmn_text = source_bpmn_xml.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ApiError("invalid_file_content", "BPMN file is not valid UTF-8", 400) from exc
+        definition = import_definition(
+            session,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            bpmn_identifier=process_model_identifier,
+            source_bpmn_xml=bpmn_text,
+            source_dmn_xml=catalog.model_dmn_xml(
+                tenant_id=tenant_id,
+                process_model_identifier=process_model_identifier,
+                bpmn_xml=bpmn_text,
+            ),
+            bpmn_name=primary_bpmn,
+        )
+        active_definition_id = definition.id
+
+    definition_ids = list(
+        session.scalars(
+            select(BpmnProcessDefinitionModel.id).where(
+                BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+                BpmnProcessDefinitionModel.properties_json[
+                    PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+                ].as_string()
+                == process_model_identifier,
+            )
+        ).all()
+    )
+    if not definition_ids:
+        return
+
+    jobs_to_remove = delete(SchedulerJobModel).where(
+        SchedulerJobModel.m8f_tenant_id == tenant_id,
+        SchedulerJobModel.bpmn_process_definition_id.in_(definition_ids),
+        SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
+    )
+    if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+        if active_definition_id is None:
+            return
+        jobs_to_remove = jobs_to_remove.where(
+            SchedulerJobModel.bpmn_process_definition_id != active_definition_id
+        )
+    session.execute(jobs_to_remove)
+    session.flush()
 
 
 def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
@@ -1817,6 +1940,38 @@ def process_model_detail_stats(
         "running_now": int(running_now or 0),
         "runs_30d": int(runs_30d or 0),
     }
+
+
+def list_process_model_timer_start_schedules(
+    session: Session, *, tenant_id: str, process_model_identifier: str
+) -> list[dict[str, str | None]]:
+    """Return the next due time for each active timer-start schedule.
+
+    Timer-start schedule rows are core-owned recurring scheduler jobs. Filter
+    both sides of the join by tenant: a matching process-model identifier in a
+    different tenant must never disclose its schedule metadata.
+    """
+    stmt = (
+        select(SchedulerJobModel.run_at)
+        .join(
+            BpmnProcessDefinitionModel,
+            (BpmnProcessDefinitionModel.id == SchedulerJobModel.bpmn_process_definition_id)
+            & (BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id),
+        )
+        .where(
+            SchedulerJobModel.m8f_tenant_id == tenant_id,
+            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            BpmnProcessDefinitionModel.properties_json[
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+            ].as_string()
+            == process_model_identifier,
+        )
+        .order_by(SchedulerJobModel.run_at, SchedulerJobModel.id)
+    )
+    return [
+        {"next_run_at": _iso_datetime(run_at)}
+        for run_at in session.scalars(stmt).all()
+    ]
 
 
 def count_instances_for_process_model(
