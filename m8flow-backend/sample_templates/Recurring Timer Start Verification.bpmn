@@ -6,8 +6,18 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   id="Definitions_timer_start_verification"
   targetNamespace="https://m8flow.org/examples/timer-start">
+  <bpmn:collaboration id="Collaboration_timer_start_verification">
+    <bpmn:participant id="Participant_timer_start_verification"
+      name="Recurring Timer Start Verification"
+      processRef="Process_recurring_timer_start_verification" />
+  </bpmn:collaboration>
   <bpmn:process id="Process_recurring_timer_start_verification"
     name="Recurring Timer Start Verification" isExecutable="true">
+    <bpmn:laneSet id="LaneSet_timer_start_verification">
+      <bpmn:lane id="Lane_reviewer" name="reviewer">
+        <bpmn:flowNodeRef>Task_inspect_occurrence</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
     <bpmn:startEvent id="Start_timer" name="Every minute">
       <bpmn:timerEventDefinition id="TimerDefinition_every_minute">
         <bpmn:timeCycle xsi:type="bpmn:tFormalExpression">'R/PT1M'</bpmn:timeCycle>
@@ -19,7 +29,14 @@
     <bpmn:endEvent id="End_timer" name="Occurrence completed" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="Diagram_timer_start_verification">
-    <bpmndi:BPMNPlane id="Plane_timer_start_verification" bpmnElement="Process_recurring_timer_start_verification">
+    <bpmndi:BPMNPlane id="Plane_timer_start_verification" bpmnElement="Collaboration_timer_start_verification">
+      <bpmndi:BPMNShape id="Participant_timer_start_verification_di"
+        bpmnElement="Participant_timer_start_verification" isHorizontal="true">
+        <dc:Bounds x="110" y="80" width="460" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_reviewer_di" bpmnElement="Lane_reviewer" isHorizontal="true">
+        <dc:Bounds x="140" y="80" width="430" height="160" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Start_timer_di" bpmnElement="Start_timer">
         <dc:Bounds x="160" y="142" width="36" height="36" />
       </bpmndi:BPMNShape>

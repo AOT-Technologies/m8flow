@@ -6880,6 +6880,9 @@ components:
           type: integer
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler".
         started_at:
           type: string
           format: date-time
@@ -7056,6 +7059,10 @@ components:
           type: string
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler". The started_by filter
+            still accepts the initiator username.
         started_at:
           type: string
           format: date-time
@@ -7155,6 +7162,9 @@ components:
           type: string
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler".
         started_at:
           type: string
           format: date-time

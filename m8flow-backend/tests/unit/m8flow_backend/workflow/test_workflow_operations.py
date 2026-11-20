@@ -1682,6 +1682,14 @@ def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch
     assert rows[0]["process_model_display_name"] == "Invoice Approval"
 
 
+def test_timer_start_identity_has_human_readable_started_by_label():
+    from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+    assert workflow._started_by_display_name(TIMER_SYSTEM_USERNAME) == "M8flow scheduler"
+    assert workflow._started_by_display_name("reviewer") == "reviewer"
+    assert workflow._started_by_display_name(None) == ""
+
+
 def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session, tmp_path, monkeypatch):
     tenant, _user, instance = _start_invoice_instance(
         db_session, tmp_path, monkeypatch, display_name="Invoice Approval"

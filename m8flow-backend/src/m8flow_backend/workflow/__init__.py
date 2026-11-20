@@ -2322,13 +2322,22 @@ def list_recent_instances_for_process_model(
         rows.append(
             {
                 "id": instance.id,
-                "started_by": username or "",
+                "started_by": _started_by_display_name(username),
                 "started_at": _iso_datetime(instance.started_at),
                 "duration_seconds": duration,
                 "status": instance.status,
             }
         )
     return rows
+
+
+def _started_by_display_name(username: str | None) -> str:
+    """Return a human-readable initiator label while preserving identity keys elsewhere."""
+    if not username:
+        return ""
+    from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+    return "M8flow scheduler" if username == TIMER_SYSTEM_USERNAME else username
 
 
 def list_instances_for_designer(
@@ -2357,8 +2366,9 @@ def list_instances_for_designer(
     (case-insensitive substring) — no free-text task/summary search, same
     scope as the Templates gallery's own `search` param.
 
-    `started_by` is an exact initiator-username match (the same
-    `UserModel.username` this returns as `started_by`); options for the
+    `started_by` filters by the exact initiator username; the response returns
+    a display label for the initiator (presenting the timer system identity as
+    "M8flow scheduler"). Options for the
     UI dropdown come from `list_instance_owners_for_designer`. `sort` is
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
@@ -2421,7 +2431,7 @@ def list_instances_for_designer(
                 "process_model_identifier": instance.process_model_identifier,
                 "process_model_display_name": _display_name_for_row(instance, display_names),
                 "status": instance.status,
-                "started_by": username or "",
+                "started_by": _started_by_display_name(username),
                 "started_at": _iso_datetime(instance.started_at),
                 "ended_at": _iso_datetime(instance.ended_at),
                 "started_by_me": bool(started_by_me),
@@ -2821,7 +2831,7 @@ def get_instance_detail_for_designer(
         "process_model_identifier": instance.process_model_identifier,
         "process_model_display_name": _display_name_for_row(instance, {}),
         "status": instance.status,
-        "started_by": username or "",
+        "started_by": _started_by_display_name(username),
         "started_at": _iso_datetime(instance.started_at),
         "ended_at": _iso_datetime(instance.ended_at),
         "updated_at": _iso_datetime(instance.updated_at),

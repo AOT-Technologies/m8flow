@@ -263,6 +263,8 @@ This minimal process is for checking automatic recurring timer starts in a runni
 4. Leave the first instance open while waiting for the next occurrence. A second independent instance should appear even though the first has not completed.
 5. Complete the user tasks if desired. Pause or unpublish the model to stop future timer occurrences.
 
+The inspection task is assigned to the `reviewer` lane. The default `reviewer` account in the tenant realm template belongs to the matching Keycloak group. For an existing tenant, add the reviewer account to the tenant's `reviewer` group if it is not already a member.
+
 If no instance appears after two minutes, check that the model is published, the Celery Beat and worker services are healthy, and only one timer polling owner is enabled. In Compose, the API's in-process background scheduler should remain disabled when Celery Beat is running.
 
 The editable BPMN source is [`Recurring Timer Start Verification.bpmn`](Recurring%20Timer%20Start%20Verification.bpmn).

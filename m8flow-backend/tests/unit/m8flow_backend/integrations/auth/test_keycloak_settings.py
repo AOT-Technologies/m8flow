@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,16 @@ def test_realm_template_default_walk_matches_former_config_location():
     package_dir = Path(m8flow_backend.__file__).resolve().parent
     expected = package_dir.parent.parent / "keycloak" / "realm_exports" / "m8flow-tenant-template.json"
     assert Path(keycloak_settings.realm_template_path()) == expected
+
+
+def test_realm_template_places_reviewer_in_reviewer_lane_group():
+    template_path = Path(keycloak_settings.realm_template_path())
+    realm = json.loads(template_path.read_text(encoding="utf-8"))
+
+    reviewer_group = next(group for group in realm["groups"] if group["name"] == "reviewer")
+    reviewer_user = next(user for user in realm["users"] if user["username"] == "reviewer")
+
+    assert reviewer_group["path"] in reviewer_user["groups"]
 
 
 def test_configure_rejects_divergent_second_settings():
