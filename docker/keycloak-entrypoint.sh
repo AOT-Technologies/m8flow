@@ -1036,10 +1036,8 @@ else
       echo "[keycloak-entrypoint] Realm ${realm}: session timeout update failed." >&2
     fi
   done
-  # Best-effort seeding: a failing step must not abort the entrypoint (set -e)
-  # before `wait $KC_PID`, which would kill Keycloak. Steps are idempotent, so a
-  # failed one is retried after transient database connection failures.
-  # ponytail: 3 tries 5s apart rides out a ~10s DB blip; a longer outage still logs and continues.
+  # Required seeding gates readiness. Retry idempotent steps to ride out
+  # transient database failures, then stop Keycloak if tenant setup is incomplete.
   for step in \
     ensure_shared_realm_spoke_client_scope \
     remove_shared_realm_legacy_root_group_mappers \
@@ -1051,8 +1049,7 @@ else
     attempt=1
     until eval "${step}"; do
       if [ "${attempt}" -ge 3 ]; then
-        echo "[keycloak-entrypoint] Realm seeding step '${step}' failed after ${attempt} attempts (non-fatal); continuing." >&2
-        break
+        stop_keycloak_with_error "Required realm seeding step '${step}' failed after ${attempt} attempts."
       fi
       echo "[keycloak-entrypoint] Realm seeding step '${step}' failed (attempt ${attempt}); retrying in 5s." >&2
       attempt=$((attempt + 1))

@@ -96,22 +96,37 @@ def test_realm_init_reports_missing_jq_before_loading_helpers(tmp_path):
     assert "No such file or directory" not in result.stderr
 
 
-@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
-def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(tmp_path):
+REQUIRED_SEED_STEPS = (
+    "ensure_shared_realm_spoke_client_scope",
+    "remove_shared_realm_legacy_root_group_mappers",
+    "ensure_default_organization",
+    "ensure_all_organization_role_groups",
+    "ensure_default_organization_seed_members",
+    "ensure_default_organization_seed_roles",
+    "remove_default_organization_seed_user_realm_roles",
+)
+
+
+@pytest.fixture
+def mock_keycloak_startup(tmp_path):
     mock_bin = tmp_path / "bin"
     mock_bin.mkdir()
     child_pid_file = tmp_path / "child.pid"
     flow_calls = tmp_path / "flow-calls"
+    seed_calls = tmp_path / "seed-calls"
+    retry_delays = tmp_path / "retry-delays"
     ready_file = tmp_path / "ready"
     ready_file.touch()
     scripts = {
         "kc.sh": '#!/usr/bin/env bash\n[ "$1" != bootstrap-admin ] || exit 0\n'
-        'printf "%s\\n" "$$" > "$MOCK_KC_CHILD_PID"\nexec sleep 90\n',
+        'printf "%s\\n" "$$" > "$MOCK_KC_CHILD_PID"\n'
+        'while [ ! -f "$MOCK_KC_READY" ]; do sleep 0.01; done\n',
         "kcadm.sh": "#!/usr/bin/env bash\nexit 0\n",
         "jq": "#!/usr/bin/env bash\nexit 0\n",
         "keycloak-client-secret.sh": "ensure_shared_realm_spoke_client_secret() { return 0; }\n",
         "keycloak-login-flow.sh": 'ensure_realm_single_page_login() { '
-        'printf "%s\\n" "$1" >> "$MOCK_KC_FLOW_CALLS"; return 1; }\n',
+        'printf "%s\\n" "$1" >> "$MOCK_KC_FLOW_CALLS"; '
+        '[ "$MOCK_KC_LOGIN_SUCCEEDS" = true ]; }\n',
     }
     entrypoint = ENTRYPOINT.read_text()
     for name, contents in scripts.items():
@@ -124,6 +139,23 @@ def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(tmp_path):
     entrypoint = entrypoint.replace(
         "/opt/keycloak/data/import/m8flow-tenant-template.json", str(tmp_path / "missing-import.json")
     )
+    # Exercise the real entrypoint's retry/readiness/shutdown control flow while
+    # isolating each required seed step from Keycloak's external API.
+    mock_seeding = '''
+mock_seed_attempt=0
+mock_seed_step() {
+  printf '%s\\n' "$1" >> "$MOCK_KC_SEED_CALLS"
+  if [ "$1" = "$MOCK_KC_FAILED_SEED" ]; then
+    mock_seed_attempt=$((mock_seed_attempt + 1))
+    [ "$mock_seed_attempt" -gt "$MOCK_KC_SEED_FAILURES" ] || return 1
+  fi
+}
+sleep() { printf '%s\\n' "$1" >> "$MOCK_KC_RETRY_DELAYS"; }
+'''
+    for step in REQUIRED_SEED_STEPS:
+        mock_seeding += f'{step}() {{ mock_seed_step {step}; }}\n'
+    start = 'echo "[keycloak-entrypoint] Running bootstrap-admin user..."'
+    entrypoint = entrypoint.replace(start, mock_seeding + start)
     script = tmp_path / "entrypoint.sh"
     script.write_text(entrypoint)
     env = {
@@ -134,24 +166,80 @@ def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(tmp_path):
         "M8FLOW_KEYCLOAK_SPOKE_CLIENT_SECRET": "spoke-test-only",
         "MOCK_KC_CHILD_PID": str(child_pid_file),
         "MOCK_KC_FLOW_CALLS": str(flow_calls),
+        "MOCK_KC_SEED_CALLS": str(seed_calls),
+        "MOCK_KC_RETRY_DELAYS": str(retry_delays),
+        "MOCK_KC_READY": str(ready_file),
     }
-    try:
-        result = subprocess.run(
+
+    def run(*, login_succeeds=True, failed_seed="", seed_failures=0):
+        return subprocess.run(
             [shutil.which("bash"), str(script), "start-dev"],
-            env=env, capture_output=True, text=True, timeout=20,
+            env={
+                **env,
+                "MOCK_KC_LOGIN_SUCCEEDS": str(login_succeeds).lower(),
+                "MOCK_KC_FAILED_SEED": failed_seed,
+                "MOCK_KC_SEED_FAILURES": str(seed_failures),
+            },
+            capture_output=True, text=True, timeout=10,
         )
-        assert result.returncode == 1
-        assert "Single-page login configuration failed for master" in result.stderr
-        assert flow_calls.read_text().splitlines() == ["master"] * 3
-        assert not ready_file.exists()
-        with pytest.raises(ProcessLookupError):
-            os.kill(int(child_pid_file.read_text()), 0)
+
+    try:
+        yield run, ready_file, child_pid_file, flow_calls, seed_calls, retry_delays
     finally:
         if child_pid_file.exists():
             try:
                 os.kill(int(child_pid_file.read_text()), signal.SIGTERM)
             except ProcessLookupError:
                 pass
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
+def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(mock_keycloak_startup):
+    run, ready_file, child_pid_file, flow_calls, seed_calls, _ = mock_keycloak_startup
+    result = run(login_succeeds=False)
+    assert result.returncode == 1
+    assert "Single-page login configuration failed for master" in result.stderr
+    assert flow_calls.read_text().splitlines() == ["master"] * 3
+    assert not seed_calls.exists()
+    assert not ready_file.exists()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(child_pid_file.read_text()), 0)
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
+@pytest.mark.parametrize("failed_seed", REQUIRED_SEED_STEPS)
+def test_required_seed_failure_prevents_readiness_and_stops_keycloak(mock_keycloak_startup, failed_seed):
+    run, ready_file, child_pid_file, flow_calls, seed_calls, retry_delays = mock_keycloak_startup
+    result = run(failed_seed=failed_seed, seed_failures=3)
+    assert not ready_file.exists()
+    assert result.returncode == 1
+    assert f"Required realm seeding step '{failed_seed}" in result.stderr
+    assert "failed after 3 attempts" in result.stderr
+    index = REQUIRED_SEED_STEPS.index(failed_seed)
+    assert seed_calls.read_text().splitlines() == [*REQUIRED_SEED_STEPS[:index], *([failed_seed] * 3)]
+    assert retry_delays.read_text().splitlines() == ["5", "5"]
+    assert flow_calls.read_text().splitlines() == ["master", "m8flow"]
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(child_pid_file.read_text()), 0)
+
+
+@pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
+@pytest.mark.parametrize("seed_failures", [0, 2])
+def test_successful_seeding_marks_ready_after_both_login_flows_are_verified(mock_keycloak_startup, seed_failures):
+    run, ready_file, _, flow_calls, seed_calls, retry_delays = mock_keycloak_startup
+    failed_seed = "ensure_default_organization_seed_members"
+    result = run(failed_seed=failed_seed, seed_failures=seed_failures)
+    assert result.returncode == 0, result.stderr
+    index = REQUIRED_SEED_STEPS.index(failed_seed)
+    assert seed_calls.read_text().splitlines() == [
+        *REQUIRED_SEED_STEPS[:index], *([failed_seed] * seed_failures), *REQUIRED_SEED_STEPS[index:],
+    ]
+    if seed_failures:
+        assert retry_delays.read_text().splitlines() == ["5"] * seed_failures
+    else:
+        assert not retry_delays.exists()
+    assert flow_calls.read_text().splitlines() == ["master", "m8flow"] * 2
+    assert ready_file.exists()
 
 
 @pytest.mark.skipif(
