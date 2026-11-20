@@ -2975,8 +2975,11 @@ def test_create_file_upload_content(client, db_session, tmp_path, monkeypatch):
         ("""<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
           <bpmn:process id="p"><bpmn:startEvent id="start"><bpmn:messageEventDefinition /></bpmn:startEvent></bpmn:process>
         </bpmn:definitions>""", "unsupported_bpmn"),
+        ("""<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="p"><bpmn:startEvent id="start"><bpmn:compensateEventDefinition /></bpmn:startEvent></bpmn:process>
+        </bpmn:definitions>""", "unsupported_bpmn"),
     ],
-    ids=["malformed-xml", "unsupported-event"],
+    ids=["malformed-xml", "unsupported-event", "unsupported-compensation-start"],
 )
 def test_create_file_rejects_invalid_bpmn_upload(
     client, db_session, tmp_path, monkeypatch, content, error_code

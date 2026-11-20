@@ -459,8 +459,9 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const route = await createMockModel(page, { group_id: flow.groupId, id: `e2e-badbpmn-${flow.stamp}`, display_name: `E2E Bad BPMN ${flow.stamp}` });
     flow.track.models.push(route);
-    // Diagrams from seed/catalog/refused/: a message event and a compensation event are still
-    // refused by the catalog (call activities and multi-instance became supported in M8F-668).
+    // Diagrams from seed/catalog/refused/: standalone message events and compensation start events
+    // are refused. Valid collaboration message events and intermediate compensation events may be
+    // supported, so the fixtures target the host's explicit unsupported cases.
     const messages: string[] = [];
     await page.goto(`/processes/${route}`);
     for (const [fileName, content] of [
@@ -479,7 +480,12 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
       // content. Waiting for it here ensures this checks backend rejection, not
       // a submit racing the browser's asynchronous file read.
       await expect(dialog.getByRole('button', { name: 'Add file', exact: true })).toBeEnabled();
+      const uploadResponse = page.waitForResponse((response) =>
+        response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/files'),
+      );
       await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
+      const response = await uploadResponse;
+      expect(response.status(), `${fileName} must be rejected by the backend`).toBe(400);
       const alert = dialog.getByRole('alert');
       await expect(alert).toBeVisible();
       messages.push(`${fileName}: ${(await alert.innerText()).trim()}`);

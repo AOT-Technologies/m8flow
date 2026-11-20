@@ -277,27 +277,33 @@ FLOW_TEMPLATES = [single_approval, lanes, request_form, missing_form, decision_b
 def refused_files() -> dict[str, str]:
     files = {"malformed.bpmn": '<?xml version="1.0"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
                                '<bpmn:process id="p">\n'}
-    unsupported = {
-        "message-event.bpmn": ("intermediateCatchEvent", "Wait for the customer's reply",
-                               '<bpmn:messageEventDefinition id="MessageEventDefinition_reply" />'),
-        "compensation-event.bpmn": ("intermediateThrowEvent", "Undo the booking",
-                                    '<bpmn:compensateEventDefinition id="CompensateEventDefinition_undo" />'),
-    }
-    for name, (tag, label, definition) in unsupported.items():
-        key = name.removesuffix(".bpmn").replace("-", "_")
-        d = Diagram(f"Process_refused_{key}", f"E2E Refused {label}", [(A, 1)],
-                    documentation="Refused on purpose: the app does not support this element (guard test).")
-        d.start("StartEvent_1", "Start", 0, A)
-        d.user("Activity_approve_request", "E2E Approve Request", 1, A)
-        if tag == "intermediateCatchEvent":
-            d.catch("Event_refused", label, 2, A, definition=definition)
-        else:
-            d.throw("Event_refused", label, 2, A, definition=definition)
-        d.end("EndEvent_1", "Done", 3, A)
-        d.flow("StartEvent_1", "Activity_approve_request", fid="Flow_1")
-        d.flow("Activity_approve_request", "Event_refused", fid="Flow_2")
-        d.flow("Event_refused", "EndEvent_1", fid="Flow_3")
-        files[name] = d.to_xml()
+    # Keep these samples unsupported in every valid context. A message event
+    # on a collaboration participant is supported, and intermediate
+    # compensation events are delegated to core validation; neither is a
+    # stable negative fixture. These minimal BPMN documents exercise the host
+    # guards for standalone message events and compensation start events.
+    bpmn_namespace = "http://www.omg.org/spec/BPMN/20100524/MODEL"
+    files["message-event.bpmn"] = f'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="{bpmn_namespace}" id="Definitions_refused_message">
+  <bpmn:process id="Process_refused_message" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:intermediateCatchEvent id="Event_refused" name="Wait for the customer's reply">
+      <bpmn:messageEventDefinition id="MessageEventDefinition_reply" />
+    </bpmn:intermediateCatchEvent>
+  </bpmn:process>
+</bpmn:definitions>
+'''
+    files["compensation-event.bpmn"] = f'''<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="{bpmn_namespace}" id="Definitions_refused_compensation">
+  <bpmn:process id="Process_refused_compensation" isExecutable="true">
+    <bpmn:startEvent id="StartEvent_1" name="Compensation start">
+      <bpmn:compensateEventDefinition id="CompensateEventDefinition_undo" />
+    </bpmn:startEvent>
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="EndEvent_1" />
+  </bpmn:process>
+</bpmn:definitions>
+'''
     return files
 
 
