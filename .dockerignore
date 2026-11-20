@@ -27,3 +27,14 @@ node_modules
 
 # Additional caches
 **/.cache
+
+# Local agent work and verification outputs must not invalidate image layers.
+.scratch
+**/.scratch
+.codex
+.agents
+**/e2e/reports
+**/test-results
+**/playwright-report
+**/coverage
+**/target
