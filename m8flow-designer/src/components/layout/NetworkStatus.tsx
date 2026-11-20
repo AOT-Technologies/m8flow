@@ -44,7 +44,7 @@ export function RouteError() {
       <Alert tone="error">
         {networkFailure ? t('shell.network.unableToConnect') : t('shell.network.pageFailed')}
       </Alert>
-      <Button onClick={() => window.location.reload()}>{t('shell.network.retry')}</Button>
+      <Button type="button" onClick={() => window.location.reload()}>{t('shell.network.retry')}</Button>
     </main>
   );
 }

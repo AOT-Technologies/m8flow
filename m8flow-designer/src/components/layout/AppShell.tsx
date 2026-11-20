@@ -98,7 +98,7 @@ export function AppShell() {
   if (status === 'error') return (
     <div className="space-y-4 p-6">
       <p role="alert">{loadError ?? t('shell.permissions.loadFailed')}</p>
-      <Button onClick={retryPermissions}>{t('shell.network.retry')}</Button>
+      <Button type="button" onClick={retryPermissions}>{t('shell.network.retry')}</Button>
     </div>
   );
 

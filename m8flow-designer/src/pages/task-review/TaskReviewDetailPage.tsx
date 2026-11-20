@@ -398,7 +398,7 @@ export default function TaskReviewDetailPage() {
         <p className="text-sm text-destructive" role="alert">
           {error}
         </p>
-        <Button className="mt-4" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+        <Button type="button" className="mt-4" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
           {t('shell.network.retry')}
         </Button>
       </main>
