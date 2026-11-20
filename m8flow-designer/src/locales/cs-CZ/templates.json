@@ -7,7 +7,7 @@
     "label": "Viditelnost",
     "all": "Vše",
     "private": "Soukromá",
-    "privateDescription": "Pouze vy",
+    "privateDescription": "Pouze vy a správci tenantu",
     "tenant": "Tenant",
     "tenantDescription": "Všichni v tomto tenantu",
     "public": "Veřejná",

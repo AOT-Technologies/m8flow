@@ -47,7 +47,9 @@ def _headers(token: str, **extra) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", **extra}
 
 
-def _create_template(client, token, *, name: str, published: bool = False, bpmn: bytes = MINIMAL_BPMN):
+def _create_template(
+    client, token, *, name: str, published: bool = False, bpmn: bytes = MINIMAL_BPMN, visibility: str = "TENANT"
+):
     key = name.lower().replace(" ", "-")
     response = client.post(
         "/v1.0/m8flow/templates",
@@ -57,7 +59,7 @@ def _create_template(client, token, *, name: str, published: bool = False, bpmn:
             **{
                 "X-Template-Key": key,
                 "X-Template-Name": name,
-                "X-Template-Visibility": "TENANT",
+                "X-Template-Visibility": visibility,
                 "X-Template-Is-Published": "true" if published else "false",
             },
         ),
@@ -509,3 +511,188 @@ def test_template_headers_are_literal_without_encoding_marker():
 
     with Flask(__name__).test_request_context(headers={"X-Template-Name": "100%25 done"}):
         assert _metadata_from_headers()["name"] == "100%25 done"
+
+
+def _template_storage(app, tmp_path, monkeypatch):
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    (tmp_path / "bpmn" / "t1" / "finance").mkdir(parents=True)
+
+
+def test_template_routes_deny_roles_without_template_grants(client, db_session, app, tmp_path, monkeypatch):
+    """M8F-708: calling the API directly must not bypass the role grants the UI follows."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-708", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    created = _create_template(client, admin_token, name="Rbac Source", published=True)
+    assert created.status_code == 201, created.text
+    template_id = created.get_json()["id"]
+
+    for role in ("viewer", "integrator", "submitter"):
+        _user, token = _login_user(
+            client, db_session, username=f"{role}-708", groups=[f"t1:{role}"], tenant_id="t1"
+        )
+        headers = _headers(token)
+        assert _create_template(client, token, name=f"{role} write").status_code == 403, role
+        imported = client.post(
+            "/v1.0/m8flow/templates/import", data=b"PK", content_type="application/zip", headers=headers
+        )
+        assert imported.status_code == 403, role
+        saved = client.put(
+            f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn",
+            data=MINIMAL_BPMN,
+            content_type="application/xml",
+            headers=headers,
+        )
+        assert saved.status_code == 403, role
+        from_template = client.post(
+            f"/v1.0/m8flow/templates/{template_id}/create-process-model",
+            json={"process_group_id": "finance", "display_name": f"{role} model"},
+            headers=headers,
+        )
+        assert from_template.status_code == 403, role
+        assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=headers).status_code == 403, role
+
+        listed = client.get("/v1.0/m8flow/templates", headers=headers)
+        exported = client.get(f"/v1.0/m8flow/templates/{template_id}/export", headers=headers)
+        expected_read = 200 if role == "viewer" else 403
+        assert (listed.status_code, exported.status_code) == (expected_read, expected_read), role
+
+    assert list((tmp_path / "bpmn" / "t1" / "finance").iterdir()) == []
+    still_one = client.get("/v1.0/m8flow/templates", headers=_headers(admin_token))
+    assert [row["id"] for row in still_one.get_json()["results"]] == [template_id]
+
+
+def test_editor_cannot_reach_or_delete_tenant_admin_templates(client, db_session, app, tmp_path, monkeypatch):
+    """M8F-708: the editor group fallback must not make editors template admins."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-708e", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    private = _create_template(client, admin_token, name="Admin Private", visibility="PRIVATE").get_json()["id"]
+    published = _create_template(client, admin_token, name="Admin Published", published=True).get_json()["id"]
+    draft = _create_template(client, admin_token, name="Admin Draft").get_json()["id"]
+
+    # Second organization first, so the editor is a multi-org user acting in t1.
+    _login_user(client, db_session, username="editor-708", groups=["t2:editor"], tenant_id="t2")
+    _editor, token = _login_user(client, db_session, username="editor-708", groups=["t1:editor"], tenant_id="t1")
+    headers = _headers(token)
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+    listed = client.get("/v1.0/m8flow/templates", headers=headers)
+    assert listed.status_code == 200
+    assert private not in {row["id"] for row in listed.get_json()["results"]}
+    assert client.get(f"/v1.0/m8flow/templates/{private}", headers=headers).status_code == 404
+    assert client.put(
+        f"/v1.0/m8flow/templates/{private}", json={"is_published": True}, headers=headers
+    ).status_code == 404
+    assert client.delete(f"/v1.0/m8flow/templates/{published}", headers=headers).status_code == 403
+    assert client.delete(f"/v1.0/m8flow/templates/{draft}", headers=headers).status_code == 403
+
+    own = _create_template(client, token, name="Editor Own")
+    assert own.status_code == 201, own.text
+    assert client.delete(f"/v1.0/m8flow/templates/{own.get_json()['id']}", headers=headers).status_code == 200
+
+
+def test_editor_cannot_change_files_of_another_tenants_public_template(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """M8F-708: file writes need edit rights, not just visibility."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-708p", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    created = _create_template(client, admin_token, name="Shared Public", published=True, visibility="PUBLIC")
+    template_id = created.get_json()["id"]
+
+    _editor, token = _login_user(client, db_session, username="editor-708p", groups=["t2:editor"], tenant_id="t2")
+    headers = _headers(token)
+    assert client.get(f"/v1.0/m8flow/templates/{template_id}", headers=headers).status_code == 200
+    saved = client.put(
+        f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn",
+        data=MINIMAL_BPMN,
+        content_type="application/xml",
+        headers=headers,
+    )
+    assert saved.status_code == 403
+    removed = client.delete(f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn", headers=headers)
+    assert removed.status_code == 403
+
+
+def test_super_admin_cannot_restore_deleted_template(client, db_session, app, tmp_path, monkeypatch):
+    """M8F-708: restore is a write, and super-admin is read-only for templates."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-708r", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    template_id = _create_template(client, admin_token, name="Restore Me", published=True).get_json()["id"]
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+
+    _sa, sa_token = _login_user(client, db_session, username="root-708r", groups=["super-admin"], tenant_id="t1")
+    denied = client.post(f"/v1.0/m8flow/templates/{template_id}/restore?tenantId=t1", headers=_headers(sa_token))
+    assert denied.status_code == 403
+    assert denied.get_json()["error_code"] == "forbidden"
+    no_tenant = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=_headers(sa_token))
+    assert no_tenant.status_code == 403
+
+    restored = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=_headers(admin_token))
+    assert restored.status_code == 200, restored.text
+    assert restored.get_json()["isDeleted"] is False
+
+
+def test_private_template_is_managed_by_creator_and_tenant_admin(client, db_session, app, tmp_path, monkeypatch):
+    """M8F-712: a private template is visible to and managed by its creator and the tenant-admin only."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner, owner_token = _login_user(client, db_session, username="editor-712", groups=["t1:editor"], tenant_id="t1")
+    template_id = _create_template(
+        client, owner_token, name="Owner Private", published=True, visibility="PRIVATE"
+    ).get_json()["id"]
+
+    _other, other_token = _login_user(client, db_session, username="editor-712b", groups=["t1:editor"], tenant_id="t1")
+    other = _headers(other_token)
+    listed = client.get("/v1.0/m8flow/templates", headers=other)
+    assert template_id not in {row["id"] for row in listed.get_json()["results"]}
+    assert listed.get_json()["pagination"]["total"] == 0
+    for response in (
+        client.get(f"/v1.0/m8flow/templates/{template_id}", headers=other),
+        client.get(f"/v1.0/m8flow/templates/{template_id}/export", headers=other),
+        client.get(f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn", headers=other),
+        client.post(
+            f"/v1.0/m8flow/templates/{template_id}/create-process-model",
+            json={"process_group_id": "finance", "display_name": "Stolen"},
+            headers=other,
+        ),
+        client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=other),
+    ):
+        assert response.status_code == 404, response.text
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-712", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    assert client.get(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+
+    owner = _headers(owner_token)
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=owner).status_code == 200
+    restored = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=owner)
+    assert restored.status_code == 200, restored.text
+    assert restored.get_json()["isDeleted"] is False
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+
+
+def test_creator_cannot_delete_or_restore_own_non_private_published_template(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """M8F-712: only private templates are managed by their creator; tenant-wide published ones stay admin-only."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner, owner_token = _login_user(client, db_session, username="editor-712t", groups=["t1:editor"], tenant_id="t1")
+    template_id = _create_template(client, owner_token, name="Owner Tenant", published=True).get_json()["id"]
+    owner = _headers(owner_token)
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=owner).status_code == 403
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-712t", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+    assert client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=owner).status_code == 403

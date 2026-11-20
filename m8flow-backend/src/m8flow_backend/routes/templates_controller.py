@@ -8,6 +8,7 @@ from flask import Response, jsonify, request, g
 
 from m8flow_backend import catalog
 from m8flow_backend.auth import require_catalog_write_tenant_id
+from m8flow_backend.authorization.decorators import require_permission
 from m8flow_backend.db import db
 from m8flow_backend.errors import ApiError
 
@@ -79,6 +80,9 @@ def _serialize_template(
     return result
 
 
+# Every route gates on the role grants for /m8flow/templates in m8flow.yml
+# (M8F-708); TemplateService then applies visibility and ownership on top.
+@require_permission()
 def template_list():
     latest_only = request.args.get("latest_only", "true").lower() != "false"
     category = request.args.get("category")
@@ -182,6 +186,7 @@ def _is_supported_legacy_xml_content_type() -> bool:
     )
 
 
+@require_permission()
 def template_create():
     user = getattr(g, "user", None)
     tenant_id = getattr(g, "m8flow_tenant_id", None)
@@ -241,6 +246,7 @@ def template_create():
     )
 
 
+@require_permission()
 def template_get_by_id(id: int):
     user = getattr(g, "user", None)
     include_contents = request.args.get("include_contents", "true").lower() == "true"
@@ -281,6 +287,7 @@ def _updates_from_xml_headers(request) -> tuple[dict, bytes | None, str | None]:
     return updates, bpmn_bytes, bpmn_file_name
 
 
+@require_permission()
 def template_update_by_id(id: int):
     user = getattr(g, "user", None)
 
@@ -300,6 +307,7 @@ def template_update_by_id(id: int):
     return jsonify(_serialize_template(template))
 
 
+@require_permission()
 def template_get_bpmn(id: int):
     """Retrieve first BPMN file for a template."""
     user = getattr(g, "user", None)
@@ -321,6 +329,7 @@ def template_get_bpmn(id: int):
     )
 
 
+@require_permission()
 def template_get_file(id: int, file_name: str):
     """Download a single file by name."""
     user = getattr(g, "user", None)
@@ -347,6 +356,7 @@ def template_get_file(id: int, file_name: str):
     )
 
 
+@require_permission()
 def template_put_file(id: int, file_name: str):
     """Update a single file by name.
 
@@ -364,6 +374,7 @@ def template_put_file(id: int, file_name: str):
     return jsonify(_serialize_template(updated_template)), 200
 
 
+@require_permission()
 def template_delete_file(id: int, file_name: str):
     """Delete a single file from the template.
 
@@ -377,6 +388,7 @@ def template_delete_file(id: int, file_name: str):
     return "", 204
 
 
+@require_permission()
 def template_export(id: int):
     """Export template as zip."""
     user = getattr(g, "user", None)
@@ -388,6 +400,7 @@ def template_export(id: int):
     )
 
 
+@require_permission()
 def template_import():
     """Import template from zip. Send zip as body or multipart file; metadata in X-Template-* headers."""
     user = getattr(g, "user", None)
@@ -410,18 +423,21 @@ def template_import():
     return jsonify(_serialize_template(template)), 201
 
 
+@require_permission()
 def template_delete_by_id(id: int):
     user = getattr(g, "user", None)
     TemplateService.delete_template_by_id(id, user=user)
     return jsonify({"status": "success", "message": "Template deleted successfully"}), 200
 
 
+@require_permission()
 def template_restore_by_id(id: int):
     user = getattr(g, "user", None)
     template = TemplateService.restore_template_by_id(id, user=user)
     return jsonify(_serialize_template(template)), 200
 
 
+@require_permission()
 def template_create_process_model(id: int):
     """Create a new process model from a template.
 
@@ -473,6 +489,7 @@ def template_create_process_model(id: int):
     return jsonify(result), 201
 
 
+@require_permission()
 def get_process_model_template_info(modified_process_model_identifier: str):
     """Get the template provenance info for a process model.
 

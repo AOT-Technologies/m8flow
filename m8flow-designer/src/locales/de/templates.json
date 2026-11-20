@@ -7,7 +7,7 @@
     "label": "Sichtbarkeit",
     "all": "Alle",
     "private": "Privat",
-    "privateDescription": "Nur Sie",
+    "privateDescription": "Nur Sie und Mandanten-Administratoren",
     "tenant": "Mandant",
     "tenantDescription": "Alle in diesem Mandanten",
     "public": "Öffentlich",

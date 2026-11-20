@@ -657,7 +657,9 @@ class TemplateService:
         if template.is_deleted:
             raise ApiError("not_found", "Template not found", status_code=404)
 
-        is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        is_template_admin = TemplateAuthorizationService.has_admin_permission(
+            user, "delete"
+        ) or TemplateAuthorizationService.is_private_owner(template, user)
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
@@ -712,7 +714,9 @@ class TemplateService:
         template_id: int,
         user: UserModel | None,
     ) -> TemplateModel:
-        """Restore a previously soft-deleted template (tenant-admin only)."""
+        """Restore a previously soft-deleted template (tenant-admin, or the creator of a private template)."""
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -720,7 +724,10 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+        if not (
+            TemplateAuthorizationService.has_admin_permission(user, "update")
+            or TemplateAuthorizationService.is_private_owner(template, user)
+        ):
             raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS
@@ -783,6 +790,8 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        if not TemplateAuthorizationService.can_edit(template, user):
+            raise ApiError("forbidden", "You cannot edit this template", status_code=403)
         # Find the file in the template
         found = None
         for e in template.files or []:
@@ -834,6 +843,8 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        if not TemplateAuthorizationService.can_edit(template, user):
+            raise ApiError("forbidden", "You cannot edit this template", status_code=403)
         # Validate the file exists in the template
         files_list = list(template.files or [])
         if not files_list:

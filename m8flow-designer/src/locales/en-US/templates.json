@@ -7,7 +7,7 @@
     "label": "Visibility",
     "all": "All",
     "private": "Private",
-    "privateDescription": "Only you",
+    "privateDescription": "Only you and tenant admins",
     "tenant": "Tenant",
     "tenantDescription": "Everyone in this tenant",
     "public": "Public",
