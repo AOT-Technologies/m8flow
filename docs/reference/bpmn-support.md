@@ -13,6 +13,7 @@ file contains one of the following constructs, the save fails with the
 |---|---|
 | Other Message Event forms | Message starts, throws, boundaries, and event-subprocess starts |
 | Compensation start events | `startEvent` with `compensateEventDefinition` |
+| Signals behind event-based gateways | `eventBasedGateway` followed by a signal catch; use ordinary signal catches inside an interruptible waiting subprocess instead. |
 | Unsupported event subprocesses | `subProcess` with `triggeredByEvent="true"` must have at least one start event. Each start event must have exactly one definition: error, escalation, or timer with `isInterrupting="false"`. |
 
 An ordinary embedded `subProcess` is allowed. So are event subprocesses that

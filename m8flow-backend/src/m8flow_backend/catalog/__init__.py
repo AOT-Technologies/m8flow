@@ -1282,6 +1282,23 @@ def _reject_unsupported_constructs(xml: str) -> Element:
     except ParseError as exc:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
+    event_gateways = {node.get("id") for node in root.iter(BPMN + "eventBasedGateway")}
+    signal_catches = {
+        node.get("id") for node in root.iter(BPMN + "intermediateCatchEvent")
+        if node.find(BPMN + "signalEventDefinition") is not None
+    }
+    if any(
+        (flow.get("sourceRef") or "").rsplit(":", 1)[-1] in event_gateways
+        and (flow.get("targetRef") or "").rsplit(":", 1)[-1] in signal_catches
+        for flow in root.iter(BPMN + "sequenceFlow")
+    ):
+        raise ApiError(
+            "unsupported_bpmn",
+            "Signal catches after event-based gateways are not supported. "
+            "Use a signal-wait subprocess with interrupting boundary outcomes.",
+            400,
+        )
+
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
     # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).

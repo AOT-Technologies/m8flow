@@ -7,6 +7,24 @@ from m8flow_backend.catalog import _reject_unsupported_constructs
 from m8flow_backend.errors import ApiError
 
 
+@pytest.mark.parametrize("qualified", [False, True])
+def test_signal_catch_after_event_gateway_is_rejected_before_deployment(qualified):
+    prefix = "local:" if qualified else ""
+    xml = (
+        '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:local="urn:signals" targetNamespace="urn:signals">'
+        '<signal id="resolved" name="resolved"/><process id="process" isExecutable="true">'
+        '<eventBasedGateway id="wait"/><intermediateCatchEvent id="catch">'
+        '<signalEventDefinition signalRef="resolved"/></intermediateCatchEvent>'
+        f'<sequenceFlow id="flow" sourceRef="{prefix}wait" targetRef="{prefix}catch"/>'
+        '</process></definitions>'
+    )
+    with pytest.raises(ApiError, match="Signal catches after event-based gateways") as error:
+        _reject_unsupported_constructs(xml)
+    assert error.value.error_code == "unsupported_bpmn"
+    assert error.value.status_code == 400
+
+
 @pytest.mark.parametrize(
     ("subprocess", "namespace_declarations"),
     [
