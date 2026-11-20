@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { forwardRef, useEffect, useImperativeHandle, useState, type Ref } from 'react';
+import { forwardRef, useLayoutEffect, useImperativeHandle, useState, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +44,9 @@ vi.mock('./components/DiagramCanvas', () => ({
     ref: Ref<DiagramCanvasHandle>,
   ) {
     const [draft, setDraft] = useState(xml);
-    useEffect(() => setDraft(xml), [xml]);
+    // Finish importing the XML before the test can edit the canvas. A passive
+    // effect can otherwise reset the draft after the first change under load.
+    useLayoutEffect(() => setDraft(xml), [xml]);
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
     canvasStub.onLaunchCallActivityEditor = onLaunchCallActivityEditor;
     useImperativeHandle(ref, () => ({
@@ -244,11 +246,12 @@ describe('ProcessModelModelerPage file chrome', () => {
     });
     renderModeler(EDITOR_CONTEXT);
     const draft = await screen.findByLabelText('Canvas draft');
-    fireEvent.change(draft, { target: { value: '<bpmn:definitions>unsaved</bpmn:definitions>' } });
+    const unsavedXml = '<bpmn:definitions>unsaved</bpmn:definitions>';
+    fireEvent.change(draft, { target: { value: unsavedXml } });
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
     expect(screen.getByLabelText('Canvas draft')).toBe(draft);
-    expect(draft).toHaveValue('<bpmn:definitions>unsaved</bpmn:definitions>');
+    expect(draft).toHaveValue(unsavedXml);
     const unload = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unload);
     expect(unload.defaultPrevented).toBe(true);
@@ -257,8 +260,9 @@ describe('ProcessModelModelerPage file chrome', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
     await waitFor(() => expect(saves).toBe(2));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
-    expect(draft).toHaveValue('<bpmn:definitions>unsaved</bpmn:definitions>');
+    expect(draft).toHaveValue(unsavedXml);
     const saved = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(saved[0][1]?.body).toBe(unsavedXml);
     expect(saved[1][1]?.body).toBe(saved[0][1]?.body);
   });
   afterEach(() => {
