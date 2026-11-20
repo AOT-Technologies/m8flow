@@ -647,7 +647,7 @@ export function ProcessModelOverview({
               {detail.files.length === 0 ? (
                 <p className="px-4 py-8 text-center text-[13.5px] text-muted-foreground">{t('processModelDetail.files.empty')}</p>
               ) : (
-                detail.files.map((file) => (
+                sortFilesPrimaryFirst(detail.files, detail.files.find((f) => f.primary)?.name ?? '').map((file) => (
                   <FileRow
                     key={file.name}
                     file={file}
