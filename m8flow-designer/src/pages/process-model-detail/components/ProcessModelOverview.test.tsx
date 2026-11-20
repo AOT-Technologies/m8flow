@@ -31,6 +31,7 @@ const DETAIL: ProcessModelDetail = {
       status: 'complete',
     },
   ],
+  timer_start_schedules: [],
   files: [
     {
       name: 'invoice-approval.bpmn',
@@ -123,6 +124,31 @@ describe('ProcessModelOverview', () => {
       expect(link).toHaveAttribute('href', '/processes?group=finance');
     }
     expect(screen.getByRole('button', { name: 'All processes' })).toBeInTheDocument();
+  });
+
+  it('shows active timer-start schedule times for a published model', () => {
+    const nextRun = '2026-11-18T16:30:00Z';
+    renderOverview({
+      ...DETAIL,
+      timer_start_schedules: [{ next_run_at: nextRun }, { next_run_at: '2026-11-18T17:00:00Z' }],
+    });
+
+    expect(screen.getByRole('heading', { name: 'Timer start schedules' })).toBeInTheDocument();
+    expect(screen.getByText('2 active schedules')).toBeInTheDocument();
+    expect(screen.getByText('Next run 1:')).toBeInTheDocument();
+    expect(screen.getByText('Next run 2:')).toBeInTheDocument();
+    expect(document.querySelector(`time[datetime="${nextRun}"]`)).toBeInTheDocument();
+  });
+
+  it('does not describe schedules as active for a draft model', () => {
+    renderOverview({
+      ...DETAIL,
+      status: 'draft',
+      timer_start_schedules: [{ next_run_at: '2026-11-18T16:30:00Z' }],
+    });
+
+    expect(screen.getByText('There are no active timer start schedules for this model.')).toBeInTheDocument();
+    expect(screen.queryByText('1 active schedule')).not.toBeInTheDocument();
   });
 
   it('navigates back to the process list from the button', async () => {

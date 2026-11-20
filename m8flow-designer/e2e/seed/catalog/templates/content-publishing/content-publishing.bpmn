@@ -7,10 +7,10 @@
                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                   xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
                   id="Definitions_e2e_content_publishing" targetNamespace="http://m8flow.org/e2e/catalog">
-  <bpmn:collaboration id="Collaboration_e2e_content_publishing"><bpmn:participant id="Participant_e2e_content_publishing" name="E2E Content Publishing" processRef="e2e_content_publishing" /><bpmn:participant id="Participant_subscribers" name="Subscribers" /><bpmn:messageFlow id="MessageFlow_new_article" name="New article" sourceRef="notify_subscribers" targetRef="Participant_subscribers" messageRef="Message_new_article" /></bpmn:collaboration>
+  <bpmn:collaboration id="Collaboration_e2e_content_publishing"><bpmn:participant id="Participant_e2e_content_publishing" name="E2E Content Publishing" processRef="e2e_content_publishing" /></bpmn:collaboration>
   <bpmn:message id="Message_new_article" name="new_article" />
   <bpmn:process id="e2e_content_publishing" name="E2E Content Publishing" isExecutable="true">
-    <bpmn:documentation>An author drafts an article; the words are counted and the editor reviews it, and sends it back until it is ready. The publisher schedules it; at that time it goes to the chosen channels and subscribers are notified.</bpmn:documentation>
+    <bpmn:documentation>An author drafts an article; the words are counted and the editor reviews it, and sends it back until it is ready. The publisher schedules it; at that time it goes to the chosen channels and sends a notification.</bpmn:documentation>
     <bpmn:laneSet id="LaneSet_e2e_content_publishing"><bpmn:lane id="Lane_submitters" name="Submitters"><bpmn:flowNodeRef>start_article</bpmn:flowNodeRef><bpmn:flowNodeRef>draft_article</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_review_entry</bpmn:flowNodeRef><bpmn:flowNodeRef>count_words</bpmn:flowNodeRef><bpmn:flowNodeRef>revise_article</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_channels</bpmn:flowNodeRef><bpmn:flowNodeRef>post_website</bpmn:flowNodeRef><bpmn:flowNodeRef>prepare_newsletter</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_channels_join</bpmn:flowNodeRef><bpmn:flowNodeRef>cool_down</bpmn:flowNodeRef><bpmn:flowNodeRef>notify_subscribers</bpmn:flowNodeRef><bpmn:flowNodeRef>end_published</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_approvers" name="Approvers"><bpmn:flowNodeRef>editorial_review</bpmn:flowNodeRef><bpmn:flowNodeRef>gw_changes</bpmn:flowNodeRef></bpmn:lane><bpmn:lane id="Lane_administrators" name="Administrators"><bpmn:flowNodeRef>schedule_article</bpmn:flowNodeRef><bpmn:flowNodeRef>wait_publish</bpmn:flowNodeRef></bpmn:lane></bpmn:laneSet>
     <bpmn:startEvent id="start_article" name="Article idea"><bpmn:outgoing>Flow_start_article_draft_article</bpmn:outgoing></bpmn:startEvent>
     <bpmn:userTask id="draft_article" name="Draft article"><bpmn:extensionElements><spiffworkflow:properties><spiffworkflow:property name="formJsonSchemaFilename" value="article-schema.json" /><spiffworkflow:property name="formUiSchemaFilename" value="article-uischema.json" /></spiffworkflow:properties></bpmn:extensionElements><bpmn:incoming>Flow_start_article_draft_article</bpmn:incoming><bpmn:outgoing>Flow_draft_article_gw_review_entry</bpmn:outgoing></bpmn:userTask>
@@ -53,7 +53,6 @@
       <bpmndi:BPMNShape id="Lane_submitters_di" bpmnElement="Lane_submitters" isHorizontal="true"><dc:Bounds x="160" y="60" width="2528.0" height="300" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Lane_approvers_di" bpmnElement="Lane_approvers" isHorizontal="true"><dc:Bounds x="160" y="360" width="2528.0" height="150" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Lane_administrators_di" bpmnElement="Lane_administrators" isHorizontal="true"><dc:Bounds x="160" y="510" width="2528.0" height="150" /></bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="Participant_subscribers_di" bpmnElement="Participant_subscribers" isHorizontal="true"><dc:Bounds x="130" y="720" width="2558.0" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="start_article_di" bpmnElement="start_article"><dc:Bounds x="262" y="117" width="36" height="36" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="draft_article_di" bpmnElement="draft_article"><dc:Bounds x="395" y="95" width="100" height="80" /></bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="gw_review_entry_di" bpmnElement="gw_review_entry"><dc:Bounds x="585" y="110" width="50" height="50" /></bpmndi:BPMNShape>
@@ -88,7 +87,6 @@
       <bpmndi:BPMNEdge id="Flow_gw_channels_post_website_di" bpmnElement="Flow_gw_channels_post_website"><di:waypoint x="1790" y="135" /><di:waypoint x="1880" y="135" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_gw_channels_prepare_newsletter_di" bpmnElement="Flow_gw_channels_prepare_newsletter"><di:waypoint x="1765" y="160" /><di:waypoint x="1765" y="285" /><di:waypoint x="1880" y="285" /></bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_gw_channels_gw_channels_join_di" bpmnElement="Flow_gw_channels_gw_channels_join"><di:waypoint x="1765" y="110" /><di:waypoint x="1765" y="88" /><di:waypoint x="2095" y="88" /><di:waypoint x="2095" y="110" /></bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="MessageFlow_new_article_di" bpmnElement="MessageFlow_new_article"><di:waypoint x="2440" y="175" /><di:waypoint x="2440" y="720" /></bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
 </bpmn:definitions>

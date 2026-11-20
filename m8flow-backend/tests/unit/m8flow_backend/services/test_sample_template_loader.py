@@ -11,6 +11,31 @@ from m8flow_backend.services import sample_template_loader as loader
 
 def test_version_is_v3():
     assert loader.VERSION == "V3"
+    assert loader._template_version("recurring-timer-start-verification") == "V4"
+    assert loader._template_version("other-sample") == "V3"
+
+
+def test_recurring_timer_verification_template_has_reviewer_pool():
+    import xml.etree.ElementTree as ET
+    import zipfile
+    from pathlib import Path
+
+    sample_dir = Path(loader._SAMPLE_TEMPLATES_DIR)
+    bpmn_name = "Recurring Timer Start Verification.bpmn"
+    bpmn_source = (sample_dir / bpmn_name).read_bytes()
+    with zipfile.ZipFile(sample_dir / "Recurring Timer Start Verification.zip") as archive:
+        packaged_bpmn = archive.read(bpmn_name)
+
+    assert packaged_bpmn == bpmn_source
+    root = ET.fromstring(packaged_bpmn)
+    ns = {"bpmn": "http://www.omg.org/spec/BPMN/20100524/MODEL"}
+    participant = root.find("bpmn:collaboration/bpmn:participant", ns)
+    lane = root.find(".//bpmn:lane[@name='reviewer']", ns)
+
+    assert participant is not None
+    assert participant.attrib["processRef"] == "Process_recurring_timer_start_verification"
+    assert lane is not None
+    assert lane.findtext("bpmn:flowNodeRef", namespaces=ns) == "Task_inspect_occurrence"
 
 
 class _Query:
@@ -77,6 +102,28 @@ def test_template_is_loaded_when_only_an_older_version_exists(loader_env):
 
     assert len(added) == 1
     assert added[0]["version"] == "V3"
+
+
+def test_recurring_timer_template_loads_as_v4(tmp_path, monkeypatch):
+    import zipfile
+
+    sample_dir = tmp_path / "sample_templates"
+    sample_dir.mkdir()
+    with zipfile.ZipFile(sample_dir / "recurring-timer-start-verification.zip", "w") as archive:
+        archive.writestr("process.bpmn", "<bpmn:definitions />")
+    monkeypatch.setattr(loader, "_SAMPLE_TEMPLATES_DIR", str(sample_dir))
+    monkeypatch.setenv("M8FLOW_LOAD_SAMPLE_TEMPLATES", "true")
+
+    calls: list[dict] = []
+    storage = MagicMock()
+    added = _run_loader(existing_row=None, calls=calls, storage=storage)
+
+    assert calls[0]["version"] == "V4"
+    assert added[0]["version"] == "V4"
+    storage.store_file.assert_called_once_with(
+        "tenant-1", "recurring-timer-start-verification", "V4",
+        "process.bpmn", "bpmn", b"<bpmn:definitions />",
+    )
 
 
 def test_template_is_skipped_when_the_same_version_exists(loader_env):

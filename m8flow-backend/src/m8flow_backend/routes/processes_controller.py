@@ -648,6 +648,11 @@ def get_process_model(modified_process_model_identifier: str):
         limit=recent_limit,
         viewer_id=initiator_id,
     )
+    timer_start_schedules = workflow.list_process_model_timer_start_schedules(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=process_model_identifier,
+    )
     can_read_files = user_has_permission(
         user,
         "GET",
@@ -666,6 +671,7 @@ def get_process_model(modified_process_model_identifier: str):
             **identity,
             **stats,
             "recent_instances": recent,
+            "timer_start_schedules": timer_start_schedules,
             "files": files,
             "collaboration_participants": (
                 catalog.model_collaboration_participants(

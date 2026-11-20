@@ -23,7 +23,11 @@
     "resume": "Jatka",
     "resuming": "Jatketaan…",
     "startProcess": "Käynnistä prosessi",
-    "starting": "Käynnistetään…"
+    "starting": "Käynnistetään…",
+    "timerStartsActive_one": "Ajastinkaynnistykset: {{count}} aktiivinen; seuraava {{date}}",
+    "timerStartsActive_other": "Ajastinkaynnistykset: {{count}} aktiivista; seuraava {{date}}",
+    "timerStartsNoneActive": "Ei aktiivisia ajastinkaynnistyksia",
+    "timerStartsNextRun": "Seuraava ajastinkaynnistys: {{date}}"
   },
   "saveStatus": {
     "saved": "Tallennettu",

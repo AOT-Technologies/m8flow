@@ -27,7 +27,7 @@
     "preview": "vite preview",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "test:watch": "vitest",
     "test:e2e": "node scripts/e2e-run.mjs",
     "test:e2e:dashboard": "node scripts/e2e-dashboard.mjs --serve",

@@ -697,6 +697,10 @@ export type ProcessModelDetailFile = {
   decision_id?: string | null;
 };
 
+export type ProcessModelTimerStartSchedule = {
+  next_run_at: string;
+};
+
 export type ProcessModelDetail = ProcessModelVersionState & {
   id: string;
   tenant_id: string;
@@ -711,6 +715,7 @@ export type ProcessModelDetail = ProcessModelVersionState & {
   status: ProcessModelStatus;
   /** Only the caller's own instances without tenant-wide instance read. */
   recent_instances: ProcessModelDetailInstance[];
+  timer_start_schedules: ProcessModelTimerStartSchedule[];
   files: ProcessModelDetailFile[];
   collaboration_participants?: CollaborationParticipant[] | null;
 };

@@ -113,4 +113,26 @@ describe('ModelerFileToolbar', () => {
     render(<ModelerFileToolbar {...BASE} onPublish={vi.fn()} onStart={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /Publish|Start process/ })).not.toBeInTheDocument();
   });
+
+  it('shows the active timer-start count and next occurrence for published models', () => {
+    render(
+      <ModelerFileToolbar
+        {...BASE}
+        status="published"
+        timerStartSchedules={[{ next_run_at: '2026-11-18T16:30:00Z' }]}
+      />,
+    );
+
+    expect(screen.getByTestId('modeler-timer-schedule-status')).toHaveTextContent('Timer starts: 1 active');
+    expect(screen.getByTestId('modeler-timer-schedule-status')).toHaveAttribute(
+      'title',
+      expect.stringContaining('Next timer-start occurrence at'),
+    );
+  });
+
+  it('shows when no timer-start schedules are active', () => {
+    render(<ModelerFileToolbar {...BASE} status="paused" timerStartSchedules={[]} />);
+
+    expect(screen.getByTestId('modeler-timer-schedule-status')).toHaveTextContent('Timer starts: none active');
+  });
 });

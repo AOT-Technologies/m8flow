@@ -31,6 +31,7 @@ const DETAIL = {
   runs_30d: 2,
   status: 'published',
   recent_instances: [],
+  timer_start_schedules: [],
   files: [],
 };
 

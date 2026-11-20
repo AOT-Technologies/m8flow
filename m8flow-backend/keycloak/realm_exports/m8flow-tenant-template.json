@@ -483,7 +483,16 @@
       ]
     }
   },
-  "groups": [],
+  "groups": [
+    {
+      "name": "reviewer",
+      "path": "/reviewer",
+      "attributes": {},
+      "realmRoles": [],
+      "clientRoles": {},
+      "subGroups": []
+    }
+  ],
   "defaultRole": {
     "id": "0ca794cc-a1c3-488e-93e9-9f9ef950bee4",
     "name": "default-roles-m8flow",
@@ -642,7 +651,9 @@
         "default-roles-m8flow"
       ],
       "notBefore": 0,
-      "groups": [],
+      "groups": [
+        "/reviewer"
+      ],
       "credentials": [
         {
           "type": "password",

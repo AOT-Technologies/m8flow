@@ -52,11 +52,13 @@ def travel_request():
     d = Diagram("e2e_travel_request", "E2E Travel Request", [("Submitters", 2), ("Approvers", 3), ("Administrators", 1)],
                 documentation="An employee requests a business trip. A decision table sets the approval level; the "
                               "manager is reminded and the request goes to finance when it is overdue. Approved trips "
-                              "are booked while the budget hold is recorded in the database, then the itinerary is sent "
-                              "to the travel agency.")
+                              "are booked while the budget hold is recorded in the database, then an itinerary is sent.")
     S, A, F = "Submitters", "Approvers", "Administrators"
     d.root_xml.append('<bpmn:message id="Message_itinerary" name="itinerary" />')
-    d.partner = ("Participant_travel_agency", "Travel agency")
+    # Keep this as a single-process model. The current m8flow-core collaboration
+    # deployment contract requires at least two executable participants; a
+    # black-box participant is not enough. The modeler Messages E2E only needs
+    # the Send Task and its message reference, not a cross-pool message flow.
 
     d.start("start_trip", "Trip needed", 0, S)
     d.user("submit_trip", "Submit travel request", 1, S, form="trip-request",
@@ -108,7 +110,6 @@ def travel_request():
     d.flow("gw_need_finance", "gw_approved", "no")
     d.flow("gw_finance", "end_rejected_finance", "Reject", "outcome == 'reject'")
     d.flow("gw_finance", "gw_approved", "Approve")
-    d.message_flow("MessageFlow_itinerary", "send_itinerary", "Participant_travel_agency", "Itinerary", "Message_itinerary")
     d.group("group_approvals", "Approvals", ["manager_approval", "gw_manager", "gw_need_finance", "finance_approval", "gw_finance"])
     d.annotate("note_policy", "travel_policy: international or 5000+ -> finance, 1000+ -> manager, else auto",
                "decide_route", 2, S, 1)
@@ -449,10 +450,12 @@ def content_publishing():
     d = Diagram("e2e_content_publishing", "E2E Content Publishing", [("Submitters", 2), ("Approvers", 1), ("Administrators", 1)],
                 documentation="An author drafts an article; the words are counted and the editor reviews it, and "
                               "sends it back until it is ready. The publisher schedules it; at that time it goes to "
-                              "the chosen channels and subscribers are notified.")
+                              "the chosen channels and sends a notification.")
     S, A, F = "Submitters", "Approvers", "Administrators"
     d.root_xml.append('<bpmn:message id="Message_new_article" name="new_article" />')
-    d.partner = ("Participant_subscribers", "Subscribers")
+    # Keep this a single-process model. Current m8flow-core requires at least
+    # two executable participants for collaboration deployment; the seed only
+    # needs the Send Task and its message reference.
     d.start("start_article", "Article idea", 0, S)
     d.user("draft_article", "Draft article", 1, S, form="article")
     d.gateway("gw_review_entry", None, 2, S)
@@ -487,7 +490,6 @@ def content_publishing():
     d.flow("gw_channels", "post_website", "website", "website == True")
     d.flow("gw_channels", "prepare_newsletter", "newsletter", "newsletter == True")
     d.flow("gw_channels", "gw_channels_join", "no channel", over=True)
-    d.message_flow("MessageFlow_new_article", "notify_subscribers", "Participant_subscribers", "New article", "Message_new_article")
     forms = {
         "article": form("Article", "E2E seed form: the article draft and where it goes.", {
             "headline": text("Headline", minLength=3),
