@@ -31,28 +31,95 @@ case "$1" in
 esac
 MOCK
 chmod +x "${M8FLOW_KEYCLOAK_KCADM_BIN}"
-# Compact JSON deliberately avoids kcadm's whitespace/field order assumptions.
+
+# Asserts every id in the given object has that requirement in the mock state.
+expect() {
+  jq -e --argjson want "$1" 'INDEX(.id) as $by | all($want | to_entries[]; $by[.key].requirement == .value)' \
+    "${MOCK_FLOW_STATE}" > /dev/null || { echo "unexpected flow state for: $1" >&2; cat "${MOCK_FLOW_STATE}" >&2; exit 1; }
+}
+count() { [ -f "$1" ] && wc -l < "$1" || echo 0; }
+reset_counters() { rm -f "${MOCK_FLOW_UPDATES}" "${MOCK_FLOW_READS}"; }
+
+# Keycloak 26 default browser flow plus a username-first step, in kcadm's
+# depth-first order. Compact JSON avoids kcadm whitespace/field order assumptions.
+cat > "${test_dir}/default.json" <<'JSON'
+[{"id":"cookie","providerId":"auth-cookie","requirement":"ALTERNATIVE","level":0},
+ {"id":"idp","providerId":"identity-provider-redirector","requirement":"ALTERNATIVE","level":0},
+ {"id":"org","authenticationFlow":true,"displayName":"Organization","requirement":"ALTERNATIVE","level":0},
+ {"id":"org-cond","authenticationFlow":true,"displayName":"Browser - Conditional Organization","requirement":"CONDITIONAL","level":1},
+ {"id":"org-cond-user","providerId":"conditional-user-configured","requirement":"REQUIRED","level":2},
+ {"id":"identity","providerId":"organization","requirement":"REQUIRED","level":2},
+ {"id":"forms","authenticationFlow":true,"displayName":"forms","requirement":"ALTERNATIVE","level":0},
+ {"id":"username","providerId":"auth-username-form","requirement":"REQUIRED","level":1},
+ {"id":"password","providerId":"auth-username-password-form","requirement":"ALTERNATIVE","level":1},
+ {"id":"otp-flow","authenticationFlow":true,"displayName":"Browser - Conditional OTP","requirement":"CONDITIONAL","level":1},
+ {"id":"otp-cond","providerId":"conditional-user-configured","requirement":"REQUIRED","level":2},
+ {"id":"otp","providerId":"auth-otp-form","requirement":"REQUIRED","level":2}]
+JSON
+cp "${test_dir}/default.json" "${MOCK_FLOW_STATE}"
+ensure_realm_single_page_login m8flow
+expect '{"cookie":"ALTERNATIVE","idp":"ALTERNATIVE","org":"DISABLED","org-cond":"DISABLED","org-cond-user":"REQUIRED",
+  "identity":"DISABLED","forms":"ALTERNATIVE","username":"DISABLED","password":"REQUIRED","otp-flow":"CONDITIONAL","otp":"REQUIRED"}'
+[ "$(count "${MOCK_FLOW_UPDATES}")" -eq 5 ]
+[ "$(count "${MOCK_FLOW_READS}")" -eq 2 ]
+# Already configured: verified from a single read, no writes.
+ensure_realm_single_page_login master
+[ "$(count "${MOCK_FLOW_UPDATES}")" -eq 5 ]
+[ "$(count "${MOCK_FLOW_READS}")" -eq 3 ]
+
+# A custom subflow merely named "Organization" (no organization authenticator) is untouched,
+# and a Username Form in another branch is left alone instead of being rewired.
+reset_counters
 cat > "${MOCK_FLOW_STATE}" <<'JSON'
-[{"id":"cookie","providerId":"auth-cookie","requirement":"ALTERNATIVE"},{"id":"org","authenticationFlow":true,"displayName":"Organization","requirement":"ALTERNATIVE"},{"id":"identity","providerId":"organization","requirement":"ALTERNATIVE"},{"id":"username","providerId":"auth-username-form","requirement":"REQUIRED"},{"id":"password","providerId":"auth-username-password-form","requirement":"REQUIRED"},{"id":"otp","providerId":"auth-otp-form","requirement":"REQUIRED"}]
+[{"id":"custom","authenticationFlow":true,"displayName":"Organization","requirement":"ALTERNATIVE","level":0},
+ {"id":"custom-user","providerId":"auth-username-form","requirement":"REQUIRED","level":1},
+ {"id":"custom-otp","providerId":"auth-otp-form","requirement":"REQUIRED","level":1},
+ {"id":"forms","authenticationFlow":true,"requirement":"ALTERNATIVE","level":0},
+ {"id":"password","providerId":"auth-username-password-form","requirement":"REQUIRED","level":1}]
+JSON
+ensure_realm_single_page_login m8flow 2> "${test_dir}/stderr"
+expect '{"custom":"ALTERNATIVE","custom-user":"REQUIRED","custom-otp":"REQUIRED","password":"REQUIRED"}'
+grep -q 'custom-user is outside the password form branch' "${test_dir}/stderr"
+[ "$(count "${MOCK_FLOW_UPDATES}")" -eq 0 ]
+
+# An organization step sharing a subflow with another authenticator disables only itself.
+cat > "${MOCK_FLOW_STATE}" <<'JSON'
+[{"id":"mixed","authenticationFlow":true,"requirement":"ALTERNATIVE","level":0},
+ {"id":"identity","providerId":"organization","requirement":"REQUIRED","level":1},
+ {"id":"webauthn","providerId":"webauthn-authenticator-passwordless","requirement":"REQUIRED","level":1},
+ {"id":"forms","authenticationFlow":true,"requirement":"ALTERNATIVE","level":0},
+ {"id":"password","providerId":"auth-username-password-form","requirement":"REQUIRED","level":1}]
 JSON
 ensure_realm_single_page_login m8flow
-jq -e 'all(.[]; if .id == "cookie" then .requirement == "ALTERNATIVE" elif .id == "password" or .id == "otp" then .requirement == "REQUIRED" else .requirement == "DISABLED" end)' "${MOCK_FLOW_STATE}" > /dev/null
-[ "$(wc -l < "${MOCK_FLOW_UPDATES}")" -eq 3 ]
-[ "$(wc -l < "${MOCK_FLOW_READS}")" -eq 2 ]
-ensure_realm_single_page_login master
-[ "$(wc -l < "${MOCK_FLOW_UPDATES}")" -eq 3 ]
-[ "$(wc -l < "${MOCK_FLOW_READS}")" -eq 3 ]
+expect '{"mixed":"ALTERNATIVE","identity":"DISABLED","webauthn":"REQUIRED","forms":"ALTERNATIVE"}'
+
+# The password form's own branch is never disabled, even if it holds the organization step.
+cat > "${MOCK_FLOW_STATE}" <<'JSON'
+[{"id":"forms","authenticationFlow":true,"requirement":"ALTERNATIVE","level":0},
+ {"id":"identity","providerId":"organization","requirement":"ALTERNATIVE","level":1},
+ {"id":"password","providerId":"auth-username-password-form","requirement":"REQUIRED","level":1}]
+JSON
+ensure_realm_single_page_login m8flow
+expect '{"forms":"ALTERNATIVE","identity":"DISABLED","password":"REQUIRED"}'
+
+# Structures that cannot be configured safely fail without any write.
+reset_counters
+refuse() {
+  jq -c "$1" "${test_dir}/default.json" > "${MOCK_FLOW_STATE}"
+  if ensure_realm_single_page_login m8flow 2>/dev/null; then echo "accepted: $1" >&2; exit 1; fi
+  [ "$(count "${MOCK_FLOW_UPDATES}")" -eq 0 ]
+}
+refuse 'map(select(.id != "password"))'
+refuse '. + [{"id":"password2","providerId":"auth-username-password-form","requirement":"REQUIRED","level":0}]'
+refuse 'map(if .id == "forms" then .requirement = "DISABLED" else . end)'
+refuse 'map(del(.level))'
+refuse 'map(if .id == "org-cond" then .level = 3 else . end)'
 
 export MOCK_READ_FAILURE=true
+cp "${test_dir}/default.json" "${MOCK_FLOW_STATE}"
 if ensure_realm_single_page_login m8flow; then exit 1; fi
 unset MOCK_READ_FAILURE
 
-cp "${MOCK_FLOW_STATE}" "${test_dir}/valid.json"
-jq 'map(select(.id != "password"))' "${test_dir}/valid.json" > "${MOCK_FLOW_STATE}"
-if ensure_realm_single_page_login m8flow; then exit 1; fi
-
-jq 'map(if .id == "identity" then .requirement = "ALTERNATIVE" else . end)' \
-  "${test_dir}/valid.json" > "${MOCK_FLOW_STATE}"
 export MOCK_IGNORE_UPDATE=true
 if ensure_realm_single_page_login m8flow; then exit 1; fi
 unset MOCK_IGNORE_UPDATE
@@ -61,8 +128,8 @@ if ensure_realm_single_page_login m8flow; then exit 1; fi
 unset MOCK_UPDATE_FAILURE
 
 # A failed read-back must fail readiness even if the update itself succeeded.
-export MOCK_FAIL_READ_NUMBER=$(( $(wc -l < "${MOCK_FLOW_READS}") + 2 ))
+export MOCK_FAIL_READ_NUMBER=$(( $(count "${MOCK_FLOW_READS}") + 2 ))
 if ensure_realm_single_page_login m8flow; then exit 1; fi
-[ "$(wc -l < "${MOCK_FLOW_READS}")" -eq "${MOCK_FAIL_READ_NUMBER}" ]
+[ "$(count "${MOCK_FLOW_READS}")" -eq "${MOCK_FAIL_READ_NUMBER}" ]
 unset MOCK_FAIL_READ_NUMBER
-printf '%s\n' '7 login-flow regression scenarios passed.'
+printf '%s\n' '13 login-flow regression scenarios passed.'

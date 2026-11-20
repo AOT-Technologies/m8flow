@@ -22,16 +22,11 @@
         </p>
         <div id="kc-form">
           <div id="kc-form-wrapper">
-            <#if usernameHidden??>
-                <div
-                    id="m8f-hidden-username-login"
-                    data-login-restart-url="${url.loginRestartFlowUrl}"
-                    hidden
-                ></div>
-                <#include "login-recovery.ftl">
-            </#if>
+            <#-- usernameHidden here is a genuine re-authentication of a known user
+                 (template.ftl shows the username and a restart link), so the password
+                 form is shown at once; only login-username.ftl auto-restarts. -->
             <#if realm.password>
-                <form id="kc-form-login" <#if usernameHidden??>hidden</#if> onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
+                <form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
                     <#if !usernameHidden??>
                         <div class="${properties.kcFormGroupClass!}">
                             <label for="username" class="${properties.kcLabelClass!}"><#if !realm.loginWithEmailAllowed>${msg("username")}<#elseif !realm.registrationEmailAsUsername>${msg("usernameOrEmail")}<#else>${msg("email")}</#if></label>

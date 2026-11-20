@@ -1,7 +1,6 @@
-const LOGIN_RESTART_MARKER_IDS = [
-  'm8f-hidden-username-login',
-  'm8f-username-only-login',
-];
+// Only the username-only (identity-first) page is a stuck challenge. A password
+// form with a hidden username is a real re-authentication and is shown as-is.
+const LOGIN_RESTART_MARKER_ID = 'm8f-username-only-login';
 const RESTART_GUARD_STORAGE_KEY = 'm8flow-hidden-username-login-restart-url';
 const RESTART_FALLBACK_ID = 'm8f-hidden-username-login-fallback';
 const MANUAL_RESTART_LINK_ID = 'm8f-return-to-full-sign-in';
@@ -17,20 +16,8 @@ const loginRecoveryStorage = () => {
   }
 };
 
-const defaultMarker = () => {
-  if (typeof document === 'undefined') {
-    return null;
-  }
-
-  for (const markerId of LOGIN_RESTART_MARKER_IDS) {
-    const marker = document.getElementById(markerId);
-    if (marker) {
-      return marker;
-    }
-  }
-
-  return null;
-};
+const defaultMarker = () =>
+  typeof document === 'undefined' ? null : document.getElementById(LOGIN_RESTART_MARKER_ID);
 
 const restartUrlFromMarker = (marker, currentHref) => {
   if (!marker || typeof marker.getAttribute !== 'function') {
@@ -143,13 +130,6 @@ const showFallback = () => {
   if (status) {
     status.hidden = true;
   }
-  // Re-authentication (prompt=login over a live SSO session) re-identifies the
-  // same user on every restart, so its password form is the only way forward.
-  const form = document.getElementById('kc-form-login');
-  if (form) {
-    form.hidden = false;
-    return;
-  }
   const fallback = document.getElementById(RESTART_FALLBACK_ID);
   if (!fallback) {
     return;
@@ -255,7 +235,8 @@ const restartHiddenUsernameLogin = (
   storage = loginRecoveryStorage(),
 ) => {
   if (!marker) {
-    if (document.getElementById('username') && document.getElementById('password')) {
+    // Any password form (combined or re-auth) is a usable page: reset the counter.
+    if (document.getElementById('password')) {
       clearRestartGuard(storage);
     }
     return false;

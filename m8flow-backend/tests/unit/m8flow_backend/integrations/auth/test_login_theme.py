@@ -27,6 +27,14 @@ def test_m8flow_login_theme_collects_username_and_password_together():
     assert form_at < username_at < password_at
 
 
+def test_reauthentication_shows_password_form_without_restart_loop():
+    # usernameHidden on login.ftl is a genuine re-auth: never hide the form or arm auto-restart.
+    template = LOGIN_FTL.read_text()
+    assert "<#if usernameHidden??>hidden</#if>" not in template
+    assert "m8f-hidden-username-login\"" not in template
+    assert '<#include "login-recovery.ftl">' not in template
+
+
 def test_recovery_is_inlined_after_markup_without_parsing_javascript_as_freemarker():
     for name in ("login.ftl", "login-username.ftl"):
         template = (LOGIN_FTL.parent / name).read_text()
@@ -34,7 +42,7 @@ def test_recovery_is_inlined_after_markup_without_parsing_javascript_as_freemark
         assert include in template
         assert template.index('id="kc-form"') < template.index(include)
         assert 'src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"' not in template
-        assert '<#include "login-recovery.ftl">' in template
+    assert '<#include "login-recovery.ftl">' in (LOGIN_FTL.parent / "login-username.ftl").read_text()
 
     recovery = (LOGIN_FTL.parent / "login-recovery.ftl").read_text()
     assert 'role="status"' in recovery

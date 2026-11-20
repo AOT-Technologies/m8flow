@@ -159,11 +159,8 @@ function loadPage(options = {}) {
     'm8f-hidden-username-login-fallback': fallback,
     'm8f-return-to-full-sign-in': link,
   };
-  if (options.form) {
-    elements['kc-form-login'] = options.form;
-  }
-  if (options.combined) {
-    elements.username = {};
+  if (options.combined || options.reauth) {
+    if (!options.reauth) elements.username = {};
     elements.password = {};
   } else {
     elements[options.marker || 'm8f-username-only-login'] = marker;
@@ -217,11 +214,10 @@ function loadPage(options = {}) {
 
 
 @pytest.mark.parametrize("realm", ["m8flow", "master"])
-@pytest.mark.parametrize("marker", ["m8f-username-only-login", "m8f-hidden-username-login"])
-def test_recovery_starts_during_parsing_and_stops_after_two_restarts(realm, marker):
+def test_recovery_starts_during_parsing_and_stops_after_two_restarts(realm):
     got = run_script(
         HARNESS
-        + f"const options = {json.dumps({'realm': realm, 'marker': marker})};\n"
+        + f"const options = {json.dumps({'realm': realm})};\n"
         + "loadPage(options);\n"
         + "loadPage({ ...options, query: 'client_id=app&tab_id=tab&session_code=two&execution=new' });\n"
         + "loadPage({ ...options, query: 'client_id=app&tab_id=tab&session_code=three' });\n"
@@ -309,18 +305,15 @@ def test_existing_restart_guard_cannot_bypass_limit(legacy_json):
     assert got["fallback"]["hidden"] is False
 
 
-def test_reauthentication_reveals_password_form_instead_of_retry_loop():
-    # prompt=login over a live SSO session re-identifies the user on every restart;
-    # hiding its password form behind Retry would leave no way to sign in.
+def test_reauthentication_never_restarts_and_resets_the_counter():
+    # prompt=login over a live SSO session renders a password-only form. It is the
+    # intended page: no redirect, no fallback, and earlier restart attempts are cleared.
     got = run_script(
         HARNESS
-        + "const form = { hidden: true };\n"
-        + "const options = { marker: 'm8f-hidden-username-login', form };\n"
-        + "loadPage(options); loadPage(options);\n"
-        + "const page = loadPage(options);\n"
-        + "console.log(JSON.stringify({ page, form }));\n"
+        + "loadPage(); loadPage();\n"
+        + "const page = loadPage({ reauth: true });\n"
+        + "console.log(JSON.stringify({ page, cleared: !store.has(key) }));\n"
     )[0]
     assert got["page"]["navigations"] == []
-    assert got["form"]["hidden"] is False
     assert got["page"]["fallback"]["hidden"] is True
-    assert got["page"]["status"]["hidden"] is True
+    assert got["cleared"] is True
