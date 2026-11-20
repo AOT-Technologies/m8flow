@@ -634,6 +634,8 @@ def test_super_admin_cannot_restore_deleted_template(client, db_session, app, tm
     denied = client.post(f"/v1.0/m8flow/templates/{template_id}/restore?tenantId=t1", headers=_headers(sa_token))
     assert denied.status_code == 403
     assert denied.get_json()["error_code"] == "forbidden"
+    no_tenant = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=_headers(sa_token))
+    assert no_tenant.status_code == 403
 
     restored = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=_headers(admin_token))
     assert restored.status_code == 200, restored.text
@@ -677,3 +679,20 @@ def test_private_template_is_managed_by_creator_and_tenant_admin(client, db_sess
     assert restored.status_code == 200, restored.text
     assert restored.get_json()["isDeleted"] is False
     assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+
+
+def test_creator_cannot_delete_or_restore_own_non_private_published_template(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """M8F-712: only private templates are managed by their creator; tenant-wide published ones stay admin-only."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner, owner_token = _login_user(client, db_session, username="editor-712t", groups=["t1:editor"], tenant_id="t1")
+    template_id = _create_template(client, owner_token, name="Owner Tenant", published=True).get_json()["id"]
+    owner = _headers(owner_token)
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=owner).status_code == 403
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-712t", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+    assert client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=owner).status_code == 403

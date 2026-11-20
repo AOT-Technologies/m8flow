@@ -714,10 +714,10 @@ class TemplateService:
         template_id: int,
         user: UserModel | None,
     ) -> TemplateModel:
-        """Restore a previously soft-deleted template (tenant-admin only)."""
+        """Restore a previously soft-deleted template (tenant-admin, or the creator of a private template)."""
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
-        template =cls.get_template_by_id(template_id, user=user, include_deleted=True)
+        template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
 
