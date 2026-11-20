@@ -534,15 +534,13 @@ def _prior_submission_values(
     if not work_item.task_guid:
         return {}
 
-    task_data = workflow._task_data(session, tenant_id=tenant_id, task_guid=work_item.task_guid)
-    if task_data:
-        return task_data
-
     # A task's own json_data is the serialized SpiffWorkflow task's `data`, which is
     # empty until that task executes -- so for a READY task (exactly when a form is
-    # being rendered) it is `{}` and the form would open blank. The accumulated process
-    # variables live one level up, on the instance's bpmn_process. Fall back to those so
-    # a reviewer sees what earlier steps submitted.
+    # being rendered) it is usually `{}`, and even when set it may hold only part of
+    # the task's scope. The accumulated process variables live one level up, on the
+    # instance's bpmn_process, so always start from those: a reviewer sees what
+    # earlier steps submitted.
+    task_data = workflow._task_data(session, tenant_id=tenant_id, task_guid=work_item.task_guid)
     process_data = workflow._process_data(
         session, tenant_id=tenant_id, process_instance_id=work_item.process_instance_id
     )
@@ -553,12 +551,15 @@ def _prior_submission_values(
     from m8flow_core.models.process_instance import ProcessInstanceModel
 
     instance = session.get(ProcessInstanceModel, work_item.process_instance_id)
-    if instance is None or instance.m8f_tenant_id != tenant_id:
-        return process_data
-    scope = workflow._task_data_from_workflow_state(instance, work_item.task_guid)
+    scope = (
+        workflow._task_data_from_workflow_state(instance, work_item.task_guid)
+        if instance is not None and instance.m8f_tenant_id == tenant_id
+        else {}
+    )
     return {
         **process_data,
         **{key: value for key, value in scope.items() if key not in workflow._ENGINE_DATA_KEYS},
+        **task_data,
     }
 
 
