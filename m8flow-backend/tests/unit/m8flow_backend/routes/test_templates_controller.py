@@ -638,3 +638,42 @@ def test_super_admin_cannot_restore_deleted_template(client, db_session, app, tm
     restored = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=_headers(admin_token))
     assert restored.status_code == 200, restored.text
     assert restored.get_json()["isDeleted"] is False
+
+
+def test_private_template_is_managed_by_creator_and_tenant_admin(client, db_session, app, tmp_path, monkeypatch):
+    """M8F-712: a private template is visible to and managed by its creator and the tenant-admin only."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner, owner_token = _login_user(client, db_session, username="editor-712", groups=["t1:editor"], tenant_id="t1")
+    template_id = _create_template(
+        client, owner_token, name="Owner Private", published=True, visibility="PRIVATE"
+    ).get_json()["id"]
+
+    _other, other_token = _login_user(client, db_session, username="editor-712b", groups=["t1:editor"], tenant_id="t1")
+    other = _headers(other_token)
+    listed = client.get("/v1.0/m8flow/templates", headers=other)
+    assert template_id not in {row["id"] for row in listed.get_json()["results"]}
+    assert listed.get_json()["pagination"]["total"] == 0
+    for response in (
+        client.get(f"/v1.0/m8flow/templates/{template_id}", headers=other),
+        client.get(f"/v1.0/m8flow/templates/{template_id}/export", headers=other),
+        client.get(f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn", headers=other),
+        client.post(
+            f"/v1.0/m8flow/templates/{template_id}/create-process-model",
+            json={"process_group_id": "finance", "display_name": "Stolen"},
+            headers=other,
+        ),
+        client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=other),
+    ):
+        assert response.status_code == 404, response.text
+
+    _admin, admin_token = _login_user(
+        client, db_session, username="tenant-admin-712", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    assert client.get(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
+
+    owner = _headers(owner_token)
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=owner).status_code == 200
+    restored = client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=owner)
+    assert restored.status_code == 200, restored.text
+    assert restored.get_json()["isDeleted"] is False
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200

@@ -7,7 +7,7 @@
     "label": "Visibilité",
     "all": "Tous",
     "private": "Privé",
-    "privateDescription": "Vous uniquement",
+    "privateDescription": "Vous et les administrateurs du locataire",
     "tenant": "Locataire",
     "tenantDescription": "Tous les membres de ce locataire",
     "public": "Public",

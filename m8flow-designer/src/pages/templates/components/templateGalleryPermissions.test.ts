@@ -33,7 +33,7 @@ describe('templateGalleryPermissions', () => {
     const admin = { isSuperAdmin: false, canManageTenant: true, currentUsername: 'admin' };
     expect(canDeleteGalleryTemplate(published, admin)).toBe(true);
     expect(canDeleteGalleryTemplate(draft, admin)).toBe(true);
-    expect(canRestoreGalleryTemplate(admin)).toBe(true);
+    expect(canRestoreGalleryTemplate(published, admin)).toBe(true);
   });
 
   it('lets an editor hard-delete their own draft but not a published template', () => {
@@ -41,12 +41,23 @@ describe('templateGalleryPermissions', () => {
     expect(canDeleteGalleryTemplate(draft, editor)).toBe(true);
     expect(canDeleteGalleryTemplate(published, editor)).toBe(false);
     expect(deleteDisabledReason(published, editor)).toMatch(/published/);
-    expect(canRestoreGalleryTemplate(editor)).toBe(false);
+    expect(canRestoreGalleryTemplate(published, editor)).toBe(false);
+  });
+
+  it('lets the creator delete and restore their own published private template (M8F-712)', () => {
+    const editor = { isSuperAdmin: false, canManageTenant: false, currentUsername: 'editor' };
+    const otherEditor = { ...editor, currentUsername: 'other' };
+    const privatePublished: Template = { ...published, visibility: 'PRIVATE' };
+    expect(canDeleteGalleryTemplate(privatePublished, editor)).toBe(true);
+    expect(deleteDisabledReason(privatePublished, editor)).toBe('');
+    expect(canRestoreGalleryTemplate(privatePublished, editor)).toBe(true);
+    expect(canDeleteGalleryTemplate(privatePublished, otherEditor)).toBe(false);
+    expect(canRestoreGalleryTemplate(privatePublished, otherEditor)).toBe(false);
   });
 
   it('blocks super-admin delete and restore', () => {
     const superAdmin = { isSuperAdmin: true, canManageTenant: true, currentUsername: 'platform' };
     expect(canDeleteGalleryTemplate(published, superAdmin)).toBe(false);
-    expect(canRestoreGalleryTemplate(superAdmin)).toBe(false);
+    expect(canRestoreGalleryTemplate(published, superAdmin)).toBe(false);
   });
 });

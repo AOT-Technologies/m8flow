@@ -7,7 +7,7 @@
     "label": "可见性",
     "all": "全部",
     "private": "私有",
-    "privateDescription": "仅限您本人",
+    "privateDescription": "仅限您本人和租户管理员",
     "tenant": "租户",
     "tenantDescription": "此租户中的所有人",
     "public": "公开",
