@@ -369,10 +369,14 @@ def process_model_display_name(*, tenant_id: str, process_model_identifier: str)
     if model is not None:
         return model.display_name
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
+    return _display_name_from_meta(meta, process_model_identifier)
+
+
+def _display_name_from_meta(meta: dict[str, Any], identifier: str) -> str:
     display = meta.get("display_name")
     if isinstance(display, str) and display.strip():
         return display.strip()
-    return process_model_identifier.rstrip("/").split("/")[-1]
+    return identifier.rstrip("/").split("/")[-1]
 
 
 def process_model_status(*, tenant_id: str, process_model_identifier: str) -> str:
@@ -389,6 +393,10 @@ def process_model_status(*, tenant_id: str, process_model_identifier: str) -> st
     if model is not None:
         return PROCESS_MODEL_STATUS_DRAFT if model.deleted else model.status
     meta = _tenant_json(tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR)
+    return _status_from_meta(meta)
+
+
+def _status_from_meta(meta: dict[str, Any]) -> str:
     status = meta.get("status")
     if isinstance(status, str) and status.strip() in PROCESS_MODEL_STATUSES:
         return status.strip()
@@ -406,10 +414,7 @@ def process_group_display_name(*, tenant_id: str, group_id: str) -> str:
     if not group_id:
         return ""
     meta = _tenant_json(tenant_id, group_id, "process_group.json", **_GROUP_PATH_ERROR)
-    display = meta.get("display_name")
-    if isinstance(display, str) and display.strip():
-        return display.strip()
-    return group_id.rstrip("/").split("/")[-1]
+    return _display_name_from_meta(meta, group_id)
 
 
 def _tenant_ids_for_fanout(tenant_id: str | None) -> list[str]:
@@ -439,26 +444,40 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
     ``tenant_id`` None fans out over every tenant; each row carries its own
     ``tenant_id`` so identical model identifiers in different tenants stay
     distinguishable (they collide by design -- the identifier is a path).
+
+    Reads each model's process_model.json and each group's process_group.json
+    once, and parses BPMN only for published models: only those can start, so
+    only their process ids are listed (M8F-703).
     """
     rows: list[dict[str, Any]] = []
     for tenant in _tenant_ids_for_fanout(tenant_id):
+        group_names: dict[str, str] = {}
         for model_id in list_models(group, tenant_id=tenant):
             group_id = process_group_id_for_model(model_id)
-            status = process_model_status(tenant_id=tenant, process_model_identifier=model_id)
+            if group_id not in group_names:
+                group_names[group_id] = process_group_display_name(tenant_id=tenant, group_id=group_id)
+            # Same rules as process_model_status / process_model_display_name, with
+            # the versioned state or the legacy process_model.json read once.
+            state = versioned.read_state(tenant, model_id)
+            if state is not None:
+                status = PROCESS_MODEL_STATUS_DRAFT if state.deleted else state.status
+                display_name = state.display_name
+            else:
+                meta = _tenant_json(tenant, model_id, "process_model.json", **_MODEL_PATH_ERROR)
+                status = _status_from_meta(meta)
+                display_name = _display_name_from_meta(meta, model_id)
             rows.append(
                 {
                     "id": model_id,
                     "tenant_id": tenant,
-                    "bpmn_processes": _bpmn_processes_for_model(
-                        tenant_id=tenant, process_model_identifier=model_id
+                    "bpmn_processes": (
+                        _bpmn_processes_for_model(tenant_id=tenant, process_model_identifier=model_id)
+                        if status == PROCESS_MODEL_STATUS_PUBLISHED
+                        else []
                     ),
-                    "display_name": process_model_display_name(
-                        tenant_id=tenant, process_model_identifier=model_id
-                    ),
+                    "display_name": display_name,
                     "group_id": group_id,
-                    "group_display_name": process_group_display_name(
-                        tenant_id=tenant, group_id=group_id
-                    ),
+                    "group_display_name": group_names[group_id],
                     "status": status,
                     **versioned.version_fields(tenant, model_id, status),
                 }

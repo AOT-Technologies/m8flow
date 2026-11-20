@@ -97,6 +97,7 @@
     "descriptionPlaceholder": "Mihin tätä profiilia käytetään, esim. mihin ympäristöön se on tarkoitettu.",
     "valueSaved": "Arvo on tallennettu. Säilytä se jättämällä kenttä tyhjäksi.",
     "offDefault": "Pois (oletus)",
+    "onDefault": "Päällä (oletus)",
     "on": "Päällä",
     "off": "Pois",
     "stripeLive": "Live-tilan avain. Tällä profiililla tehdyt maksut ovat todellisia.",

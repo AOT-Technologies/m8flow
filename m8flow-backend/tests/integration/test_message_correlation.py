@@ -55,7 +55,7 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
         command.upgrade(cfg, "head")
         with engine.connect() as connection:
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
-                "m8f_694_merge_nats_permissions"
+                "m8f_694_merge_run_stats"
             )
             assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "retained-tenant"
             assert {"message_subscription", "message_delivery_receipt", "m8flow_process_model_release"} <= set(

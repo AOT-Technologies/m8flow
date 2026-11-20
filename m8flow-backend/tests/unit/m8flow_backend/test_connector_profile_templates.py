@@ -17,6 +17,7 @@ from m8flow_backend.connectors.templates import (
     secret_field_names,
     template_for,
 )
+from m8flow_backend.connectors.m8flow_templates import _secret
 
 _UPPERCASE_WORDS = {"URL", "ID", "API", "STARTTLS"}
 
@@ -106,6 +107,24 @@ def test_only_allowlisted_fields_are_prefilled() -> None:
         ("salesforce", "instance_url"),
         ("salesforce", "client_id"),
     }
+
+
+def test_smtp_starttls_defaults_on_for_new_profiles_only() -> None:
+    """The create form starts on ``default``; no other field sets one."""
+    defaults = {
+        (template["id"], field["id"]): field["default"]
+        for template in all_templates()
+        for field in template.get("profileFields", [])
+        if "default" in field
+    }
+    assert defaults == {("smtp", "smtp_starttls"): "true"}
+
+
+@pytest.mark.parametrize("default", ["True", "1", "on", ""])
+def test_boolean_default_outside_true_false_is_rejected(default: str) -> None:
+    """The form's select has no option for any other value."""
+    with pytest.raises(ValueError, match="boolean default"):
+        _secret("flag", "Flag", field_type="boolean", default=default)
 
 
 def test_http_basic_auth_username_is_plain_config_and_password_is_secret() -> None:

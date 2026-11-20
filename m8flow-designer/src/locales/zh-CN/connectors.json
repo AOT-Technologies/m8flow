@@ -97,6 +97,7 @@
     "descriptionPlaceholder": "此配置文件的用途，例如面向哪个环境。",
     "valueSaved": "已保存一个值。留空即可保留。",
     "offDefault": "关（默认）",
+    "onDefault": "开（默认）",
     "on": "开",
     "off": "关",
     "stripeLive": "正式模式密钥。使用此配置文件的付款是真实付款。",

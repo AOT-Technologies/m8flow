@@ -19,6 +19,8 @@ KNOWN_DIFFERENCES = {
     ("remove_index", "permission_target", ("resource_type", "resource_id", "<expr>")),
     # The host enforces one task completion event per tenant, instance, and task GUID.
     ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
+    # Host M8F-703 migration indexes the tenant-scoped process run statistics.
+    ("remove_index", "process_instance", ("m8f_tenant_id", "process_model_identifier", "started_at")),
     # Host and core name the same unique process GUID constraint differently.
     ("remove_constraint", "bpmn_process", ("guid",)),
     ("add_constraint", "bpmn_process", ("guid",)),
