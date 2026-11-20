@@ -34,25 +34,23 @@ type TabValue = 'streams' | 'tenants' | 'events';
  * NATS monitor (System → NATS). Renders the backend's `/m8flow/nats/*` monitoring API
  * in the app's own design system instead of iframing a separate NATS admin UI.
  *
- * What a user sees follows the backend permission check, never a role name:
- * broker-wide state (stat card, Streams & consumers, Tenants) is super-admin only, since
- * JetStream reports it per account rather than per tenant; Event history is also open
- * to tenant-admins, scoped by the backend to their own tenant. Tab and
- * event filters live in the URL so "View events" from Tenants and reloads keep their place.
+ * What a user sees follows the backend permission check, never a role name: the whole
+ * page, event history included, needs the `/m8flow/nats/*` read grant, which only
+ * super-admin holds (M8F-700), since JetStream reports state per account rather than per
+ * tenant. Tab and event filters live in the URL so "View events" from Tenants and reloads
+ * keep their place.
  */
 export default function NatsMonitorPage() {
   const { t } = useTranslation();
-  const { canReadNatsMonitoring, canReadNatsEvents } = useCapabilities();
+  const { canReadNatsMonitoring } = useCapabilities();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tabs: { value: TabValue; label: string }[] = [
-    ...(canReadNatsMonitoring
-      ? [
-          { value: 'streams' as const, label: t('nats.tabs.streams') },
-          { value: 'tenants' as const, label: t('nats.tabs.tenants') },
-        ]
-      : []),
-    ...(canReadNatsEvents ? [{ value: 'events' as const, label: t('nats.tabs.events') }] : []),
-  ];
+  const tabs: { value: TabValue; label: string }[] = canReadNatsMonitoring
+    ? [
+        { value: 'streams', label: t('nats.tabs.streams') },
+        { value: 'tenants', label: t('nats.tabs.tenants') },
+        { value: 'events', label: t('nats.tabs.events') },
+      ]
+    : [];
   const tabParam = searchParams.get('tab');
   const tab = tabs.find((item) => item.value === tabParam)?.value ?? tabs[0]?.value;
 
@@ -135,7 +133,7 @@ export default function NatsMonitorPage() {
           <div className="flex flex-wrap items-center gap-3">
             {canReadNatsMonitoring && (streams || error) && (
               <Pill size="lg" tone={streams ? 'success' : 'error'}>
-                {streams ? t('nats.monitor.connected') : t('nats.monitor.disconnected')}
+                {streams ? t('nats.monitor.active') : t('nats.monitor.inactive')}
               </Pill>
             )}
             <label className="flex items-center gap-2 text-[13.5px] text-foreground">
@@ -212,7 +210,7 @@ export default function NatsMonitorPage() {
             <NatsTenantsTab refreshKey={refreshKey} onViewEvents={viewTenantEvents} />
           </TabsContent>
           <TabsContent value="events">
-            <NatsEventsTab refreshKey={refreshKey} allowCrossTenant={canReadNatsMonitoring} />
+            <NatsEventsTab refreshKey={refreshKey} />
           </TabsContent>
         </Tabs>
       </div>

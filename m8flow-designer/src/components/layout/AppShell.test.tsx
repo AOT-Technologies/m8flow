@@ -74,6 +74,7 @@ async function renderShell(initialPath = '/') {
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
           { path: 'api-keys', element: <div>restricted-outlet</div> },
+          { path: 'system/nats', element: <div>restricted-outlet</div> },
           { path: 'tenant-management', element: <div>tenant-management-outlet</div> },
           { path: 'configuration/secrets', element: <div>configuration-outlet</div> },
           {
@@ -275,6 +276,27 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({ '/m8flow/celery/overview': { GET: false } });
     await renderShell();
     expect(screen.queryByText('System')).not.toBeInTheDocument();
+  });
+
+  it('shows System → NATS only when the backend grants NATS monitoring (M8F-700)', async () => {
+    // Tenant-admin: the backend denies NATS monitoring.
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/nats/streams': { GET: false },
+    });
+    const { unmount } = await renderShell('/system/nats');
+    expect(screen.queryByText('System')).not.toBeInTheDocument();
+    // A direct visit is bounced home.
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    unmount();
+
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/nats/streams': { GET: true },
+    });
+    await renderShell('/system/nats');
+    expect(await screen.findByRole('link', { name: 'NATS' })).toHaveAttribute('href', '/system/nats');
+    expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
   });
   afterEach(() => {
     vi.clearAllMocks();

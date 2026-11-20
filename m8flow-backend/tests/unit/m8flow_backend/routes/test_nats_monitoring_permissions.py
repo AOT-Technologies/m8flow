@@ -1,9 +1,8 @@
 """NATS monitoring access, end to end. READ ONLY throughout.
 
 Locks in:
-- broker-wide routes (overview, streams, tenants, stream messages) are super-admin only;
-- event history (list, summary, one event) is also open to tenant-admin, who the
-  controller pins to their own tenant; editor/reviewer stay out of every route;
+- every route, event history included, is super-admin only (M8F-700); tenant-admin,
+  editor and reviewer stay out of every route;
 - the wildcard does not reach ``/m8flow/nats-tokens``, whose tenant-admin grants are unchanged.
 """
 
@@ -14,14 +13,12 @@ from pathlib import Path
 
 import pytest
 import yaml
-from sqlalchemy import select
 
 from m8flow_backend import identity
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.authorization import allow_uri
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
-from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
 
 _SRC = Path(__file__).resolve().parents[4] / "src" / "m8flow_backend"
 _SERVICE = "https://example.test/realms/m8flow"
@@ -39,24 +36,16 @@ def _nats_routes() -> list[str]:
 
 
 NATS_ROUTES = _nats_routes()
-EVENT_ROUTES = [path for path in NATS_ROUTES if path.startswith("/v1.0/m8flow/nats/events")]
-BROKER_ROUTES = [path for path in NATS_ROUTES if path not in EVENT_ROUTES]
 
 
 def test_all_seven_monitoring_routes_are_declared():
     assert len(NATS_ROUTES) == 7
 
 
-def test_nats_grants_split_broker_state_from_tenant_scoped_event_history():
+def test_nats_monitoring_is_one_super_admin_grant():
     grants = {name: p for name, p in _permissions().items() if str(p.get("uri", "")).startswith("/m8flow/nats/")}
     assert grants == {
         "read-nats-monitoring": {"groups": ["super-admin"], "actions": ["read"], "uri": "/m8flow/nats/*"},
-        "read-nats-events": {"groups": ["tenant-admin", "super-admin"], "actions": ["read"], "uri": "/m8flow/nats/events"},
-        "read-nats-events-by-id": {
-            "groups": ["tenant-admin", "super-admin"],
-            "actions": ["read"],
-            "uri": "/m8flow/nats/events/*",
-        },
     }
 
 def test_nats_token_grants_are_unchanged():
@@ -91,43 +80,14 @@ def test_unauthenticated_is_401(client, path):
     assert client.get(path).status_code == 401
 
 
-@pytest.mark.parametrize("role", ["editor", "reviewer"])
-def test_other_tenant_roles_are_forbidden_on_every_route(client, db_session, role):
+@pytest.mark.parametrize("role", ["tenant-admin", "editor", "reviewer"])
+def test_tenant_roles_are_forbidden_on_every_route(client, db_session, role):
     user = _provision(db_session, username=f"u-{role}", groups=[f"t1:{role}"])
     headers = _headers(client, user)
     for path in NATS_ROUTES:
         response = client.get(path, headers=headers)
         assert response.status_code == 403, (role, path, response.get_json())
         assert response.get_json()["error_code"] == "permission_denied", (role, path)
-
-
-def test_tenant_admin_is_forbidden_on_broker_routes(client, db_session):
-    user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
-    headers = _headers(client, user)
-    for path in BROKER_ROUTES:
-        response = client.get(path, headers=headers)
-        assert response.status_code == 403, (path, response.get_json())
-
-
-def test_tenant_admin_reads_only_their_own_event_history(client, db_session):
-    from m8flow_backend.services.nats_event_audit_service import NatsEventAuditService
-
-    user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
-    ensure_tenant(db_session, tenant_id="t2", slug="t2")
-    db_session.commit()
-    NatsEventAuditService.record_outcome(tenant_id="t1", event_id="mine", outcome="instantiated")
-    NatsEventAuditService.record_outcome(tenant_id="t2", event_id="theirs", outcome="instantiated")
-    headers = _headers(client, user)
-
-    # allTenants / tenantId are super-admin options; a tenant-admin stays pinned to t1.
-    for query in ("", "?allTenants=true", "?tenantId=t2"):
-        response = client.get(f"/v1.0/m8flow/nats/events{query}", headers=headers)
-        assert response.status_code == 200, (query, response.get_json())
-        assert [e["eventId"] for e in response.get_json()["results"]] == ["mine"], query
-    assert client.get("/v1.0/m8flow/nats/events/summary", headers=headers).get_json()["total"] == 1
-    ids = {row.event_id: row.id for row in db_session.scalars(select(NatsEventAuditModel))}
-    assert client.get(f"/v1.0/m8flow/nats/events/{ids['mine']}", headers=headers).status_code == 200
-    assert client.get(f"/v1.0/m8flow/nats/events/{ids['theirs']}", headers=headers).status_code == 404
 
 
 def test_super_admin_passes_the_gate_on_every_route(client, db_session):
@@ -160,8 +120,8 @@ def test_wildcard_does_not_reach_nats_tokens(db_session):
 
 
 def test_permissions_check_matches_what_the_routes_enforce(client, db_session):
-    """The designer shows NATS tabs from POST /permissions-check. It must not report
-    broker access via the tenant-admin group fallback that the routes turn off."""
+    """The designer shows the NATS page from POST /permissions-check. It must not report
+    access via the tenant-admin group fallback that the routes turn off."""
     user = _provision(db_session, username="tadmin", groups=["t1:tenant-admin"])
     response = client.post(
         "/v1.0/permissions-check",
@@ -172,7 +132,7 @@ def test_permissions_check_matches_what_the_routes_enforce(client, db_session):
     assert response.status_code == 200
     results = response.get_json()["results"]
     assert results["/m8flow/nats/streams"]["GET"] is False
-    assert results["/m8flow/nats/events"]["GET"] is True
+    assert results["/m8flow/nats/events"]["GET"] is False
 
 
 
@@ -190,19 +150,16 @@ def _switch_to(client, db_session, user, tenant_id: str):
     return _headers(client, user, tenant_id=tenant_id)
 
 
-def test_multi_org_user_is_held_to_the_active_tenants_role(client, db_session):
+@pytest.mark.parametrize("tenant_id", ["t1", "t2"])
+def test_multi_org_user_is_denied_nats_in_either_tenant(client, db_session, tenant_id):
     user = _multi_org_user(db_session)
-    check = {"requests_to_check": {"/m8flow/nats/events": ["GET"]}}
+    headers = _switch_to(client, db_session, user, tenant_id)
+    check = {"requests_to_check": {"/m8flow/nats/streams": ["GET"], "/m8flow/nats/events": ["GET"]}}
 
-    headers = _switch_to(client, db_session, user, "t2")
     assert client.get("/v1.0/m8flow/nats/events", headers=headers).status_code == 403
-    denied = client.post("/v1.0/permissions-check", json=check, headers=headers).get_json()
-    assert denied["results"]["/m8flow/nats/events"]["GET"] is False
-
-    headers = _switch_to(client, db_session, user, "t1")
-    assert client.get("/v1.0/m8flow/nats/events", headers=headers).status_code == 200
-    allowed = client.post("/v1.0/permissions-check", json=check, headers=headers).get_json()
-    assert allowed["results"]["/m8flow/nats/events"]["GET"] is True
+    results = client.post("/v1.0/permissions-check", json=check, headers=headers).get_json()["results"]
+    assert results["/m8flow/nats/streams"]["GET"] is False
+    assert results["/m8flow/nats/events"]["GET"] is False
 
 
 @pytest.mark.parametrize("tenant_id", ["t1", "t2"])

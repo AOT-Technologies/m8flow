@@ -419,8 +419,8 @@ class NatsMonitoringService:
 #   longer carry it (M8F-574), but messages published before that are still retained.
 #   It must not follow a letter, so business keys such as user_preference_id stay visible.
 # It governs only what this endpoint shows: the broker keeps the raw message, which is
-# why inspection is off by default. Tenant-admins can read their own events' payloads
-# (read-nats-events-by-id), so this redaction is what keeps credentials from them.
+# why inspection is off by default. Only super-admins can read payloads (M8F-700), but
+# this redaction still keeps credentials off their screen.
 # Every pattern below is linear in the text: a key may only start a match where a token
 # starts, and key and scheme lengths are bounded. An unbounded `[\w.-]*` before the
 # credential name made a long run of word characters (a base64 blob) quadratic.
