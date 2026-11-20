@@ -8,7 +8,15 @@
     "completedToday": "Valmistuneet tänään",
     "avgCompletionTime": "Keskim. valmistumisaika",
     "minutesUnit": "min",
-    "totalTenants": "Vuokraajia yhteensä"
+    "totalTenants": "Vuokraajia yhteensä",
+    "descriptions": {
+      "activeProcessInstances": "Käynnissä, odottaa tai odottaa syötettä",
+      "errorsNeedingReview": "Virheen pysäyttämät instanssit",
+      "completedToday": "Keskiyön (UTC) jälkeen valmistuneet instanssit",
+      "tasksWaitingOnMe": "Sinulle osoitetut avoimet tehtävät",
+      "avgCompletionTime": "Valmistuneiden instanssien keskimääräinen kesto",
+      "totalTenants": "Vuokralaiset koko alustalla"
+    }
   },
   "myTasks": {
     "title": "Omat tehtävät",

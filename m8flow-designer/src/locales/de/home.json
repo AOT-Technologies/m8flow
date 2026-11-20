@@ -8,7 +8,15 @@
     "completedToday": "Heute abgeschlossen",
     "avgCompletionTime": "Durchschn. Bearbeitungsdauer",
     "minutesUnit": "Min.",
-    "totalTenants": "Mandanten gesamt"
+    "totalTenants": "Mandanten gesamt",
+    "descriptions": {
+      "activeProcessInstances": "Laufend, wartend oder auf Eingabe wartend",
+      "errorsNeedingReview": "Durch einen Fehler angehaltene Instanzen",
+      "completedToday": "Seit Mitternacht (UTC) abgeschlossene Instanzen",
+      "tasksWaitingOnMe": "Ihnen zugewiesene offene Aufgaben",
+      "avgCompletionTime": "Durchschnittliche Laufzeit abgeschlossener Instanzen",
+      "totalTenants": "Mandanten auf der gesamten Plattform"
+    }
   },
   "myTasks": {
     "title": "Meine Aufgaben",

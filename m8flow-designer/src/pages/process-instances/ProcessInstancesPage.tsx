@@ -42,12 +42,29 @@ export default function ProcessInstancesPage() {
   // cross-tenant list instead of a "choose a tenant" gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  // status / completed live in the URL so Home stat cards can deep-link a filtered list (M8F-711).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status = searchParams.get('status') ?? '';
+  const completedToday = searchParams.get('completed') === 'today';
+  const setFilterParams = (updates: Record<string, string>) =>
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [key, value] of Object.entries(updates)) {
+          if (value) next.set(key, value);
+          else next.delete(key);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  // "Completed today" only narrows completed instances; any other status would always be empty.
+  const onStatusChange = (value: string) =>
+    setFilterParams(value === 'complete' ? { status: value } : { status: value, completed: '' });
 
   const initialSearch = searchParams.get('search') ?? '';
   const [searchInput, setSearchInput] = useState(initialSearch);
   const [search, setSearch] = useState(initialSearch);
-  const [status, setStatus] = useState('');
   const [startedBy, setStartedBy] = useState('');
   const [scope, setScope] = useState<ProcessInstanceScope | ''>('');
   const [sort, setSort] = useState<ProcessInstanceSort>('newest');
@@ -72,7 +89,7 @@ export default function ProcessInstancesPage() {
   // number would otherwise show an empty result set until the user paged back.
   useEffect(() => {
     setPage(1);
-  }, [status, startedBy, scope, sort, perPage]);
+  }, [status, completedToday, startedBy, scope, sort, perPage]);
 
   useEffect(() => {
 
@@ -82,6 +99,7 @@ export default function ProcessInstancesPage() {
 
     fetchProcessInstances({
       status: status || undefined,
+      completed: completedToday ? 'today' : undefined,
       search: search || undefined,
       startedBy: startedBy || undefined,
       scope: scope || undefined,
@@ -112,7 +130,7 @@ export default function ProcessInstancesPage() {
     return () => {
       cancelled = true;
     };
-  }, [scopedTenantId, search, status, startedBy, scope, sort, page, perPage]);
+  }, [scopedTenantId, search, status, completedToday, startedBy, scope, sort, page, perPage]);
 
   // Owner dropdown options — reloaded only when the tenant scope changes, not
   // on every filter/page change (the option set is tenant-wide, independent of
@@ -140,7 +158,9 @@ export default function ProcessInstancesPage() {
         search={searchInput}
         onSearchChange={setSearchInput}
         status={status}
-        onStatusChange={setStatus}
+        onStatusChange={onStatusChange}
+        completedToday={completedToday}
+        onClearCompletedToday={() => setFilterParams({ completed: '' })}
         owners={owners}
         startedBy={startedBy}
         onStartedByChange={setStartedBy}
