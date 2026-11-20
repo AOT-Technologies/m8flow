@@ -1036,6 +1036,24 @@ def test_versioned_dmn_only_publish_keeps_previous_definition(db_session, tmp_pa
     assert first.bpmn_process_definition.source_dmn_xml == first_dmn
 
 
+@pytest.mark.parametrize("key", sorted(
+    path.parent.name for path in (
+        Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates"
+    ).glob("*/paths.json")
+))
+def test_seed_models_publish_with_released_core(db_session, tmp_path, monkeypatch, key):
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    folder = Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates" / key
+    files = {path.name: path.read_bytes() for path in folder.iterdir() if path.name != "paths.json"}
+    model = versioned.create(db_session, tenant.id, f"e2e-seed-catalog/{key}", name=key, files=files)
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    assert model.latest_version == 1
+    assert model.status == "published"
+
+
 def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monkeypatch):
     from datetime import UTC, timedelta
 
@@ -1075,6 +1093,11 @@ def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monke
     scheduled, = jobs()
     db_session.commit()
     due = scheduled.run_at.replace(tzinfo=UTC) + timedelta(seconds=1)
+    assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
+    # The released core durably schedules the occurrence before executing it.
+    assert db_session.query(SchedulerJobModel).filter_by(
+        m8f_tenant_id=tenant.id, job_type="timer_start_occurrence",
+    ).count() == 1
     assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
     instance = db_session.query(ProcessInstanceModel).filter_by(
         m8f_tenant_id=tenant.id, process_model_identifier=model.model_id,
@@ -1780,6 +1803,10 @@ def test_delete_instance_uses_database_journal_foreign_keys(db_session, tmp_path
             sa.Column("process_instance_id", sa.ForeignKey("process_instance.id"), nullable=False),
             *extra_columns,
         )
+    # New core releases also create these tables through ORM metadata. Replace
+    # those empty tables with the migration-only FK layouts this test exercises.
+    for name in ("compensation_record", "compensation_run", "compensation_scope"):
+        connection.exec_driver_sql(f"DROP TABLE IF EXISTS {name}")
     for journal in journals.values():
         journal.create(connection)
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import sqlalchemy as sa
 from alembic import op
 
@@ -23,6 +25,66 @@ PARENT_INDEXES = {
     "process_instance": "m8f_process_instance_tenant_id_key",
     "bpmn_process_definition": "m8f_definition_tenant_id_key",
 }
+OWNERSHIP = sa.table(
+    "m8flow_m8f_694_message_ownership",
+    sa.column("table_name", sa.String(63)),
+    sa.column("creation_marker", sa.String(63)),
+)
+
+
+def _create_owned_tables(bind: sa.Connection, metadata: sa.MetaData) -> None:
+    if not sa.inspect(bind).has_table(OWNERSHIP.name):
+        # Start SQLite's write transaction before DDL so provenance is atomic.
+        bind.execute(VERSION.update().where(sa.false()).values(version_num=BASELINE))
+        op.create_table(
+            OWNERSHIP.name,
+            sa.Column("table_name", sa.String(63), primary_key=True),
+            sa.Column("creation_marker", sa.String(63), nullable=False),
+        )
+        bind.execute(OWNERSHIP.insert().values(table_name=OWNERSHIP.name, creation_marker=revision))
+
+    # Work on copies: ownership checks must not change the installed core ORM.
+    copies = sa.MetaData()
+    for table in metadata.tables.values():
+        table.to_metadata(copies)
+    for name in TABLES:
+        if not sa.inspect(bind).has_table(name):
+            marker = f"ck_m8f_694_{uuid4().hex}"
+            bind.execute(OWNERSHIP.delete().where(OWNERSHIP.c.table_name == name))
+            table = copies.tables[name]
+            table.append_constraint(sa.CheckConstraint("m8f_tenant_id IS NOT NULL", name=marker))
+            table.create(bind)
+            bind.execute(OWNERSHIP.insert().values(table_name=name, creation_marker=marker))
+        _enable_rls(name)
+
+
+def _drop_owned_tables(bind: sa.Connection) -> None:
+    inspector = sa.inspect(bind)
+    if not inspector.has_table(OWNERSHIP.name):
+        return  # Older installations have no provenance; keep their shared tables.
+    markers = dict(bind.execute(sa.select(OWNERSHIP)).tuples().all())
+    owned = {
+        name for name in TABLES
+        if markers.get(name) and inspector.has_table(name)
+        and any(check["name"] == markers[name] for check in inspector.get_check_constraints(name))
+    }
+    # An adopted table (or another runtime table) can reference a table created
+    # here. Retain all such dependencies rather than cascade or break its FKs.
+    references = {
+        name: {
+            key["referred_table"] for key in inspector.get_foreign_keys(name)
+            if key.get("referred_schema") in (None, inspector.default_schema_name)
+        }
+        for name in inspector.get_table_names()
+    }
+    while protected := set().union(*(targets for name, targets in references.items() if name not in owned)) & owned:
+        owned -= protected
+    for name in reversed(TABLES):
+        if name in owned:
+            op.drop_table(name)
+            bind.execute(OWNERSHIP.delete().where(OWNERSHIP.c.table_name == name))
+    if markers.get(OWNERSHIP.name) == revision:
+        op.drop_table(OWNERSHIP.name)
 
 
 def _enable_rls(table: str) -> None:
@@ -82,16 +144,13 @@ def upgrade() -> None:
         if not any(index["name"] == name for index in inspector.get_indexes(table)):
             op.create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
     _upgrade_journal_instance_keys()
-    # Some deployments already have the signal or message schema from core.
-    for name in TABLES:
-        Base.metadata.tables[name].create(bind, checkfirst=True)
-        _enable_rls(name)
+    # Adopt core-installed tables without claiming ownership of them.
+    _create_owned_tables(bind, Base.metadata)
     bind.execute(VERSION.update().where(VERSION.c.version_num == BASELINE).values(version_num=CORE_HEAD))
 
 
 def downgrade() -> None:
-    for name in reversed(TABLES):
-        op.drop_table(name)
+    _drop_owned_tables(op.get_bind())
     inspector = sa.inspect(op.get_bind())
     for table in JOURNAL_TABLES:
         name = _journal_instance_key(table)

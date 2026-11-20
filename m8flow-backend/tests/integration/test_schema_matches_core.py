@@ -62,6 +62,12 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
     with admin_engine.connect() as conn:
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         diffs = compare_metadata(context, CoreBase.metadata)
+        ownership = sa.table(
+            "m8flow_m8f_694_message_ownership", sa.column("table_name"), sa.column("creation_marker"),
+        )
+        creation_markers = {
+            name: marker for name, marker in conn.execute(sa.select(ownership)) if name in core_tables
+        }
 
     # The host journal retains its legacy FK, tenant index, and ownership
     # check alongside core's tenant-qualified FK. The two index names describe
@@ -77,9 +83,16 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
             })
 
     found = set()
+    found_creation_markers = set()
     unexplained = []
     for diff in diffs:
         for item in diff if isinstance(diff, list) else [diff]:
+            if item[0] == "remove_constraint" and isinstance(item[1], sa.CheckConstraint):
+                check = item[1]
+                if check.name == creation_markers.get(check.table.name):
+                    assert str(check.sqltext).replace("(", "").replace(")", "").strip() == "m8f_tenant_id IS NOT NULL"
+                    found_creation_markers.add(check.table.name)
+                    continue
             signature = _signature(item)
             if signature is None:
                 unexplained.append(repr(item))
@@ -94,6 +107,7 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
     assert unexplained == [], "core ORM and migrated schema differ:\n" + "\n".join(unexplained)
     # A known difference that disappears means the allowlist entry is stale.
     assert found == known_differences
+    assert found_creation_markers == creation_markers.keys()
 
 
 def test_runtime_role_cannot_bypass_rls(migrated_database):
