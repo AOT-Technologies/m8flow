@@ -9,11 +9,33 @@ a Service Task as literals; sequence-flow conditions still fail loudly.
 from __future__ import annotations
 
 import ast
+import importlib
+import importlib.metadata
 import threading
 from typing import Any
 
 # Process-wide "done once" flag; an Event avoids rebinding a module global.
 _INSTALLED = threading.Event()
+
+
+def runtime_script_engine_class() -> Any:
+    """Core's private runtime script engine, wherever this core version keeps it.
+
+    m8flow-core 1.0 moved it from ``workflow_runtime`` to ``workflow_engine``.
+    ponytail: drop the 1.0.0b3 fallback once the pin moves past 1.0.0b3.
+    """
+    try:
+        module = importlib.import_module("m8flow_core.services.workflow_engine")
+    except ModuleNotFoundError:  # m8flow-core 1.0.0b3
+        module = importlib.import_module("m8flow_core.services.workflow_runtime")
+    engine = getattr(module, "_RuntimeServiceTaskScriptEngine", None)
+    if engine is None or not callable(getattr(engine, "evaluate", None)):
+        raise RuntimeError(
+            f"m8flow-core {importlib.metadata.version('m8flow-core')} has no "
+            f"{module.__name__}._RuntimeServiceTaskScriptEngine.evaluate, which the Service "
+            "Task literal fallback patches. Update service_task_params for this core version."
+        )
+    return engine
 
 
 def is_service_task(task: object) -> bool:
@@ -41,9 +63,8 @@ def install_service_task_literal_fallback() -> None:
     if _INSTALLED.is_set():
         return
 
-    from m8flow_core.services.workflow_runtime import _RuntimeServiceTaskScriptEngine
-
-    original = _RuntimeServiceTaskScriptEngine.evaluate
+    engine = runtime_script_engine_class()
+    original = engine.evaluate
 
     def evaluate(
         self: Any,
@@ -55,5 +76,5 @@ def install_service_task_literal_fallback() -> None:
             return expression
         return original(self, task, expression, external_context)
 
-    _RuntimeServiceTaskScriptEngine.evaluate = evaluate  # type: ignore[method-assign]
+    engine.evaluate = evaluate
     _INSTALLED.set()
