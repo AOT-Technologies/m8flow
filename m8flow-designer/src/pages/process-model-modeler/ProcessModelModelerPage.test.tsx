@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { forwardRef, useEffect, useImperativeHandle, useState, type Ref } from 'react';
+import { forwardRef, useImperativeHandle, useState, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,7 +44,12 @@ vi.mock('./components/DiagramCanvas', () => ({
     ref: Ref<DiagramCanvasHandle>,
   ) {
     const [draft, setDraft] = useState(xml);
-    useEffect(() => setDraft(xml), [xml]);
+    // Sync only when the prop changes: a mount effect could land after the test types and wipe the draft.
+    const [seenXml, setSeenXml] = useState(xml);
+    if (xml !== seenXml) {
+      setSeenXml(xml);
+      setDraft(xml);
+    }
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
     canvasStub.onLaunchCallActivityEditor = onLaunchCallActivityEditor;
     useImperativeHandle(ref, () => ({
