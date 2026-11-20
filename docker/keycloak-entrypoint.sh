@@ -46,9 +46,12 @@ if ! command -v jq >/dev/null 2>&1; then
   echo "[keycloak-entrypoint] ERROR: Required dependency 'jq' was not found in PATH; the client-secret helper cannot run." >&2
   exit 1
 fi
-# Container restarts retain /tmp. Clear stale readiness after prerequisite
-# validation and before starting Keycloak or running any bootstrap commands.
-rm -f /tmp/m8flow-keycloak-ready
+# Keep readiness private to the Keycloak user instead of using world-writable
+# /tmp. Clear stale readiness on restart before running bootstrap commands.
+M8FLOW_KEYCLOAK_READINESS_DIR="/opt/keycloak/.m8flow-readiness"
+mkdir -p "${M8FLOW_KEYCLOAK_READINESS_DIR}"
+chmod 700 "${M8FLOW_KEYCLOAK_READINESS_DIR}"
+rm -f "${M8FLOW_KEYCLOAK_READINESS_DIR}/ready"
 source "${CLIENT_SECRET_HELPER}"
 source /opt/keycloak/bin/keycloak-login-flow.sh
 BACKEND_PUBLIC_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"
@@ -1061,7 +1064,7 @@ else
       stop_keycloak_with_error "Final login-flow verification failed for ${realm}."
     fi
   done
-  touch /tmp/m8flow-keycloak-ready
+  (umask 077; touch "${M8FLOW_KEYCLOAK_READINESS_DIR}/ready")
   echo "[keycloak-entrypoint] Realm configuration complete."
 fi
 

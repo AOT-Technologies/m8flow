@@ -123,7 +123,7 @@ services:
     ports:
       - "${KEYCLOAK_MGMT_PORT:-6849}:9000"
     healthcheck:
-      test: ["CMD-SHELL", "test -f /tmp/m8flow-keycloak-ready && /opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "test -f /opt/keycloak/.m8flow-readiness/ready && /opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
       # start_period covers Keycloak's slow first boot (JVM cold start + realm import +
       # post-start realm configuration). Failing checks during this window do not count
       # toward retries, so dependents won't see "container is unhealthy" on a slow machine.

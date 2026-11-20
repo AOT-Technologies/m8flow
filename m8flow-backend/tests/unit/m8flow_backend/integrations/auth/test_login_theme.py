@@ -68,9 +68,9 @@ def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
     # left Keycloak on its injected identity-first execution.
     normalize = entrypoint.index('&& ensure_realm_single_page_login "${realm}"')
     seed = entrypoint.index('    ensure_default_organization ')
-    ready = entrypoint.index('touch /tmp/m8flow-keycloak-ready')
+    ready = entrypoint.index('touch "${M8FLOW_KEYCLOAK_READINESS_DIR}/ready"')
     assert normalize < seed < ready
-    reset_readiness = entrypoint.index('rm -f /tmp/m8flow-keycloak-ready')
+    reset_readiness = entrypoint.index('rm -f "${M8FLOW_KEYCLOAK_READINESS_DIR}/ready"')
     assert entrypoint.index('command -v jq') < reset_readiness < normalize
     assert 'if [ "${configured}" != true ]; then' in entrypoint
     assert entrypoint.count('-s loginTheme=m8flow') == 1
@@ -79,7 +79,7 @@ def test_login_is_configured_before_seeding_and_readiness_waits_for_bootstrap():
 
     compose = yaml.safe_load((REPO_ROOT / "docker" / "m8flow-docker-compose.yml").read_text())
     services = compose["services"]
-    assert "test -f /tmp/m8flow-keycloak-ready" in services["keycloak"]["healthcheck"]["test"][1]
+    assert "test -f /opt/keycloak/.m8flow-readiness/ready" in services["keycloak"]["healthcheck"]["test"][1]
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["condition"] == "service_healthy"
     assert services["keycloak-proxy"]["depends_on"]["keycloak"]["restart"] is True
     assert services["m8flow-backend"]["build"]["target"] == "dev"
@@ -115,8 +115,12 @@ def mock_keycloak_startup(tmp_path):
     flow_calls = tmp_path / "flow-calls"
     seed_calls = tmp_path / "seed-calls"
     retry_delays = tmp_path / "retry-delays"
-    ready_file = tmp_path / "ready"
+    ready_dir = tmp_path / ".m8flow-readiness"
+    ready_dir.mkdir()
+    ready_dir.chmod(0o777)
+    ready_file = ready_dir / "ready"
     ready_file.touch()
+    ready_file.chmod(0o666)
     scripts = {
         "kc.sh": '#!/usr/bin/env bash\n[ "$1" != bootstrap-admin ] || exit 0\n'
         'printf "%s\\n" "$$" > "$MOCK_KC_CHILD_PID"\n'
@@ -135,7 +139,7 @@ def mock_keycloak_startup(tmp_path):
         path.chmod(0o755)
         if name != "jq":
             entrypoint = entrypoint.replace(f"/opt/keycloak/bin/{name}", str(path))
-    entrypoint = entrypoint.replace("/tmp/m8flow-keycloak-ready", str(ready_file))
+    entrypoint = entrypoint.replace("/opt/keycloak/.m8flow-readiness", str(ready_dir))
     entrypoint = entrypoint.replace(
         "/opt/keycloak/data/import/m8flow-tenant-template.json", str(tmp_path / "missing-import.json")
     )
@@ -202,6 +206,7 @@ def test_failed_login_flow_clears_stale_readiness_and_stops_keycloak(mock_keyclo
     assert flow_calls.read_text().splitlines() == ["master"] * 3
     assert not seed_calls.exists()
     assert not ready_file.exists()
+    assert ready_file.parent.stat().st_mode & 0o777 == 0o700
     with pytest.raises(ProcessLookupError):
         os.kill(int(child_pid_file.read_text()), 0)
 
@@ -212,6 +217,7 @@ def test_required_seed_failure_prevents_readiness_and_stops_keycloak(mock_keyclo
     run, ready_file, child_pid_file, flow_calls, seed_calls, retry_delays = mock_keycloak_startup
     result = run(failed_seed=failed_seed, seed_failures=3)
     assert not ready_file.exists()
+    assert ready_file.parent.stat().st_mode & 0o777 == 0o700
     assert result.returncode == 1
     assert f"Required realm seeding step '{failed_seed}" in result.stderr
     assert "failed after 3 attempts" in result.stderr
@@ -225,8 +231,14 @@ def test_required_seed_failure_prevents_readiness_and_stops_keycloak(mock_keyclo
 
 @pytest.mark.skipif(os.name == "nt" or shutil.which("bash") is None, reason="requires POSIX Bash")
 @pytest.mark.parametrize("seed_failures", [0, 2])
-def test_successful_seeding_marks_ready_after_both_login_flows_are_verified(mock_keycloak_startup, seed_failures):
+@pytest.mark.parametrize("stale_readiness", [False, True])
+def test_successful_seeding_marks_ready_after_both_login_flows_are_verified(
+    mock_keycloak_startup, seed_failures, stale_readiness,
+):
     run, ready_file, _, flow_calls, seed_calls, retry_delays = mock_keycloak_startup
+    if not stale_readiness:
+        ready_file.unlink()
+        ready_file.parent.rmdir()
     failed_seed = "ensure_default_organization_seed_members"
     result = run(failed_seed=failed_seed, seed_failures=seed_failures)
     assert result.returncode == 0, result.stderr
@@ -240,6 +252,8 @@ def test_successful_seeding_marks_ready_after_both_login_flows_are_verified(mock
         assert not retry_delays.exists()
     assert flow_calls.read_text().splitlines() == ["master", "m8flow"] * 2
     assert ready_file.exists()
+    assert ready_file.parent.stat().st_mode & 0o777 == 0o700
+    assert ready_file.stat().st_mode & 0o777 == 0o600
 
 
 @pytest.mark.skipif(
