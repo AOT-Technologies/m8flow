@@ -786,11 +786,13 @@ def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attemp
     Each Error event row shows its own attempt's message, never another
     attempt's, and the banner follows the latest Error (M8F-675 review). The
     host's script paths record task_failed after the Error event and core's
-    service-task path before it; both belong to the same attempt."""
+    service-task path before it; both belong to the same attempt. The rows are
+    from before ``created_at`` existed, so they use the whole-second fallback."""
     from datetime import timedelta
 
     from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from sqlalchemy import update
 
     from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
 
@@ -829,6 +831,7 @@ def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attemp
             )
         )
         db_session.flush()
+        db_session.execute(update(ProcessInstanceErrorModel).values(created_at=None))
 
     event("process_instance_created", 0)
     error_row("g-first", "first failure", 10)
@@ -860,6 +863,82 @@ def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attemp
     else:
         assert message_by_event[third_error] is None
         assert detail["error_message"] is None
+
+
+def test_same_second_retry_on_the_same_task_keeps_each_attempts_failure(db_session):
+    """Error -> retry -> Error inside one second, failing the same task GUID
+    both times. Whole-second rows would put the second failure in both
+    attempts; the full ``created_at`` keeps each Error on its own message
+    (M8F-675 review)."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/retried-fast",
+        process_model_display_name="Retried fast",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    t0 = datetime(2026, 11, 18, 10, 0, 0, tzinfo=UTC)
+
+    def at(ms):
+        return t0 + timedelta(milliseconds=ms)
+
+    def event(event_type, ms, task_guid=None):
+        row = ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type=event_type,
+            occurred_at=at(ms),
+            task_guid=task_guid,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row.id
+
+    def error_row(message, ms):
+        db_session.add(
+            ProcessInstanceErrorModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                task_guid="g-same",
+                message=message,
+                created_at_in_seconds=int(at(ms).timestamp()),
+                created_at=at(ms),
+            )
+        )
+        db_session.flush()
+
+    event("process_instance_created", 100)
+    error_row("first failure", 200)
+    first_failed = event("task_failed", 200, "g-same")
+    first_error = event("process_instance_error", 200)
+    event("process_instance_retried", 500)
+    error_row("second failure", 800)
+    second_failed = event("task_failed", 800, "g-same")
+    second_error = event("process_instance_error", 800)
+
+    rows = workflow.list_instance_events_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )["results"]
+    message_by_event = {row["id"]: row["error_message"] for row in rows if row["id"] is not None}
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert message_by_event[first_failed] == "first failure"
+    assert message_by_event[first_error] == "first failure"
+    assert message_by_event[second_failed] == "second failure"
+    assert message_by_event[second_error] == "second failure"
+    assert detail["error_message"] == "second failure"
 
 
 def test_caught_service_task_error_row_is_not_shown_on_a_completed_instance(db_session):

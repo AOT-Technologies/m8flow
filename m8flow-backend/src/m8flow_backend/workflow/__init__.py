@@ -1626,6 +1626,7 @@ def _failure_messages(
             ProcessInstanceErrorModel.task_guid,
             ProcessInstanceErrorModel.message,
             ProcessInstanceErrorModel.created_at_in_seconds,
+            ProcessInstanceErrorModel.created_at,
         )
         .where(
             ProcessInstanceErrorModel.m8f_tenant_id == tenant_id,
@@ -1634,27 +1635,37 @@ def _failure_messages(
         .order_by(ProcessInstanceErrorModel.id)
     ).all()
 
+    def utc(value: datetime) -> datetime:
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)  # stored as UTC; SQLite drops the zone
+
     attempts: list[list[Any]] = [[]]
-    begins: list[float] = [-math.inf]
+    begins: list[datetime | None] = [None]
     for event in events:
         if event.event_type in _ATTEMPT_START_EVENTS and attempts[-1]:
             attempts.append([])
-            occurred_at = event.occurred_at
-            if occurred_at is not None and occurred_at.tzinfo is None:
-                occurred_at = occurred_at.replace(tzinfo=timezone.utc)  # stored as UTC; SQLite drops the zone
-            begins.append(occurred_at.timestamp() if occurred_at else -math.inf)
+            begins.append(utc(event.occurred_at) if event.occurred_at else None)
         attempts[-1].append(event)
+    begins.append(None)
+
+    def in_attempt_window(row: Any, begin: datetime | None, end: datetime | None) -> bool:
+        if row.created_at is not None:
+            # Half-open, so a row belongs to exactly one attempt even when a
+            # retry starts in the same second as the previous failure.
+            at = utc(row.created_at)
+            return (begin is None or begin <= at) and (end is None or at < end)
+        # Rows from before created_at existed carry whole seconds only.
+        # ponytail: such a row in a retry's own second shows on both attempts.
+        seconds = row.created_at_in_seconds
+        return (begin is None or math.floor(begin.timestamp()) <= seconds) and (
+            end is None or seconds <= math.floor(end.timestamp())
+        )
 
     messages: dict[int, str | None] = {}
     latest_error: str | None = None
     seen_error_event = False
     attempt_message: str | None = None
     for index, attempt in enumerate(attempts):
-        # Rows carry whole seconds. ponytail: two attempts in the same second
-        # that fail on the same task can't be told apart; the newer row wins.
-        begin = begins[index] if math.isinf(begins[index]) else math.floor(begins[index])
-        end = math.floor(begins[index + 1]) if index + 1 < len(begins) else math.inf
-        in_attempt = [row for row in rows if begin <= row.created_at_in_seconds <= end]
+        in_attempt = [row for row in rows if in_attempt_window(row, begins[index], begins[index + 1])]
 
         def newest(task_guid: str | None) -> str | None:
             return next((row.message for row in reversed(in_attempt) if row.task_guid == task_guid), None)
