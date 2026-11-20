@@ -481,6 +481,39 @@ describe('TemplatesPage', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/templates/import'))).toBe(true);
   });
 
+  // M8F-685: show the server's reason, never "POST /v1.0/... failed: 400".
+  it.each([
+    ['Zip must contain at least one .bpmn file', 'Zip must contain at least one .bpmn file'],
+    ['Invalid zip file: File is not a zip file', 'Invalid zip file: File is not a zip file'],
+    [null, 'Failed to import template'],
+  ])('shows the import refusal reason (%s)', async (serverMessage, shown) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/templates/import')) {
+          const body = serverMessage ? JSON.stringify({ error_code: 'invalid_content', message: serverMessage }) : 'oops';
+          return new Response(body, { status: 400 });
+        }
+        return {
+          ok: true,
+          json: async () => ({ results: [], pagination: { count: 0, total: 0, pages: 0 } }),
+        };
+      }),
+    );
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Import' }));
+    const dialog = await screen.findByRole('dialog');
+    const fileInput = within(dialog).getByLabelText('Zip file') as HTMLInputElement;
+    Object.defineProperty(fileInput, 'files', { value: [new File(['x'], 'bad.zip', { type: 'application/zip' })] });
+    fireEvent.change(fileInput);
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Bad Zip' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Import' }));
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(shown);
+    expect(within(dialog).getByRole('alert')).not.toHaveTextContent('failed: 400');
+  });
+
   it('auto-generates the Import template key from the name until the key is edited', async () => {
     vi.stubGlobal(
       'fetch',

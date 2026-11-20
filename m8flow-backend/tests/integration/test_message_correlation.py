@@ -11,6 +11,47 @@ pytestmark = pytest.mark.usefixtures("host_db")
 ROUTE = "/v1.0/m8flow/messages/correlate"
 
 
+@pytest.mark.parametrize("previous_revision", ["c81d2e3f4a56", "m8f_694_core_message_schema"])
+def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tmp_path, previous_revision):
+    from pathlib import Path
+    from uuid import uuid4
+
+    import sqlalchemy as sa
+    from alembic import command
+    from alembic.config import Config
+
+    schema = f"messages_upgrade_{uuid4().hex}"
+    with admin_engine.begin() as connection:
+        connection.execute(sa.schema.CreateSchema(schema))
+    engine = sa.create_engine(admin_engine.url.update_query_dict({"options": f"-c search_path={schema}"}))
+    monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", engine.url.render_as_string(hide_password=False))
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    try:
+        command.upgrade(cfg, previous_revision)
+        with engine.begin() as connection:
+            connection.execute(sa.text("UPDATE m8flow_tenant SET slug = 'retained-tenant' WHERE id = 'm8flow'"))
+        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")
+        with engine.connect() as connection:
+            assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
+                "m8f_694_merge_host_heads"
+            )
+            assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "retained-tenant"
+            assert {"message_subscription", "message_delivery_receipt", "m8flow_process_model_release"} <= set(
+                sa.inspect(connection).get_table_names()
+            )
+        command.downgrade(cfg, previous_revision)
+        command.upgrade(cfg, "head")
+        with engine.connect() as connection:
+            assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "retained-tenant"
+    finally:
+        engine.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(sa.schema.DropSchema(schema, cascade=True))
+
+
 def test_external_message_http_delivery_is_scoped_to_the_authorized_tenant():
     from m8flow_core.models import MessageDeliveryReceiptModel, ProcessInstanceModel
 
@@ -43,6 +84,7 @@ def test_external_message_http_delivery_is_scoped_to_the_authorized_tenant():
     admin_id, admin_token, ordinary_token = prepare(tenant)
     other_admin_id, other_admin_token, _ = prepare(other_tenant)
     one, two = start(tenant, admin_id, [18, 19])
+    start(tenant, admin_id, [19])  # Two waiting instances share the same correlation properties.
     [other] = start(other_tenant, other_admin_id, [18])
 
     body = {
@@ -58,6 +100,15 @@ def test_external_message_http_delivery_is_scoped_to_the_authorized_tenant():
         client.cookies.set(SELECTED_TENANT_COOKIE_NAME, tenant)
         assert client.post(ROUTE, headers=bearer(ordinary_token), json=body).status_code == 403
         assert client.post(ROUTE, headers=bearer(admin_token), json={**body, "payload": []}).status_code == 400
+        ambiguous = client.post(ROUTE, headers=bearer(admin_token), json={
+            **body, "deliveryId": "ambiguous", "payload": {"payment": {"caseNumber": 19, "region": "west"}},
+        })
+        assert ambiguous.status_code == 409, ambiguous.text
+        assert ambiguous.json()["error_code"] == "ambiguous_message_correlation"
+        absent = client.post(ROUTE, headers=bearer(admin_token), json={
+            **body, "deliveryId": "absent", "payload": {"payment": {"caseNumber": 999, "region": "west"}},
+        })
+        assert absent.status_code == 404, absent.text
         delivered = client.post(ROUTE, headers=bearer(admin_token), json=body)
         assert delivered.status_code == 200, delivered.text
         receipt = delivered.json()

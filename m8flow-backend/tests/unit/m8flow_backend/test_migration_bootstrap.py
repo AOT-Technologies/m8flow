@@ -24,6 +24,9 @@ import pytest
 import sqlalchemy as sa
 from alembic import command, op
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 
 import m8flow_backend.db as backend_db
 from m8flow_backend.db import alembic_target_metadata
@@ -38,8 +41,6 @@ def _script_head() -> str:
     """The chain's current head. Asserted against the stamp rather than a literal so
     adding an ordinary incremental revision on top of the squashed root does not read
     as the NoSuchTableError regression these tests exist to catch."""
-    from alembic.script import ScriptDirectory
-
     revisions = ScriptDirectory(str(_MIGRATIONS_DIR)).get_heads()
     assert len(revisions) == 1, f"migrations must have exactly one head, found {sorted(revisions)}"
     return revisions[0]
@@ -71,6 +72,13 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
 
     missing = _orm_table_names() - actual
     assert not missing, f"upgrade head left tables uncreated: {sorted(missing)}"
+    correlation_column = next(
+        column for column in inspector.get_columns("process_instance") if column["name"] == "collaboration_correlation_key"
+    )
+    assert correlation_column["nullable"] and correlation_column["type"].length == 255
+    assert "ix_process_instance_collaboration_lookup" in {
+        index["name"] for index in inspector.get_indexes("process_instance")
+    }
 
     # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:
@@ -89,6 +97,138 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
             sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")
         ).scalar()
     assert seeded == "m8flow"
+
+
+def test_process_model_version_upgrade_preserves_catalog_status_and_baseline(tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_backend.models.process_model_version import ProcessModelState
+
+    db_path = tmp_path / "catalog.db"
+    cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
+    root = tmp_path / "catalog"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(root))
+    command.upgrade(cfg, "fbcad9e02138")
+    for name, metadata in (
+        ("published", '{"status":"published"}'), ("paused", '{"status":"paused"}'),
+        ("draft", '{"status":"draft"}'), ("legacy", '{}'),
+    ):
+        folder = root / "m8flow" / "test" / name
+        folder.mkdir(parents=True)
+        (folder / f"{name}.bpmn").write_bytes(default_bpmn_xml(process_id=name).encode())
+        (folder / "form-schema.json").write_bytes(b'{"title":"Baseline"}')
+        (folder / "process_model.json").write_text(metadata, encoding="utf-8")
+
+    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(f"sqlite:///{db_path}")
+    with Session(engine) as session:
+        for name in ("published", "paused", "draft", "legacy"):
+            model = session.get(ProcessModelState, ("m8flow", f"test/{name}"))
+            assert model.status == ("published" if name == "legacy" else name)
+            entries = versions.model_releases(session, model)
+            if name == "draft":
+                assert entries == []
+                assert versions.draft_number(session, model) == 1
+            else:
+                entry, = entries
+                assert entry.version == 1
+                assert versions.read_file(entry.contents, "form-schema.json") == b'{"title":"Baseline"}'
+
+
+def test_process_model_version_upgrade_rolls_back_after_later_tenant_import_fails(tmp_path, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from m8flow_backend.catalog import default_bpmn_xml, versions
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.models.process_model_version import (
+        ProcessInstanceCalledReleases,
+        ProcessModelRelease,
+        ProcessModelState,
+    )
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
+
+    database_uri = f"sqlite:///{tmp_path / 'catalog-retry.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    root = tmp_path / "catalog"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(root))
+    previous_revision = "fbcad9e02138"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    version_tables = (
+        ProcessInstanceCalledReleases.__table__,
+        ProcessModelRelease.__table__,
+        ProcessModelState.__table__,
+    )
+    # The squashed root uses current ORM metadata. Recreate the schema an
+    # installation already at the previous revision had before this feature.
+    with engine.begin() as connection:
+        for table in version_tables:
+            table.drop(connection, checkfirst=True)
+
+    tenant_ids = ("m8flow", "second-tenant")
+    model_id = "test/timer"
+    now = datetime.now(UTC)
+    with Session(engine) as session, session.begin():
+        for tenant_id in tenant_ids:
+            ensure_tenant(session, tenant_id=tenant_id)
+            folder = root / tenant_id / model_id
+            folder.mkdir(parents=True)
+            (folder / "timer.bpmn").write_text(default_bpmn_xml(process_id="timer"), encoding="utf-8")
+            definition = BpmnProcessDefinitionModel(
+                m8f_tenant_id=tenant_id,
+                process_xml_digest="stale-definition",
+                bpmn_identifier=model_id,
+                properties_json={},
+            )
+            session.add(SchedulerJobModel(
+                m8f_tenant_id=tenant_id,
+                job_key="legacy-timer",
+                job_type="timer_start",
+                bpmn_process_definition=definition,
+                run_at=now,
+                updated_at=now,
+                created_at=now,
+            ))
+
+    import_legacy = versions.import_legacy
+
+    def fail_second_import(session, tenant_id, identifier):
+        model = import_legacy(session, tenant_id, identifier)
+        if tenant_id == "second-tenant":
+            remaining_jobs = session.scalars(sa.select(SchedulerJobModel.m8f_tenant_id)).all()
+            assert remaining_jobs == ["second-tenant"]
+            raise ValueError("injected legacy import failure")
+        return model
+
+    with monkeypatch.context() as patch:
+        patch.setattr(versions, "import_legacy", fail_second_import)
+        with pytest.raises(RuntimeError, match="tenant 'second-tenant' while importing model 'test/timer'") as exc:
+            command.upgrade(cfg, "head")
+    assert isinstance(exc.value.__cause__, ValueError)
+    assert str(exc.value.__cause__) == "injected legacy import failure"
+
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == previous_revision
+        assert {table.name for table in version_tables}.isdisjoint(sa.inspect(connection).get_table_names())
+        assert connection.scalars(
+            sa.select(SchedulerJobModel.m8f_tenant_id).order_by(SchedulerJobModel.m8f_tenant_id),
+        ).all() == list(tenant_ids)
+
+    command.upgrade(cfg, "head")
+    with Session(engine) as session:
+        assert session.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == _script_head()
+        assert session.scalars(sa.select(SchedulerJobModel)).all() == []
+        for tenant_id in tenant_ids:
+            model = session.get(ProcessModelState, (tenant_id, model_id))
+            assert model is not None
+            assert model.status == "published"
+            entry, = versions.model_releases(session, model)
+            assert entry.version == 1
+            assert entry.published_at is None
 
 
 def test_upgrade_from_legacy_connector_data_backfills_schema_and_guards_downgrade(
@@ -481,6 +621,42 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
     # that historical table shape, so it is the one expected survivor besides
     # Alembic's bookkeeping table.
     assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
+
+
+@pytest.mark.parametrize("missing", ["neither", "index", "both"])
+def test_collaboration_migration_downgrade_tolerates_missing_schema(missing):
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("e1f2a3b4c5d6").module
+    engine = sa.create_engine("sqlite://")
+    metadata = sa.MetaData()
+    table = sa.Table(
+        "process_instance",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("m8f_tenant_id", sa.String(255)),
+        sa.Column("bpmn_process_definition_id", sa.Integer),
+        sa.Column("bpmn_version_id", sa.String(255)),
+    )
+    column = "collaboration_correlation_key"
+    index = "ix_process_instance_collaboration_lookup"
+
+    with engine.begin() as connection, Operations.context(MigrationContext.configure(connection)) as operations:
+        # Define the pre-revision schema independently of the installed core wheel.
+        metadata.create_all(connection)
+        if missing != "both":
+            revision.upgrade()
+        if missing == "index":
+            operations.drop_index(index, table_name=table.name)
+
+        revision.downgrade()
+        inspector = sa.inspect(connection)
+        assert column not in {item["name"] for item in inspector.get_columns(table.name)}
+        assert index not in {item["name"] for item in inspector.get_indexes(table.name)}
+
+        revision.upgrade()
+        inspector = sa.inspect(connection)
+        assert column in {item["name"] for item in inspector.get_columns(table.name)}
+        lookup_index = next(item for item in inspector.get_indexes(table.name) if item["name"] == index)
+        assert lookup_index["column_names"] == ["m8f_tenant_id", "bpmn_process_definition_id", "bpmn_version_id", column]
 
 
 def test_alembic_root_downgrade_preserves_tables_added_by_newer_models(
@@ -984,6 +1160,57 @@ def test_upgrade_head_on_empty_postgres_applies_rls_and_seed(monkeypatch):
     not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
     reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
 )
+def test_process_model_version_downgrade_removes_postgres_rls_tables(monkeypatch, tmp_path):
+    from m8flow_backend.models.process_model_version import (
+        ProcessInstanceCalledReleases,
+        ProcessModelRelease,
+        ProcessModelState,
+    )
+
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    table_names = {
+        ProcessModelState.__tablename__,
+        ProcessModelRelease.__tablename__,
+        ProcessInstanceCalledReleases.__tablename__,
+    }
+    policies = sa.text(
+        "SELECT policyname FROM pg_policies WHERE schemaname = current_schema() AND tablename = :table_name"
+    )
+
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(database_uri)
+    with engine.connect() as connection:
+        for table_name in table_names:
+            assert {"tenant_scope", "tenant_read_all"} <= set(
+                connection.scalars(policies, {"table_name": table_name})
+            )
+            assert connection.scalar(sa.text(
+                "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class WHERE oid = to_regclass(:table_name)"
+            ), {"table_name": table_name}) is True
+
+    try:
+        previous_revision = "fbcad9e02138"
+        # Unmerge first, then drop versioning without rolling back main's branch.
+        command.downgrade(cfg, previous_revision)
+        command.downgrade(cfg, "e2f3a4b5c6d7@d1e2f3a4b5c6")
+        with engine.connect() as connection:
+            assert connection.scalars(sa.text("SELECT version_num FROM alembic_version_m8flow")).all() == [
+                previous_revision,
+            ]
+            assert table_names.isdisjoint(sa.inspect(connection).get_table_names())
+            for table_name in table_names:
+                assert connection.scalars(policies, {"table_name": table_name}).all() == []
+    finally:
+        command.upgrade(cfg, "head")
+        engine.dispose()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
+)
 def test_upgrade_from_previous_head_puts_rls_on_process_instance_error(monkeypatch):
     """A database stamped at f4254352d453 gets this table from b7e1c2d3f4a5,
     not from the root revision's create_all + RLS pass, so that revision must
@@ -1059,15 +1286,17 @@ def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
     engine.dispose()
 
 
-def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeypatch):
+@pytest.mark.parametrize("previous_revision", ["fbcad9e02138", "c81d2e3f4a56", "m8f_694_core_message_schema"])
+def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeypatch, previous_revision):
     database_uri = f"sqlite:///{tmp_path / 'pre-message.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
-    command.upgrade(cfg, "head")
-    command.downgrade(cfg, "fbcad9e02138")
+    command.upgrade(cfg, previous_revision)
     engine = sa.create_engine(database_uri)
-    assert "signal_publication" not in sa.inspect(engine).get_table_names()
     assert "compensation_record" in sa.inspect(engine).get_table_names()
-    assert "message_subscription" not in sa.inspect(engine).get_table_names()
+    if previous_revision != "m8f_694_core_message_schema":
+        assert "signal_publication" not in sa.inspect(engine).get_table_names()
+        assert "message_subscription" not in sa.inspect(engine).get_table_names()
+    command.upgrade(cfg, "head")
     command.upgrade(cfg, "head")
     assert {"signal_publication", "compensation_record", "message_subscription", "message_delivery_receipt"} <= set(
         sa.inspect(engine).get_table_names()

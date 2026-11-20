@@ -42,6 +42,22 @@ head`, and creates a login role without `SUPERUSER` or `BYPASSRLS`. The host
 connects as that role, so core's queries run under the same row-level security
 as production. The database and role are dropped when the worker finishes.
 
+### Test a local collaboration-capable core wheel
+
+The backend lock remains on the published core version until a release
+includes BPMN-08. To verify against a locally built wheel, add it to the
+Python import path for a test invocation. On PowerShell, from
+`m8flow-backend` with the backend virtual environment already synced:
+
+```powershell
+$env:PYTHONPATH = "C:\path\to\m8flow_core-1.0.0-py3-none-any.whl"
+.\.venv\Scripts\python.exe -m pytest tests/integration/test_collaboration.py tests/integration/test_schema_matches_core.py
+Remove-Item Env:PYTHONPATH
+```
+
+Run the host's Alembic migration before starting a backend or scheduler built
+with that core. The existing scheduler poller delivers collaboration messages.
+
 ## What is covered
 
 | File | Covers |
@@ -55,6 +71,8 @@ as production. The database and role are dropped when the worker finishes.
 | `test_vault_tenant_isolation.py` | Live Vault tenant-token isolation, concurrent first-use provisioning, and fresh-client reconciliation after restart |
 | `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it (M8F-665) |
 | `test_schema_matches_core.py` | The migrated schema matches core's ORM; the runtime role is subject to RLS |
+| `test_message_correlation.py` | HTTP delivery, replay, ambiguous or missing matches, tenant isolation, and upgrades from both previous host heads |
+| `test_collaboration.py` | Modeled collaboration messages and delivery across isolated tenants |
 
 `tests/unit/m8flow_backend/test_core_contract.py` is the fast companion: it
 checks the core imports, attributes, call signatures, and string protocols the

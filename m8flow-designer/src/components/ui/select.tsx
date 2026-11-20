@@ -22,7 +22,7 @@ const SelectTrigger = React.forwardRef<
     data-slot="select-trigger"
     className={cn(
       // Same box as ui/input.tsx so selects line up with text fields in forms.
-      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm whitespace-nowrap text-foreground outline-none hover:border-foreground/30 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[state=open]:border-ring [&>span]:line-clamp-1",
+      "flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-input bg-transparent px-2.5 text-sm whitespace-nowrap text-foreground outline-none hover:border-foreground/30 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[state=open]:border-ring [&>span]:min-w-0 [&>span]:truncate",
       className
     )}
     {...props}
@@ -54,7 +54,7 @@ const SelectContent = React.forwardRef<
         // @radix-ui/react-select's source), so the bare form was dead CSS.
         // Same panel as ui/dropdown-menu.tsx; height capped to what Radix
         // measures as available so it never runs off the viewport/modal.
-        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height))] min-w-[8rem] overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
+        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height))] max-w-[calc(100vw-1rem)] min-w-[8rem] overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         position === "popper" &&
           className
       )}
@@ -99,7 +99,10 @@ const SelectItem = React.forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
     <span className="flex min-w-0 flex-1 flex-col">
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {/* Truncate on a wrapper: Radix drops className/style passed to ItemText. */}
+      <span className="truncate">
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      </span>
       {description ? (
         <span className="text-xs font-normal text-muted-foreground">{description}</span>
       ) : null}

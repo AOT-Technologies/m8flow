@@ -10,7 +10,7 @@ A process model is a folder in the tenant's catalog. It holds one primary BPMN
 file plus optional DMN, form schema, and Markdown files. A process group is a
 folder of process models, and groups can nest.
 
-Each process model has a status, stored in its `process_model.json`:
+Each process model has a lifecycle status:
 
 | Status | Can start instances | Changes to |
 |---|---|---|
@@ -23,9 +23,19 @@ Each process model has a status, stored in its `process_model.json`:
        alt="Publish moves a draft model to published, which starts instances; Pause, Resume, and Unpublish move between published, paused, and draft.">
 </p>
 
-New models start in `draft`. Pausing is reversible and keeps the model's
-history. Models created before the status field existed read as `published`,
-so they keep working after an upgrade.
+New models start as **V1 Draft**. **Publish** makes V1 live. The first changed
+save after publication creates **V2 Draft**. Further saves update that draft
+while **Start Process** continues using V1. **Publish Changes** makes V2 live
+for new runs. Existing instances keep their published process and form files.
+
+**Version History** shows the current draft and past releases. **Restore to
+Draft** copies a previous release into the next draft for review. Use
+**Publish Changes** to make that draft live. **Discard Changes** resets the
+working copy to the last published release. **Resume** reactivates the last
+release and keeps any pending draft.
+
+Versions include model files and the primary BPMN selection. Display names
+and descriptions can be edited directly.
 
 When you save a BPMN file, the catalog checks it for constructs the engine
 doesn't support and rejects the save if it finds one. See
