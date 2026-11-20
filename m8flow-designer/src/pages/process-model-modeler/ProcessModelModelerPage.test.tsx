@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { forwardRef, useImperativeHandle, type Ref } from 'react';
+import { forwardRef, useLayoutEffect, useImperativeHandle, useState, type Ref } from 'react';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,10 +43,14 @@ vi.mock('./components/DiagramCanvas', () => ({
     },
     ref: Ref<DiagramCanvasHandle>,
   ) {
+    const [draft, setDraft] = useState(xml);
+    // Finish importing the XML before the test can edit the canvas. A passive
+    // effect can otherwise reset the draft after the first change under load.
+    useLayoutEffect(() => setDraft(xml), [xml]);
     canvasStub.onFetchConnectorProfiles = onFetchConnectorProfiles;
     canvasStub.onLaunchCallActivityEditor = onLaunchCallActivityEditor;
     useImperativeHandle(ref, () => ({
-      saveXML: async () => ({ xml, baseline: xml }),
+      saveXML: async () => ({ xml: draft, baseline: draft }),
       markSaved: () => {
         onDirtyChange?.(false);
         return false;
@@ -54,6 +58,10 @@ vi.mock('./components/DiagramCanvas', () => ({
     }));
     return (
       <div>
+        <textarea aria-label="Canvas draft" value={draft} onChange={(event) => {
+          setDraft(event.target.value);
+          onDirtyChange?.(true);
+        }} />
         <button type="button" onClick={() => onDirtyChange?.(true)}>
           Mark dirty
         </button>
@@ -224,6 +232,39 @@ const EDITOR_CONTEXT: SessionFixtureContext = {
 };
 
 describe('ProcessModelModelerPage file chrome', () => {
+  it('keeps the canvas and unsaved XML after a network save failure and allows deliberate retry', async () => {
+    const fetchMock = stubFetch();
+    const defaultFetch = fetchMock.getMockImplementation()!;
+    let saves = 0;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).includes('/files/') && init?.method === 'PUT') {
+        saves += 1;
+        if (saves === 1) throw new TypeError('Failed to fetch');
+        return jsonResponse({});
+      }
+      return defaultFetch(input, init);
+    });
+    renderModeler(EDITOR_CONTEXT);
+    const draft = await screen.findByLabelText('Canvas draft');
+    const unsavedXml = '<bpmn:definitions>unsaved</bpmn:definitions>';
+    fireEvent.change(draft, { target: { value: unsavedXml } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
+    expect(screen.getByLabelText('Canvas draft')).toBe(draft);
+    expect(draft).toHaveValue(unsavedXml);
+    const unload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    window.dispatchEvent(new Event('online'));
+    expect(saves).toBe(1);
+    fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(saves).toBe(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(draft).toHaveValue(unsavedXml);
+    const saved = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(saved[0][1]?.body).toBe(unsavedXml);
+    expect(saved[1][1]?.body).toBe(saved[0][1]?.body);
+  });
   afterEach(() => {
     canvasStub.onFetchConnectorProfiles = undefined;
     canvasStub.onLaunchCallActivityEditor = undefined;

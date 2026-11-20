@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError } from './api';
+import { ApiError, NetworkError } from './api';
 import { acceptInvitation, invitationErrorMessage, validateInvitation } from './invitationsApi';
 
 const makeResponse = ({
@@ -19,6 +19,14 @@ const makeResponse = ({
 });
 
 describe('invitationsApi', () => {
+  it('normalizes public request network failures without changing client errors', async () => {
+    const invalid = new TypeError('Invalid URL');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockRejectedValueOnce(new TypeError('Load failed'))
+      .mockRejectedValueOnce(invalid));
+    await expect(validateInvitation('token')).rejects.toBeInstanceOf(NetworkError);
+    await expect(acceptInvitation('token', 'password')).rejects.toBe(invalid);
+  });
   beforeEach(() => {
     vi.unstubAllGlobals();
   });
