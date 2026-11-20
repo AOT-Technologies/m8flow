@@ -1298,7 +1298,11 @@ def _reject_unsupported_constructs(xml: str) -> Element:
     ):
         raise ApiError("unsupported_bpmn", "Compensation start events are not supported", 400)
 
-    unsupported = set(UNSUPPORTED_CONSTRUCTS) | {"messageEventDefinition"}
+    correlation_constructs = {
+        "correlationKey", "correlationProperty", "correlationSubscription",
+        "correlationPropertyBinding", "correlationPropertyRetrievalExpression", "correlationPropertyRef",
+    }
+    unsupported = set(UNSUPPORTED_CONSTRUCTS) | {"messageEventDefinition"} | correlation_constructs
     supported_messages = set()
     if next(root.iter(BPMN + "messageEventDefinition"), None) is not None:
         participants = collaboration_participants(xml)
@@ -1324,6 +1328,10 @@ def _reject_unsupported_constructs(xml: str) -> Element:
             except ValidationError as exc:
                 raise ApiError("unsupported_bpmn", str(exc), 400) from exc
             supported_messages.update(root.iter(BPMN + "messageEventDefinition"))
+            # These elements are supported only by the external-correlation
+            # validator. Collaboration delivery has no correlation-key contract.
+            for name in correlation_constructs:
+                supported_messages.update(root.iter(BPMN + name))
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]

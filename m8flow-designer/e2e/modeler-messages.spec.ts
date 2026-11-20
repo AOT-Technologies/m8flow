@@ -12,7 +12,8 @@ import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from '
  * Task still keep the element-level `messages` group (catalog allows those
  * task types). Do not assert message-model persist, Add Message, or schema
  * Launch Editor for a message. The diagram is the seeded "E2E Travel Request"
- * template ("Send itinerary" send task).
+ * template. Convert its local notification script to a Send Task when checking
+ * element-level settings, without changing the runnable seed's behavior.
  */
 const SEND_TASK_FILE = 'travel-request.bpmn';
 const SEND_TASK_ID = 'send_itinerary';
@@ -44,6 +45,8 @@ test.describe('Process Modeler: Message settings', () => {
   });
 
   test('A Send Task still shows its Messages settings', async ({ page }) => {
+    const menu = await openChangeElementMenu(page, SEND_TASK_ID);
+    await menu.locator('[data-id="replace-with-send-task"]').click();
     await selectElement(page, SEND_TASK_ID);
     const group = await openPropertiesPanelGroup(page, 'messages');
     await expect(group).toBeVisible();

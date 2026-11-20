@@ -459,8 +459,8 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
     await useSession(page, editorCredentials());
     const route = await createMockModel(page, { group_id: flow.groupId, id: `e2e-badbpmn-${flow.stamp}`, display_name: `E2E Bad BPMN ${flow.stamp}` });
     flow.track.models.push(route);
-    // Diagrams from seed/catalog/refused/: a message event and a compensation event are still
-    // refused by the catalog (call activities and multi-instance became supported in M8F-668).
+    // Reject malformed XML, an incomplete message catch, and an unsupported
+    // compensation start. Valid message catches and compensation throws are supported.
     const messages: string[] = [];
     await page.goto(`/processes/${route}`);
     for (const [fileName, content] of [
@@ -486,7 +486,7 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
 
     logResult('FLW-13', {
       scenario: 'Upload malformed and unsupported BPMN',
-      actions: ['Add file > Upload malformed XML', 'Add file > Upload BPMN with a message event (not supported)', 'Add file > Upload BPMN with a compensation event (not supported)'],
+      actions: ['Add file > Upload malformed XML', 'Add file > Upload an incomplete message catch', 'Add file > Upload an unsupported compensation start'],
       expected: 'Each upload is refused with a message in the dialog; no file is added',
       actual: 'All three refused; files not listed',
       messages,

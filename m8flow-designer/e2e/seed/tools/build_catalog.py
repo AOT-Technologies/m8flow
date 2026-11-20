@@ -147,6 +147,8 @@ def customer_complaint():
     S, A, F = "Submitters", "Approvers", "Administrators"
     d.root_xml += ['<bpmn:signal id="Signal_resolved" name="complaint_resolved" />',
                    '<bpmn:signal id="Signal_escalated" name="complaint_escalated" />',
+                   '<bpmn:error id="Error_resolved_outcome" errorCode="RESOLVED_OUTCOME" />',
+                   '<bpmn:error id="Error_escalated_outcome" errorCode="ESCALATED_OUTCOME" />',
                    '<bpmn:error id="Error_refund_limit" name="Refund over limit" errorCode="REFUND_LIMIT" />']
 
     d.start("start_complaint", "Complaint received", 0, S)
@@ -168,9 +170,24 @@ def customer_complaint():
     d.end("end_investigated", "Investigation done", 11, A)
     d.throw("throw_escalated", "Escalated", 10, A, 1, definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
     d.end("end_investigated_escalated", "Investigation escalated", 11, A, 1)
-    d.gateway("gw_wait", "Resolved or escalated?", 8, S, kind="eventBased")
-    d.catch("catch_resolved", "Resolved", 9, S, definition='<bpmn:signalEventDefinition signalRef="Signal_resolved" />')
-    d.catch("catch_escalated", "Escalated", 9, S, 1, definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
+    # Core 1.1.0b1 does not register signal catches behind an event-based
+    # gateway. Keep real signal events, using an interruptible wait scope so
+    # the winning signal cancels the other catch before leaving the scope.
+    d.container("wait_for_outcome", "Await investigation signal", 8, S, span=4, height_rows=2)
+    d.start("wait_start", None, 8, S, 0.5, parent="wait_for_outcome")
+    d.gateway("wait_fork", None, 9, S, 0.5, kind="parallel", parent="wait_for_outcome")
+    d.catch("catch_resolved", "Resolved", 10, S, parent="wait_for_outcome",
+            definition='<bpmn:signalEventDefinition signalRef="Signal_resolved" />')
+    d.catch("catch_escalated", "Escalated", 10, S, 1, parent="wait_for_outcome",
+            definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
+    d.end("resolved_outcome", "Resolved outcome", 11, S, parent="wait_for_outcome",
+          definition='<bpmn:errorEventDefinition errorRef="Error_resolved_outcome" />')
+    d.end("escalated_outcome", "Escalated outcome", 11, S, 1, parent="wait_for_outcome",
+          definition='<bpmn:errorEventDefinition errorRef="Error_escalated_outcome" />')
+    d.boundary("b_resolved", "Resolved", "wait_for_outcome", at=0.2,
+               definition='<bpmn:errorEventDefinition errorRef="Error_resolved_outcome" />')
+    d.boundary("b_escalated", "Escalated", "wait_for_outcome", at=0.8,
+               definition='<bpmn:errorEventDefinition errorRef="Error_escalated_outcome" />')
     d.user("confirm_customer", "Confirm with customer", 10, S, form="confirmation")
     d.user("supervisor_review", "Supervisor review", 12, A, 2, form="supervisor-review",
            instructions="Escalated: {{ details }}. Set the refund (0 for none).")
@@ -196,10 +213,11 @@ def customer_complaint():
 
     for a, b in [("start_complaint", "log_complaint"), ("log_complaint", "classify"), ("classify", "ack_complaint"),
                  ("ack_complaint", "gw_details"), ("request_info", "gw_details_done"), ("gw_details_done", "gw_fork"),
-                 ("gw_fork", "investigate"), ("gw_fork", "gw_wait"), ("investigate", "gw_outcome"),
+                 ("gw_fork", "investigate"), ("gw_fork", "wait_for_outcome"), ("investigate", "gw_outcome"),
                  ("throw_resolved", "end_investigated"), ("throw_escalated", "end_investigated_escalated"),
-                 ("gw_wait", "catch_resolved"), ("gw_wait", "catch_escalated"), ("catch_resolved", "confirm_customer"),
-                 ("catch_escalated", "supervisor_review"), ("confirm_customer", "gw_resolution"),
+                 ("wait_start", "wait_fork"), ("wait_fork", "catch_resolved"), ("wait_fork", "catch_escalated"),
+                 ("catch_resolved", "resolved_outcome"), ("catch_escalated", "escalated_outcome"),
+                 ("b_resolved", "confirm_customer"), ("b_escalated", "supervisor_review"), ("confirm_customer", "gw_resolution"),
                  ("supervisor_review", "gw_resolution"), ("gw_resolution", "mark_ready"), ("mark_ready", "catch_ready"),
                  ("catch_ready", "refund"), ("refund_start", "check_limit"), ("check_limit", "gw_refund"),
                  ("b_over_limit", "approve_refund"), ("approve_refund", "gw_refund_done"), ("refund", "gw_refund_done"),
@@ -211,8 +229,12 @@ def customer_complaint():
     d.flow("gw_outcome", "throw_resolved", "resolved")
     d.flow("gw_refund", "refund_over", "over limit", "over_limit == True")
     d.flow("gw_refund", "refund_ok", "ok")
-    d.annotate("note_signals", "The supervisor's outcome is signalled to the agent's event gateway",
-               "gw_wait", 6.3, S, 1)
+    d.annotate("note_signals", "The first signal interrupts the wait scope and cancels the other catch",
+               "wait_for_outcome", 6.3, S, 1)
+    for node in d.nodes.values():
+        if node.parent == "refund" or (node.parent is None and node.col >= 13):
+            node.col += 3
+    d.nodes["confirm_customer"].col = 13
 
     routing = dmn("complaint_routing", "Complaint routing",
                   [("Severity", "severity", "string"), ("Category", "category", "string")],

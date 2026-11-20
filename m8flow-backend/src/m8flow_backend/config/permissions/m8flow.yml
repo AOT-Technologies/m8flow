@@ -481,26 +481,15 @@ permissions:
   # throughout -- these endpoints never mutate NATS. Routes gate with
   # group_fallback=False so other tenant roles cannot fall through. (M8F-244)
   #
-  # Broker-wide state (overview, streams, per-tenant counts, stream message browsing) is
-  # super-admin only: JetStream reports it per account, not per tenant, so a tenant-admin
-  # would be seeing every tenant's traffic. The trailing slash keeps this from matching
-  # /m8flow/nats-tokens, whose grants below are unchanged.
+  # Every NATS monitoring route, event history included, is super-admin only (M8F-700):
+  # broker state is reported per JetStream account, not per tenant. Tenant-admins lost
+  # their own-tenant event history grant; migration c7e9a1b3d5f7 revokes it in existing
+  # tenants. The trailing slash keeps this from matching /m8flow/nats-tokens, whose
+  # grants below are unchanged.
   read-nats-monitoring:
     groups: ["super-admin"]
     actions: [read]
     uri: /m8flow/nats/*
-  # Event history comes from m8flow_nats_event_audit, which carries a tenant per row, so
-  # tenant-admins may read their own -- including one event's payload, since the stream
-  # and sequence come from the already tenant-scoped row. The controller pins
-  # non-super-admins to their active tenant; cross-tenant reads need super-admin.
-  read-nats-events:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/nats/events
-  read-nats-events-by-id:
-    groups: ["tenant-admin", "super-admin"]
-    actions: [read]
-    uri: /m8flow/nats/events/*
   # Celery monitoring is READ ONLY and super-admin only: worker state covers every
   # tenant, and Celery carries no tenant marker in it. Routes gate with
   # group_fallback=False so other tenant roles cannot fall through. (M8F-602)
