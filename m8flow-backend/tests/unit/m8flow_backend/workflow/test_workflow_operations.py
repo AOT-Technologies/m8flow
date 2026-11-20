@@ -535,6 +535,62 @@ def test_failed_start_recovery_moves_the_instance_to_error(db_session, starter_r
     assert [event.task_guid for event in failed_events] == ["failed-script-task"]
 
 
+def test_installed_core_still_exposes_the_failed_start_instance_id(db_session, tmp_path, monkeypatch):
+    """Contract with the installed m8flow-core: the failed start's instance id is
+    read from its private ``script_engine._process_instance_id``. If core
+    renames it, this fails instead of failed starts quietly staying not_started."""
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    resolved = []
+    real_resolve = workflow._failed_task_process_instance_id
+    monkeypatch.setattr(
+        workflow,
+        "_failed_task_process_instance_id",
+        lambda task: resolved.append(real_resolve(task)) or resolved[-1],
+    )
+
+    with pytest.raises(ApiError):
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    # The full recovery is covered by the super-admin start test below.
+    assert resolved and isinstance(resolved[0], int), "core no longer exposes _process_instance_id"
+
+
+def test_failed_start_recovery_warns_when_the_instance_id_cannot_be_read(db_session, caplog):
+    """A core that no longer carries the id leaves the instance not_started;
+    that must be logged at WARNING, not skipped silently."""
+    tenant, user = _seed_actor(db_session)
+    failure = _failed_start_script_error(1)
+    failure.task.workflow.top_workflow.script_engine = SimpleNamespace()  # attribute renamed away
+
+    with caplog.at_level("WARNING", logger=workflow.LOGGER.name):
+        assert workflow._error_instance_after_failed_start_script(
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+            exc=failure,
+        ) is None
+
+    assert any(
+        record.levelname == "WARNING" and "_process_instance_id" in record.getMessage()
+        for record in caplog.records
+    )
+
+
 def test_failed_start_recovery_marks_only_its_own_instance(db_session):
     """A concurrent start of the same model by the same user leaves a newer
     not_started instance. Only the instance the failed task ran in moves to
