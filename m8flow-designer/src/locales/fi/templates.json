@@ -7,7 +7,7 @@
     "label": "Näkyvyys",
     "all": "Kaikki",
     "private": "Yksityinen",
-    "privateDescription": "Vain sinä",
+    "privateDescription": "Vain sinä ja vuokraajan ylläpitäjät",
     "tenant": "Vuokraaja",
     "tenantDescription": "Kaikki tässä vuokraajassa",
     "public": "Julkinen",

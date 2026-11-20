@@ -657,7 +657,9 @@ class TemplateService:
         if template.is_deleted:
             raise ApiError("not_found", "Template not found", status_code=404)
 
-        is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        is_template_admin = TemplateAuthorizationService.has_admin_permission(
+            user, "delete"
+        ) or TemplateAuthorizationService.is_private_owner(template, user)
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
@@ -722,7 +724,10 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+        if not (
+            TemplateAuthorizationService.has_admin_permission(user, "update")
+            or TemplateAuthorizationService.is_private_owner(template, user)
+        ):
             raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS

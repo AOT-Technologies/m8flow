@@ -317,7 +317,7 @@ function TemplateCard({
   const canRestoreTemplates = actor.canRestoreTemplates !== false || actor.isSuperAdmin;
   const canDelete = canDeleteGalleryTemplate(template, actor);
   const deleteTitle = canDelete ? t('templates.card.deleteTemplate') : deleteDisabledReason(template, actor);
-  const canRestore = canRestoreGalleryTemplate(actor);
+  const canRestore = canRestoreGalleryTemplate(template, actor);
   const restoreTitle = canRestore
     ? t('templates.card.restoreTemplate')
     : actor.isSuperAdmin

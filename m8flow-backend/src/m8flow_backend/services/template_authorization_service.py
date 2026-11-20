@@ -42,6 +42,16 @@ class TemplateAuthorizationService:
             return False
 
     @classmethod
+    def is_private_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
+        """Private templates are managed by their creator as well as the tenant-admin (M8F-712)."""
+        return (
+            user is not None
+            and template.is_private()
+            and template.created_by == user.username
+            and cls._is_current_tenant_template(template)
+        )
+
+    @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
         tenant_id = cls._tenant_id()
 

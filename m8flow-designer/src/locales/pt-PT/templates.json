@@ -7,7 +7,7 @@
     "label": "Visibilidade",
     "all": "Todos",
     "private": "Privado",
-    "privateDescription": "Apenas para si",
+    "privateDescription": "Apenas para si e os administradores do inquilino",
     "tenant": "Inquilino",
     "tenantDescription": "Todos os utilizadores deste inquilino",
     "public": "Público",

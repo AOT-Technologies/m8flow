@@ -1030,7 +1030,7 @@ test.describe('Process model page for a tenant with data', () => {
 
     await dialog.getByRole('combobox', { name: 'Visibility' }).click();
     const options: [RegExp, string][] = [
-      [/^Private/, 'Only you'],
+      [/^Private/, 'Only you and tenant admins'],
       [/^Tenant/, 'Everyone in this tenant'],
       [/^Public/, 'Available to all tenants'],
     ];
