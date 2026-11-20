@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HomeStatsGrid } from './HomeStatsGrid';
@@ -169,5 +170,42 @@ describe('HomeStatsGrid', () => {
     );
 
     expect(screen.queryByText('Tasks waiting on me')).not.toBeInTheDocument();
+  });
+  describe('clickable cards (M8F-711)', () => {
+    const stats = {
+      active_process_instances: 5,
+      tasks_waiting_on_me: 0,
+      show_tasks_waiting_on_me: true,
+      errors_needing_review: 11,
+      completed_today: 0,
+      avg_completion_minutes: 4.4,
+      total_tenants: null,
+    };
+    const hrefOf = (label: string) => screen.getByText(label).closest('a')?.getAttribute('href');
+
+    it('links each card to its filtered list when permitted', () => {
+      render(
+        <MemoryRouter>
+          <HomeStatsGrid showTaskCount canOpenInstances canOpenTasks stats={stats} />
+        </MemoryRouter>,
+      );
+
+      expect(hrefOf('Active process instances')).toBe('/process-instances?status=active');
+      expect(hrefOf('Errors needing review')).toBe('/process-instances?status=error');
+      expect(hrefOf('Completed today')).toBe('/process-instances?status=complete&completed=today');
+      // An average has no matching list, so this card stays plain.
+      expect(hrefOf('Avg. completion time')).toBeUndefined();
+      expect(hrefOf('Tasks waiting on me')).toBe('/task-review');
+      expect(screen.getByText('Active process instances').closest('a')).toHaveAttribute(
+        'title',
+        'Running, waiting, or awaiting input',
+      );
+    });
+
+    it('keeps cards non-clickable without list permission', () => {
+      render(<HomeStatsGrid showTaskCount stats={stats} />);
+
+      expect(screen.queryAllByRole('link')).toHaveLength(0);
+    });
   });
 });

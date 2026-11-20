@@ -53,7 +53,10 @@ export type ProcessInstanceSort = 'newest' | 'oldest' | 'recent_start' | 'status
 export type ProcessInstanceScope = 'mine' | 'started' | 'assigned';
 
 export type ProcessInstanceListFilters = {
+  /** A status, or "active" for every live status. */
   status?: string;
+  /** Only instances completed since the server's UTC midnight. */
+  completed?: 'today';
   search?: string;
   /** Exact initiator-username match; options from fetchProcessInstanceOwners. */
   startedBy?: string;
@@ -68,6 +71,7 @@ export type ProcessInstanceListFilters = {
 export function processInstancesPath(filters: ProcessInstanceListFilters = {}): string {
   const params = new URLSearchParams();
   if (filters.status) params.set('status', filters.status);
+  if (filters.completed) params.set('completed', filters.completed);
   if (filters.search) params.set('search', filters.search);
   if (filters.startedBy) params.set('started_by', filters.startedBy);
   if (filters.scope) params.set('scope', filters.scope);
