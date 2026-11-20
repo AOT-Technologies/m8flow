@@ -280,8 +280,6 @@ def refused_files() -> dict[str, str]:
     unsupported = {
         "message-event.bpmn": ("intermediateCatchEvent", "Wait for the customer's reply",
                                '<bpmn:messageEventDefinition id="MessageEventDefinition_reply" />'),
-        "compensation-event.bpmn": ("intermediateThrowEvent", "Undo the booking",
-                                    '<bpmn:compensateEventDefinition id="CompensateEventDefinition_undo" />'),
     }
     for name, (tag, label, definition) in unsupported.items():
         key = name.removesuffix(".bpmn").replace("-", "_")
@@ -298,6 +296,14 @@ def refused_files() -> dict[str, str]:
         d.flow("Activity_approve_request", "Event_refused", fid="Flow_2")
         d.flow("Event_refused", "EndEvent_1", fid="Flow_3")
         files[name] = d.to_xml()
+    d = Diagram("Process_refused_compensation_start", "E2E Refused compensation start", [(A, 1)],
+                documentation="Compensation start events are unsupported; compensation throws are supported.")
+    d.root_xml.append("<!-- Negative fixture: an unsupported compensation start. -->")
+    d.start("StartEvent_1", "Compensation start", 0, A,
+            body='<bpmn:compensateEventDefinition id="CompensateEventDefinition_undo" />')
+    d.end("EndEvent_1", "Done", 1, A)
+    d.flow("StartEvent_1", "EndEvent_1")
+    files["compensation-event.bpmn"] = d.to_xml()
     return files
 
 

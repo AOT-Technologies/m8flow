@@ -7,10 +7,7 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_UPSTREAM_MERGE = "c81d2e3f4a56"
-# M8F-700 NATS revoke; the run-stats index (M8F-703) sits on top of it.
-_NATS_REVOKE = "c7e9a1b3d5f7"
-_HEAD = "e9c4b2a71f53"
+_HEAD = "m8f_694_merge_run_stats"
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -59,7 +56,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     # Both feature branches must be reachable from the common host history.
     assert _required_revisions(script, "f7a8b9c0d1e2") == {
         "fa8b9c0d1e2f", "fbcad9e02138", "e2f3a4b5c6d7", "e1f2a3b4c5d6",
-        "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _HEAD,
+        "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }
     assert _required_revisions(script, "fa8b9c0d1e2f") == {
         "d1e2f3a4b5c6",
@@ -71,22 +68,36 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         "e1f2a3b4c5d6",
         "b603fd822b22",
         "9f2c6d4b8e71",
-        _UPSTREAM_MERGE,
-        _NATS_REVOKE,
-        _HEAD,
+        "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }
 
     # Keep the upgrade paths for databases already stamped on either branch.
     assert _required_revisions(script, "fbcad9e02138") == {
-        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _HEAD,
+        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }
     assert _required_revisions(script, "e2f3a4b5c6d7") == {
         "d2f4a6b8c0e1", "e3f5a7c9d1b2", "f7a8b9c0d1e2", "fa8b9c0d1e2f", "fbcad9e02138",
-        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _HEAD,
+        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }
     assert _required_revisions(script, "b603fd822b22") == {
-        "e2f3a4b5c6d7", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _HEAD,
+        "e2f3a4b5c6d7", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }
     assert _required_revisions(script, "9f2c6d4b8e71") == {
-        "e1f2a3b4c5d6", "b603fd822b22", _UPSTREAM_MERGE, _NATS_REVOKE, _HEAD,
+        "e1f2a3b4c5d6", "b603fd822b22", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
+    }
+
+
+def test_upgrade_paths_from_both_previous_heads():
+    script = ScriptDirectory(str(_MIGRATIONS_DIR))
+    assert _required_revisions(script, "c81d2e3f4a56") == {"m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD}
+    assert _required_revisions(script, "m8f_694_core_message_schema") == {
+        "e1f2a3b4c5d6", "b603fd822b22", "e2f3a4b5c6d7", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
+    }
+
+
+def test_new_main_and_message_heads_converge():
+    script = ScriptDirectory(str(_MIGRATIONS_DIR))
+    assert _required_revisions(script, "m8f_694_merge_host_heads") == {"c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD}
+    assert _required_revisions(script, "c7e9a1b3d5f7") == {
+        "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
     }

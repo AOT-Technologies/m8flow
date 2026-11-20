@@ -89,7 +89,7 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
 
         command.upgrade(cfg, "head")
         with Session(engine) as session, session.begin():
-            assert session.scalar(stamp) == "c81d2e3f4a56"
+            assert session.scalar(stamp) == "m8f_694_merge_run_stats"
             assert session.scalars(sa.select(ProcessModelState)).all() == []
             assert session.scalars(sa.select(ProcessModelRelease)).all() == []
             for tenant_id in tenants:

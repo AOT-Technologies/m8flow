@@ -88,7 +88,7 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
         stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version_m8flow")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
     assert stamped == _script_head()
 
     # Base tenant seed lands regardless of dialect.
@@ -405,7 +405,7 @@ def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, mon
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
 
 
 def test_upgrade_applies_core_column_cleanup_when_marker_was_preseeded(tmp_path, monkeypatch):
@@ -444,7 +444,7 @@ def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
 
 
 def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
@@ -474,7 +474,7 @@ def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
     assert legacy_stamped == "legacy-host-head"
 
 
@@ -502,7 +502,7 @@ def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
 
 
 def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monkeypatch):
@@ -537,7 +537,7 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "m8f_694_message_correlation"
     assert legacy_stamped == "k2l3m4n5o6p7"
 
 
@@ -1283,4 +1283,27 @@ def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
     command.downgrade(cfg, previous_revision)
     assert set(_JOURNAL_TABLES) & set(sa.inspect(engine).get_table_names()) == preexisting
     command.upgrade(cfg, "head")
+    engine.dispose()
+
+
+@pytest.mark.parametrize("previous_revision", ["fbcad9e02138", "c81d2e3f4a56", "m8f_694_core_message_schema"])
+def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeypatch, previous_revision):
+    database_uri = f"sqlite:///{tmp_path / 'pre-message.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    assert "compensation_record" in sa.inspect(engine).get_table_names()
+    if previous_revision != "m8f_694_core_message_schema":
+        assert "signal_publication" not in sa.inspect(engine).get_table_names()
+        assert "message_subscription" not in sa.inspect(engine).get_table_names()
+    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "head")
+    assert {"signal_publication", "compensation_record", "message_subscription", "message_delivery_receipt"} <= set(
+        sa.inspect(engine).get_table_names()
+    )
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "m8flow"
+        assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == (
+            "m8f_694_message_correlation"
+        )
     engine.dispose()

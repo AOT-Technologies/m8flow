@@ -41,7 +41,8 @@
         "at": "end_published",
         "values": {
           "published_url": "/news/e2e-product-launch",
-          "word_count": 11
+          "word_count": 11,
+          "subscriber_notification_recorded": true
         }
       }
     },
@@ -92,7 +93,8 @@
         "at": "end_published",
         "values": {
           "word_count": 5,
-          "newsletter": true
+          "newsletter": true,
+          "subscriber_notification_recorded": true
         }
       }
     },
@@ -129,7 +131,8 @@
       "expect_data": {
         "at": "end_published",
         "values": {
-          "website": false
+          "website": false,
+          "subscriber_notification_recorded": true
         },
         "absent": [
           "published_url"
@@ -169,7 +172,8 @@
         "at": "end_published",
         "values": {
           "website": false,
-          "newsletter": false
+          "newsletter": false,
+          "subscriber_notification_recorded": true
         },
         "absent": [
           "published_url"

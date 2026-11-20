@@ -34,9 +34,6 @@ from m8flow_backend.catalog import versioned, versions
 LOGGER = logging.getLogger(__name__)
 
 UNSUPPORTED_CONSTRUCTS = (
-    "messageEventDefinition",
-    "correlationKey",
-    "correlationProperty",
     "compensateEventDefinition",
 )
 
@@ -1304,6 +1301,23 @@ def _reject_unsupported_constructs(xml: str) -> Element:
     except ParseError as exc:
         raise ApiError("invalid_process_model", "BPMN XML is malformed", 400) from exc
 
+    event_gateways = {node.get("id") for node in root.iter(BPMN + "eventBasedGateway")}
+    signal_catches = {
+        node.get("id") for node in root.iter(BPMN + "intermediateCatchEvent")
+        if node.find(BPMN + "signalEventDefinition") is not None
+    }
+    if any(
+        (flow.get("sourceRef") or "").rsplit(":", 1)[-1] in event_gateways
+        and (flow.get("targetRef") or "").rsplit(":", 1)[-1] in signal_catches
+        for flow in root.iter(BPMN + "sequenceFlow")
+    ):
+        raise ApiError(
+            "unsupported_bpmn",
+            "Signal catches after event-based gateways are not supported. "
+            "Use a signal-wait subprocess with interrupting boundary outcomes.",
+            400,
+        )
+
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
     # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).
@@ -1320,7 +1334,11 @@ def _reject_unsupported_constructs(xml: str) -> Element:
     ):
         raise ApiError("unsupported_bpmn", "Compensation start events are not supported", 400)
 
-    unsupported = set(UNSUPPORTED_CONSTRUCTS)
+    correlation_constructs = {
+        "correlationKey", "correlationProperty", "correlationSubscription",
+        "correlationPropertyBinding", "correlationPropertyRetrievalExpression", "correlationPropertyRef",
+    }
+    unsupported = set(UNSUPPORTED_CONSTRUCTS) | {"messageEventDefinition"} | correlation_constructs
     supported_messages = set()
     if next(root.iter(BPMN + "messageEventDefinition"), None) is not None:
         participants = collaboration_participants(xml)
@@ -1338,6 +1356,18 @@ def _reject_unsupported_constructs(xml: str) -> Element:
                     definitions = [child for child in event if is_bpmn_event_definition(child.tag)]
                     if len(definitions) == 1 and definitions[0].tag == BPMN + "messageEventDefinition":
                         supported_messages.add(definitions[0])
+        else:
+            # Core handles collaboration events separately from externally
+            # correlated catches; validate only ordinary models with this API.
+            try:
+                api.validate_message_bpmn(xml)
+            except ValidationError as exc:
+                raise ApiError("unsupported_bpmn", str(exc), 400) from exc
+            supported_messages.update(root.iter(BPMN + "messageEventDefinition"))
+            # These elements are supported only by the external-correlation
+            # validator. Collaboration delivery has no correlation-key contract.
+            for name in correlation_constructs:
+                supported_messages.update(root.iter(BPMN + name))
     for element in root.iter():
         if isinstance(element.tag, str):
             construct = element.tag.rsplit("}", 1)[-1]

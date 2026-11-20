@@ -38,7 +38,8 @@
         "values": {
           "approval_level": "auto",
           "confirmed": true,
-          "request_channel": "portal"
+          "request_channel": "portal",
+          "itinerary_notification_recorded": true
         }
       }
     },
@@ -77,7 +78,8 @@
       "expect_data": {
         "at": "end_booked",
         "values": {
-          "approval_level": "manager"
+          "approval_level": "manager",
+          "itinerary_notification_recorded": true
         }
       }
     },
@@ -146,7 +148,8 @@
       "expect_data": {
         "at": "end_booked",
         "values": {
-          "approval_level": "finance"
+          "approval_level": "finance",
+          "itinerary_notification_recorded": true
         }
       }
     },
