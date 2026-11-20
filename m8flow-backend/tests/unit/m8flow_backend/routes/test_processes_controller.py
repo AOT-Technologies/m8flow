@@ -2968,6 +2968,38 @@ def test_create_file_upload_content(client, db_session, tmp_path, monkeypatch):
     assert saved.text == "hello"
 
 
+@pytest.mark.parametrize(
+    ("content", "error_code"),
+    [
+        ("<?xml version='1.0'?><bpmn:definitions>", "invalid_process_model"),
+        ("""<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="p"><bpmn:startEvent id="start"><bpmn:messageEventDefinition /></bpmn:startEvent></bpmn:process>
+        </bpmn:definitions>""", "unsupported_bpmn"),
+    ],
+    ids=["malformed-xml", "unsupported-event"],
+)
+def test_create_file_rejects_invalid_bpmn_upload(
+    client, db_session, tmp_path, monkeypatch, content, error_code
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="file-invalid-bpmn", groups=["t1:editor"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files",
+        headers=headers,
+        json={"file_name": "invalid-upload.bpmn", "content": content},
+    )
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == error_code
+    saved = _get_model_file(
+        client, headers, "finance:invoice-approval", "invalid-upload.bpmn"
+    )
+    assert saved.status_code == 404
+
+
 def test_delete_file_path_traversal_is_rejected(client, db_session, tmp_path, monkeypatch):
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
