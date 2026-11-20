@@ -34,6 +34,7 @@ def _secret(
     example: str | None = None,
     pattern: str | None = None,
     pattern_message: str | None = None,
+    default: str | None = None,
 ) -> dict[str, Any]:
     """A profile field whose storage sensitivity follows ``highly_sensitive``.
 
@@ -46,6 +47,9 @@ def _secret(
     ``example`` is the form placeholder. ``pattern`` is a JavaScript-compatible
     regex the profile form checks before saving, with ``pattern_message`` as
     the error shown when it does not match.
+
+    ``default`` preselects a value on the create form only. It is saved
+    explicitly, so it never changes how an existing profile with no value runs.
     """
     field: dict[str, Any] = {
         "id": field_id,
@@ -65,6 +69,13 @@ def _secret(
     if pattern:
         field["pattern"] = pattern
         field["patternMessage"] = pattern_message or f"Enter a valid {label.lower()}."
+    if default is not None:
+        # The form's boolean select only has "true"/"false" options.
+        if field_type == "boolean" and default not in ("true", "false"):
+            raise ValueError(
+                f"{field_id}: boolean default must be 'true' or 'false', got {default!r}"
+            )
+        field["default"] = default
     return field
 
 
@@ -216,7 +227,8 @@ def smtp_descriptor() -> dict[str, Any]:
                 field_type="boolean",
                 group="connection",
                 prefill=True,
-                help_text="Upgrade the connection with STARTTLS. Defaults to off, matching the legacy connector.",
+                default="true",
+                help_text="Upgrade the connection with STARTTLS. Most servers on port 587 require it.",
             ),
             _secret(
                 "email_from",

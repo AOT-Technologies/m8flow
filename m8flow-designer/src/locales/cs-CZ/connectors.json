@@ -99,6 +99,7 @@
     "descriptionPlaceholder": "K čemu tento profil slouží, např. na jaké prostředí cílí.",
     "valueSaved": "Hodnota je uložena. Ponechte pole prázdné, chcete-li ji zachovat.",
     "offDefault": "Vypnuto (výchozí)",
+    "onDefault": "Zapnuto (výchozí)",
     "on": "Zapnuto",
     "off": "Vypnuto",
     "stripeLive": "Klíč pro ostrý režim. Platby provedené s tímto profilem jsou skutečné.",
