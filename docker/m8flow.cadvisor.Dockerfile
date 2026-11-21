@@ -19,7 +19,7 @@ RUN git clone --depth 1 --branch v0.60.6 https://github.com/google/cadvisor.git 
     && cd .. \
     && GO_FLAGS="-tags=libpfm,netgo" VERSION=0.60.6 ./build/build.sh
 
-FROM ghcr.io/google/cadvisor:v0.60.6
+FROM ghcr.io/google/cadvisor:v0.61.1
 
 RUN apk add --no-cache --upgrade zlib musl-utils
 
