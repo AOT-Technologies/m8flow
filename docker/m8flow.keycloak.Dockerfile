@@ -28,7 +28,7 @@ FROM quay.io/keycloak/keycloak:26.8.2-1 AS keycloak
 # which this image does not support. UBI Micro has no rpm, so drop the package
 # from a copy of its rpm database here; the runtime stage deletes the files.
 # The build fails if any other installed package depends on sqlite-libs.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.8 AS rpmdb
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9 AS rpmdb
 COPY --from=keycloak /var/lib/rpm /mnt/rootfs/var/lib/rpm
 RUN out="$(rpm --root /mnt/rootfs --erase --test sqlite-libs 2>&1)"; \
     if printf '%s\n' "$out" | grep 'is needed by' | grep -qv 'by (installed) nss-softokn-'; then \
