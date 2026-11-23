@@ -13,7 +13,9 @@ The tables and tenant/id indexes this revision creates are recorded in
 ``m8flow_a3f4e5d6c7b8_ownership``, and downgrade drops only those: a table that
 already existed keeps its rows, and indexes added to it stay. Each new table
 gets the same tenant-isolation and super-admin read policies as the other
-tenant-scoped tables.
+tenant-scoped tables. On a table that already existed, the ownership table also
+records whether this revision turned RLS on and the definition of each policy
+it replaced, and downgrade restores exactly that.
 
 The core marker in ``m8flow_core_alembic_version`` stays at ``k2l3m4n5o6p7``:
 host migrations own the core schema after that handoff, and the earlier host
@@ -39,7 +41,14 @@ depends_on = None
 
 # Tables the signal registry references, all created by the baseline revision.
 _PARENT_TABLES = ("m8flow_tenant", "process_instance", "bpmn_process_definition")
-_OWNERSHIP = sa.table(f"m8flow_{revision}_ownership", sa.column("object_name", sa.String(63)))
+# object_name is a created table or index, ``rls:<table>`` when RLS was turned on
+# for an existing table, or ``policy:<name>`` for a policy added to one, with
+# restore_sql holding the CREATE POLICY for the definition it replaced, if any.
+_OWNERSHIP = sa.table(
+    f"m8flow_{revision}_ownership",
+    sa.column("object_name", sa.String(63)),
+    sa.column("restore_sql", sa.Text()),
+)
 
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
 _BYPASS_RLS_PREDICATE = "(current_setting('app.bypass_rls', true) = 'on')"
@@ -85,8 +94,14 @@ def _index_exists(table: str, name: str, columns: list[str], *, unique: bool) ->
     return columns in keys
 
 
-def _record_created(name: str) -> None:
-    op.get_bind().execute(_OWNERSHIP.insert().values(object_name=name))
+def _recorded() -> set[str]:
+    return set(op.get_bind().execute(sa.select(_OWNERSHIP.c.object_name)).scalars())
+
+
+def _record_created(name: str, restore_sql: str | None = None) -> None:
+    """Record ``name`` once; a rerun keeps the state from before the first run."""
+    if name not in _recorded():
+        op.get_bind().execute(_OWNERSHIP.insert().values(object_name=name, restore_sql=restore_sql))
 
 
 def _create_table(name: str, *elements: sa.SchemaItem) -> None:
@@ -223,25 +238,75 @@ def _create_signal_tables() -> None:
     _create_index("ix_signal_delivery_m8f_tenant_id", "signal_delivery", ["m8f_tenant_id"])
 
 
-def _ensure_tenant_rls(table_name: str) -> None:
-    """Apply the standard tenant policy pair on PostgreSQL tables."""
+def _policies(table_name: str) -> tuple[tuple[str, str], tuple[str, str]]:
+    """The standard (policy name, CREATE POLICY body) pair for ``table_name``."""
+    return (
+        (
+            f"{table_name}_tenant_isolation",
+            f"FOR ALL USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}",
+        ),
+        (f"{table_name}_super_admin_select", f"FOR SELECT USING {_BYPASS_RLS_PREDICATE}"),
+    )
+
+
+def _current_policy_sql(table_name: str, policy_name: str) -> str | None:
+    """CREATE POLICY that recreates the existing policy, or None if there is none."""
+    bind = op.get_bind()
+    row = bind.execute(
+        sa.text(
+            "SELECT permissive, roles, cmd, qual, with_check FROM pg_policies "
+            "WHERE schemaname = current_schema() AND tablename = :table AND policyname = :policy"
+        ),
+        {"table": table_name, "policy": policy_name},
+    ).one_or_none()
+    if row is None:
+        return None
+    quote = bind.dialect.identifier_preparer.quote
+    roles = ", ".join("PUBLIC" if role == "public" else quote(role) for role in row.roles)
+    sql = f"CREATE POLICY {quote(policy_name)} ON {quote(table_name)} AS {row.permissive} FOR {row.cmd} TO {roles}"
+    if row.qual is not None:
+        sql += f" USING ({row.qual})"
+    if row.with_check is not None:
+        sql += f" WITH CHECK ({row.with_check})"
+    return sql
+
+
+def _ensure_tenant_rls(table_name: str, *, existed: bool) -> None:
+    """Apply the standard tenant policy pair on PostgreSQL tables.
+
+    For a table that ``existed`` before this revision, record what changes so
+    downgrade can put it back.
+    """
     bind = op.get_bind()
     if bind.dialect.name != "postgresql":
         return
-    preparer = bind.dialect.identifier_preparer
-    table = preparer.quote(table_name)
-    tenant_policy = preparer.quote(f"{table_name}_tenant_isolation")
-    bypass_policy = preparer.quote(f"{table_name}_super_admin_select")
+    quote = bind.dialect.identifier_preparer.quote
+    table = quote(table_name)
+    if existed and not bind.execute(
+        sa.text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(:table)"), {"table": table}
+    ).scalar():
+        _record_created(f"rls:{table_name}")
     op.execute(sa.DDL(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {tenant_policy} ON {table}"))
-    op.execute(
-        sa.DDL(
-            f"CREATE POLICY {tenant_policy} ON {table} FOR ALL "
-            f"USING {_TENANT_RLS_PREDICATE} WITH CHECK {_TENANT_RLS_PREDICATE}"
-        )
-    )
-    op.execute(sa.DDL(f"DROP POLICY IF EXISTS {bypass_policy} ON {table}"))
-    op.execute(sa.DDL(f"CREATE POLICY {bypass_policy} ON {table} FOR SELECT USING {_BYPASS_RLS_PREDICATE}"))
+    for policy_name, body in _policies(table_name):
+        if existed:
+            _record_created(f"policy:{policy_name}", _current_policy_sql(table_name, policy_name))
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quote(policy_name)} ON {table}"))
+        op.execute(sa.DDL(f"CREATE POLICY {quote(policy_name)} ON {table} {body}"))
+
+
+def _restore_tenant_rls(table_name: str, records: dict[str, str | None]) -> None:
+    """Undo what ``_ensure_tenant_rls`` changed on a table this revision kept."""
+    quote = op.get_bind().dialect.identifier_preparer.quote
+    table = quote(table_name)
+    for policy_name, _body in _policies(table_name):
+        key = f"policy:{policy_name}"
+        if key not in records:
+            continue
+        op.execute(sa.DDL(f"DROP POLICY IF EXISTS {quote(policy_name)} ON {table}"))
+        if records[key] is not None:
+            op.execute(sa.DDL(records[key]))
+    if f"rls:{table_name}" in records:
+        op.execute(sa.DDL(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
 
 
 def _require_parent_tables() -> None:
@@ -257,23 +322,31 @@ def _require_parent_tables() -> None:
 def upgrade() -> None:
     _require_parent_tables()
     if not _has_table(_OWNERSHIP.name):
-        op.create_table(_OWNERSHIP.name, sa.Column("object_name", sa.String(63), primary_key=True))
+        op.create_table(
+            _OWNERSHIP.name,
+            sa.Column("object_name", sa.String(63), primary_key=True),
+            sa.Column("restore_sql", sa.Text(), nullable=True),
+        )
     for name, table in _TENANT_ID_KEYS:
         if _create_index(name, table, ["m8f_tenant_id", "id"], unique=True):
             _record_created(name)
+    existing = {table for table in _NEW_TABLES if _has_table(table)} - _recorded()
     _create_signal_tables()
     for table in _NEW_TABLES:
-        _ensure_tenant_rls(table)
+        _ensure_tenant_rls(table, existed=table in existing)
 
 
 def downgrade() -> None:
     if not _has_table(_OWNERSHIP.name):
         LOGGER.warning("Leaving the signal registry in place: %s has no record of what it created.", revision)
         return
-    created = set(op.get_bind().scalars(sa.select(_OWNERSHIP.c.object_name)))
+    records = dict(op.get_bind().execute(sa.select(_OWNERSHIP.c.object_name, _OWNERSHIP.c.restore_sql)).all())
+    created = set(records)
     for table in reversed(_NEW_TABLES):
         if table in created and _has_table(table):
             op.drop_table(table)
+        elif _has_table(table):
+            _restore_tenant_rls(table, records)
     for name, table in _TENANT_ID_KEYS:
         if name in created and _has_index(table, name):
             op.drop_index(name, table_name=table)

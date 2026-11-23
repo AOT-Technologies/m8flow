@@ -1399,3 +1399,50 @@ def test_signal_registry_upgrade_names_a_missing_parent_table(tmp_path, monkeypa
         stamped = connection.execute(sa.text("SELECT version_num FROM alembic_version_m8flow")).scalar()
     assert stamped == previous_revision
     engine.dispose()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
+)
+def test_signal_registry_downgrade_restores_rls_on_a_table_it_kept(monkeypatch):
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    policies = sa.text(
+        "SELECT policyname, permissive, roles, cmd, qual, with_check FROM pg_policies "
+        "WHERE schemaname = current_schema() AND tablename = 'signal_registry_state' ORDER BY policyname"
+    )
+    rls = sa.text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('signal_registry_state')")
+    try:
+        with engine.begin() as connection:
+            connection.execute(sa.DDL("DROP TABLE IF EXISTS signal_registry_state"))
+            connection.execute(sa.DDL(
+                "CREATE TABLE signal_registry_state (m8f_tenant_id VARCHAR(255) PRIMARY KEY "
+                "REFERENCES m8flow_tenant (id), version INTEGER NOT NULL)"
+            ))
+            # RLS off, a same-named policy with another definition, no bypass policy.
+            connection.execute(sa.DDL(
+                "CREATE POLICY signal_registry_state_tenant_isolation ON signal_registry_state "
+                "FOR SELECT USING (version > 0)"
+            ))
+            before = connection.execute(policies).all()
+
+        command.upgrade(cfg, "head")
+        with engine.connect() as connection:
+            assert connection.scalar(rls) is True
+            assert {row.policyname: row.cmd for row in connection.execute(policies)} == {
+                "signal_registry_state_super_admin_select": "SELECT",
+                "signal_registry_state_tenant_isolation": "ALL",
+            }
+
+        command.downgrade(cfg, previous_revision)
+        with engine.connect() as connection:
+            assert connection.scalar(rls) is False
+            assert connection.execute(policies).all() == before
+    finally:
+        command.upgrade(cfg, "head")
+        engine.dispose()
