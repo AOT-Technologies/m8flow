@@ -246,6 +246,7 @@ describe('ProcessesPage', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo, init: RequestInit) => {
       const url = String(input);
       if (url.includes('/process-instances/owners')) return Response.json({ owner_options: [] });
+      if (url.includes('/process-groups')) return Response.json([]);
       if (url.endsWith('/process-models?tenantId=t1')) {
         const model = {
           id: 'finance/invoice-approval', tenant_id: 't1', display_name: 'Invoice Approval',
@@ -332,7 +333,8 @@ describe('ProcessesPage', () => {
     expect(startButton).toBeEnabled();
   });
 
-  it('opens the groups picker and applies a group filter', async () => {
+  it('filters by group from the Group dropdown and clears it', async () => {
+    const user = userEvent.setup();
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(async (input: RequestInfo) => {
@@ -381,23 +383,23 @@ describe('ProcessesPage', () => {
       expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
     });
 
-    // "Browse groups" was removed; the "Showing [scope]" pill opens the picker.
-    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
-
-    await waitFor(() => {
-      expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
-    });
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/v1.0/m8flow/process-groups'),
       expect.anything(),
     );
 
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Finance/ }));
+    await user.click(screen.getByRole('button', { name: 'Group: All groups' }));
+    await user.type(await screen.findByRole('searchbox', { name: 'Search groups' }), 'fin');
+    await user.click(screen.getByRole('menuitemradio', { name: 'Finance' }));
+
+    expect(await screen.findByRole('button', { name: 'Group: Finance' })).toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(await screen.findByRole('button', { name: 'Group: All groups' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
 
-  it('hides New group for All-Tenants super-admin and shows it when a tenant is selected', async () => {
+  it('hides Manage groups for All-Tenants super-admin and shows it when a tenant is selected', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockImplementation(async (input: RequestInfo) => {
@@ -446,6 +448,7 @@ describe('ProcessesPage', () => {
     // hidden, because a create must land in exactly one tenant.
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('processes-manage-groups-button')).not.toBeInTheDocument();
     allTenants.unmount();
 
     const scopedSa = renderWithOutlet(
@@ -459,8 +462,8 @@ describe('ProcessesPage', () => {
     );
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
     scopedSa.unmount();
 
@@ -475,8 +478,8 @@ describe('ProcessesPage', () => {
     );
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
   });
 
@@ -521,7 +524,7 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 
-  it('creates a process group from the page header, not only via the filter pill', async () => {
+  it('opens Manage groups from the page header', async () => {
     stubOneModel();
     renderWithOutlet({
       scopedTenantId: 't1',
@@ -531,10 +534,10 @@ describe('ProcessesPage', () => {
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
 
     await waitFor(() =>
-      expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument(),
+      expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument(),
     );
   });
 
@@ -589,7 +592,8 @@ describe('ProcessesPage', () => {
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    fireEvent.click(await screen.findByRole('button', { name: /New group/i }));
     const dialog = await screen.findByRole('dialog', { name: 'New process group' });
     fireEvent.change(within(dialog).getByLabelText('Process group display name'), {
       target: { value: 'Operations' },
@@ -599,18 +603,18 @@ describe('ProcessesPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(await screen.findByText('No models in this group')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Clear' })).toBeInTheDocument();
-    expect(screen.getAllByText('Operations').length).toBeGreaterThan(0);
 
-    // Reopening the picker refetches, so the server list (not the local merge) wins.
-    const getsBeforeReopen = groupGets;
-    fireEvent.click(screen.getByRole('button', { name: /Operations/ }));
-    const picker = await screen.findByRole('dialog', { name: 'Process groups' });
-    await waitFor(() => expect(groupGets).toBe(getsBeforeReopen + 1));
+    expect(screen.getByRole('button', { name: 'Group: Operations' })).toBeInTheDocument();
+
+    // Create refetches the list, so the server list (not the local merge) wins.
+    await waitFor(() => expect(groupGets).toBe(2));
+    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    const picker = await screen.findByRole('dialog', { name: 'Manage groups' });
     expect(await within(picker).findByText('Finance')).toBeInTheDocument();
     expect(within(picker).getByText('Operations')).toBeInTheDocument();
   });
 
-  it('hides the header New process group action without catalog write', async () => {
+  it('hides the header Manage groups action without group write permissions', async () => {
     stubOneModel();
     renderWithOutlet({
       scopedTenantId: 't1',
@@ -619,7 +623,7 @@ describe('ProcessesPage', () => {
       canManageProcesses: false,
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('processes-manage-groups-button')).not.toBeInTheDocument();
   });
 
   it('offers a way out of New process model when no process groups exist', async () => {

@@ -104,7 +104,7 @@ export default function ProcessesPage() {
   const [groupsError, setGroupsError] = useState<string | null>(null);
   /** Bumped after a successful delete to re-run the models fetch effect. */
   const [refreshKey, setRefreshKey] = useState(0);
-  /** Bumped after group create/edit/delete while the picker is open. */
+  /** Bumped after group create/edit/delete to refetch the group list. */
   const [groupsRefreshKey, setGroupsRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -174,11 +174,8 @@ export default function ProcessesPage() {
     };
   }, [scopedTenantId]);
 
+  // Loaded up front: the Group filter dropdown and the Manage groups dialog share it.
   useEffect(() => {
-    if (!groupsOpen) {
-      return;
-    }
-
     let cancelled = false;
     setGroupsLoading(true);
     setGroupsError(null);
@@ -204,7 +201,7 @@ export default function ProcessesPage() {
     return () => {
       cancelled = true;
     };
-  }, [groupsOpen, scopedTenantId, groupsRefreshKey]);
+  }, [scopedTenantId, groupsRefreshKey]);
 
   const scopeLabel = useMemo(() => {
     if (!groupFilter) {
@@ -288,6 +285,7 @@ export default function ProcessesPage() {
     // Close and filter to the new group so the user lands on its (empty) model
     // list. Merge it into `groups` so the filter label resolves without a refetch.
     setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
+    setGroupsRefreshKey((k) => k + 1);
     setGroup(created.id);
     closeGroups();
   }
@@ -322,7 +320,7 @@ export default function ProcessesPage() {
         owners={owners}
         ownerFilter={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
-        onBrowseGroups={() => openGroups()}
+        groups={groups.map((group) => ({ id: group.id, label: group.display_name || group.id }))}
         onClearGroupFilter={() => setGroup(null)}
         onFilterByGroup={(groupId) => setGroup(groupId)}
         showTenant={allTenants}
@@ -345,7 +343,9 @@ export default function ProcessesPage() {
             ? handleChangeModelStatus : undefined
         }
         mayChangeStatus={canManageProcessModels}
-        onCreateGroup={canCreateGroup ? () => openGroups(true) : undefined}
+        onManageGroups={
+          canCreateGroup || canUpdateGroup || canDeleteGroup ? () => openGroups() : undefined
+        }
       />
       <CreateProcessModelDialog
         open={createOpen}
@@ -371,20 +371,11 @@ export default function ProcessesPage() {
         groups={groups}
         loading={groupsLoading}
         error={groupsError}
-        selectedGroupId={groupFilter}
         canCreate={canCreateGroup}
         canUpdate={canUpdateGroup}
         canDelete={canDeleteGroup}
         startInCreateMode={groupsCreateMode}
         onClose={closeGroups}
-        onSelectAll={() => {
-          setGroup(null);
-          setGroupsOpen(false);
-        }}
-        onSelectGroup={(groupId) => {
-          setGroup(groupId);
-          setGroupsOpen(false);
-        }}
         onCreateGroup={canCreateGroup ? handleCreateGroup : undefined}
         onUpdateGroup={canUpdateGroup ? handleUpdateGroup : undefined}
         onDeleteGroup={canDeleteGroup ? handleDeleteGroup : undefined}

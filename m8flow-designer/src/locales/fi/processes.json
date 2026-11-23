@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Prosessit",
-    "showing": "Näytetään",
     "clear": "Tyhjennä",
+    "group": "Ryhmä",
     "searchPlaceholder": "Hae prosessimalleja",
     "owner": "Omistaja",
     "filterAll": "Kaikki",
@@ -54,17 +54,18 @@
     }
   },
   "groups": {
-    "title": "Prosessiryhmät",
+    "title": "Hallitse ryhmiä",
     "editTitle": "Muokkaa prosessiryhmää",
     "deleteTitle": "Poista prosessiryhmä",
     "subtitle": {
-      "list": "Valitse ryhmä mallilistan suodattamiseksi tai hallitse ryhmiä täällä.",
+      "list": "Luo, nimeä uudelleen tai poista tämän vuokralaisen prosessiryhmiä.",
       "create": "Tunniste muodostetaan näyttönimestä. Muokkaa sitä, jos haluat sisäkkäisen rakenteen muodossa parent/child.",
       "edit": "Vain näyttönimi ja kuvaus – tunniste ei muutu.",
       "delete": "Tämän ryhmän mallit poistetaan luettelosta, jos millään niistä ei ole instansseja."
     },
     "searchPlaceholder": "Hae {{total}} ryhmästä",
     "searchLabel": "Hae ryhmiä",
+    "noMatches": "Ei vastaavia ryhmiä",
     "noRunsYet": "Ei vielä suorituksia",
     "editGroup": "Muokkaa ryhmää {{name}}",
     "deleteGroup": "Poista ryhmä {{name}}",

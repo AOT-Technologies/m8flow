@@ -64,15 +64,16 @@ export type ProcessesModelsListProps = {
   error?: string | null;
   /** Active group filter id from `?group=`; null = all groups. */
   groupFilter?: string | null;
-  /** Label for the scope pill (group display name or id). */
+  /** Label for the active group (display name or id); used when it isn't in `groups`. */
   scopeLabel?: string;
+  /** Options for the Group filter dropdown. */
+  groups?: { id: string; label: string }[];
   /** Process initiators with stable ids and display usernames. */
   owners?: ProcessInstanceOwnerOption[];
   ownerFilter?: string;
   onOwnerFilterChange?: (value: string) => void;
   /** Total models before client search (for empty-state copy). */
   totalUnfilteredCount?: number;
-  onBrowseGroups?: () => void;
   onClearGroupFilter?: () => void;
   onOpenModel?: (model: ProcessModelListItem) => void;
   onFilterByGroup?: (groupId: string) => void;
@@ -87,8 +88,8 @@ export type ProcessesModelsListProps = {
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
   /** Opens the create dialog. Absent for viewers / super-admin. */
   onCreateModel?: () => void;
-  /** Omitted without catalog write. Opens the group picker on its create form. */
-  onCreateGroup?: () => void;
+  /** Opens the Manage groups dialog. Omitted without any group write permission. */
+  onManageGroups?: () => void;
   /** All-Tenants super-admin view: adds a Tenant column so rows from
    * different tenants (which can share a model id) stay distinguishable. */
   showTenant?: boolean;
@@ -113,11 +114,11 @@ export function ProcessesModelsList({
   error = null,
   groupFilter = null,
   scopeLabel,
+  groups = [],
   owners = [],
   ownerFilter = 'all',
   onOwnerFilterChange,
   totalUnfilteredCount,
-  onBrowseGroups,
   onClearGroupFilter,
   onOpenModel,
   onFilterByGroup,
@@ -128,7 +129,7 @@ export function ProcessesModelsList({
   mayChangeStatus = true,
   onDeleteModel,
   onCreateModel,
-  onCreateGroup,
+  onManageGroups,
   showTenant = false,
   onChangeModelStatus,
 }: ProcessesModelsListProps) {
@@ -229,6 +230,14 @@ export function ProcessesModelsList({
   const resultCount = t('processes.list.modelCount', { count: filtered.length });
   const totalForEmpty = totalUnfilteredCount ?? models.length;
   const groupFilterOn = Boolean(groupFilter);
+  const groupOptions = [
+    { value: '', label: t('processes.allGroups') },
+    ...groups.map((group) => ({ value: group.id, label: group.label })),
+    // Keep the trigger labelled when the active group isn't loaded (yet).
+    ...(groupFilter && !groups.some((group) => group.id === groupFilter)
+      ? [{ value: groupFilter, label: scopeLabel ?? groupFilter }]
+      : []),
+  ];
   const isEmpty = !loading && !error && filtered.length === 0;
 
   function stopRowNav(event: MouseEvent) {
@@ -413,18 +422,16 @@ export function ProcessesModelsList({
           <h1 className="font-display text-[32px] font-semibold tracking-tight text-foreground">{t('processes.list.title')}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* No "Browse groups" button — the "Showing [scope] ▾" pill below opens
-              the same picker. Creating a group is a different matter (M8F-530
-              #6): the pill reads as a filter, so the only path to New group was
-              one people did not find. */}
-          {onCreateGroup ? (
+          {/* Filtering lives in the Group dropdown below; create/edit/delete
+              live in their own dialog so the filter stays a plain filter. */}
+          {onManageGroups ? (
             <Button
               type="button"
               variant="pill-outline"
               size="pill"
-              onClick={onCreateGroup}
+              onClick={onManageGroups}
               className="gap-2"
-              data-testid="processes-new-group-button"
+              data-testid="processes-manage-groups-button"
             >
               <Plus className="size-[15px]" strokeWidth={2.2} />
               {t('processes.newProcessGroup')}
@@ -439,45 +446,6 @@ export function ProcessesModelsList({
         </div>
       </div>
 
-      <div className="mt-1.5 mb-[22px] flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <span>{t('processes.list.showing')}</span>
-        <button
-          type="button"
-          onClick={onBrowseGroups}
-          title={scopeLabel ?? t('processes.allGroups')}
-          className={cn(
-            'inline-flex min-w-0 max-w-[min(100%,32rem)] items-center gap-2 rounded-full border px-3 py-1.5 text-[13.5px] font-semibold text-foreground',
-            groupFilterOn
-              ? 'border-nav-active/40 bg-nav-active/15'
-              : 'border-border bg-card',
-          )}
-        >
-          <Folder className="size-3.5 shrink-0" strokeWidth={1.8} />
-          <span className="min-w-0 flex-1 truncate">{scopeLabel ?? t('processes.allGroups')}</span>
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="shrink-0"
-            aria-hidden
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-        {groupFilterOn ? (
-          <button
-            type="button"
-            onClick={onClearGroupFilter}
-            className="px-1 text-[13px] text-info"
-          >
-            {t('processes.list.clear')}
-          </button>
-        ) : null}
-      </div>
-
       <div className="pb-14">
         <div className="mb-[18px] flex flex-wrap items-center gap-2.5">
           <SearchBar
@@ -490,6 +458,25 @@ export function ProcessesModelsList({
             aria-label={t('processes.list.searchPlaceholder')}
             className="max-w-[420px] min-w-0 flex-1"
           />
+
+          <SortDropdown
+            label={t('processes.list.group')}
+            options={groupOptions}
+            value={groupFilter ?? ''}
+            onChange={(value) => (value ? onFilterByGroup?.(value) : onClearGroupFilter?.())}
+            searchPlaceholder={t('processes.groups.searchLabel')}
+            emptyLabel={t('processes.groups.noMatches')}
+            className={cn('min-w-0 max-w-[280px]', groupFilterOn && 'border-nav-active/40 bg-nav-active/15')}
+          />
+          {groupFilterOn ? (
+            <button
+              type="button"
+              onClick={onClearGroupFilter}
+              className="px-1 text-[13px] text-info"
+            >
+              {t('processes.list.clear')}
+            </button>
+          ) : null}
 
           {/* Counts come from the already-fetched rows, so the status filter
               needs no extra request. Owner options come from the existing

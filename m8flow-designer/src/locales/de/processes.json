@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Prozesse",
-    "showing": "Angezeigt",
     "clear": "Zurücksetzen",
+    "group": "Gruppe",
     "searchPlaceholder": "Prozessmodelle suchen",
     "owner": "Eigentümer",
     "filterAll": "Alle",
@@ -54,17 +54,18 @@
     }
   },
   "groups": {
-    "title": "Prozessgruppen",
+    "title": "Gruppen verwalten",
     "editTitle": "Prozessgruppe bearbeiten",
     "deleteTitle": "Prozessgruppe löschen",
     "subtitle": {
-      "list": "Wählen Sie eine Gruppe, um die Modellliste zu filtern, oder verwalten Sie hier die Gruppen.",
+      "list": "Prozessgruppen in diesem Mandanten erstellen, umbenennen oder löschen.",
       "create": "Die Kennung wird aus dem Anzeigenamen generiert. Bearbeiten Sie sie, um mit parent/child zu verschachteln.",
       "edit": "Nur Anzeigename und Beschreibung – die Kennung ändert sich nicht.",
       "delete": "Modelle in dieser Gruppe werden aus dem Katalog entfernt, wenn keines davon Instanzen hat."
     },
     "searchPlaceholder": "{{total}} Gruppen durchsuchen",
     "searchLabel": "Gruppen durchsuchen",
+    "noMatches": "Keine passenden Gruppen",
     "noRunsYet": "Noch keine Läufe",
     "editGroup": "{{name}} bearbeiten",
     "deleteGroup": "{{name}} löschen",

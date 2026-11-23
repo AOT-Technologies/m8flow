@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Processos",
-    "showing": "Exibindo",
     "clear": "Limpar",
+    "group": "Grupo",
     "searchPlaceholder": "Pesquisar modelos de processo",
     "owner": "Proprietário",
     "filterAll": "Todos",
@@ -55,17 +55,18 @@
     }
   },
   "groups": {
-    "title": "Grupos de processos",
+    "title": "Gerenciar grupos",
     "editTitle": "Editar grupo de processos",
     "deleteTitle": "Excluir grupo de processos",
     "subtitle": {
-      "list": "Escolha um grupo para filtrar a lista de modelos ou gerencie os grupos aqui.",
+      "list": "Crie, renomeie ou exclua grupos de processos neste locatário.",
       "create": "O ID é gerado a partir do nome de exibição. Edite-o para aninhar com parent/child.",
       "edit": "Somente nome de exibição e descrição — o ID não muda.",
       "delete": "Os modelos deste grupo são removidos do catálogo se nenhum tiver instâncias."
     },
     "searchPlaceholder": "Pesquisar {{total}} grupos",
     "searchLabel": "Pesquisar grupos",
+    "noMatches": "Nenhum grupo correspondente",
     "noRunsYet": "Nenhuma execução ainda",
     "editGroup": "Editar {{name}}",
     "deleteGroup": "Excluir {{name}}",

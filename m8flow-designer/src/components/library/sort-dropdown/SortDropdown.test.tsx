@@ -32,4 +32,35 @@ describe('SortDropdown', () => {
     await user.keyboard('{ArrowDown}{ArrowDown}{Enter}');
     expect(onChange).toHaveBeenCalledWith('draft');
   });
+
+  it('filters rows by the search box when searchable', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SortDropdown
+        label="Group"
+        options={[
+          { label: 'All groups', value: '' },
+          { label: 'Finance', value: 'finance' },
+          { label: 'HR', value: 'hr' },
+        ]}
+        value=""
+        onChange={onChange}
+        searchPlaceholder="Search groups"
+        emptyLabel="No matching groups"
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Group: All groups' }));
+    const search = await screen.findByRole('searchbox', { name: 'Search groups' });
+    expect(search).toHaveFocus();
+    await user.type(search, 'fin');
+    expect(screen.queryByRole('menuitemradio', { name: 'HR' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: 'Finance' }));
+    expect(onChange).toHaveBeenCalledWith('finance');
+
+    await user.click(screen.getByRole('button', { name: 'Group: All groups' }));
+    await user.type(await screen.findByRole('searchbox'), 'zzz');
+    expect(screen.getByText('No matching groups')).toBeInTheDocument();
+  });
 });
