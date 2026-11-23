@@ -63,7 +63,7 @@ export async function menuItemLabels(menu: Locator): Promise<string[]> {
   return (await menu.getByRole('menuitem').allInnerTexts()).map((t) => t.trim());
 }
 
-const DROPDOWN_BUTTON = { Status: /^Status: /, Owner: /^Owner: /, Sort: /^Sort: / } as const;
+const DROPDOWN_BUTTON = { Group: /^Group: /, Status: /^Status: /, Owner: /^Owner: /, Sort: /^Sort: / } as const;
 
 /** Status menu options: label and a fixed pattern for the option's name ("Draft 3"). */
 export const STATUS_OPTIONS = {
@@ -81,7 +81,7 @@ export async function expectStatusOptionCount(page: Page, option: StatusOption, 
   await expect(item).toHaveAccessibleName(`${STATUS_OPTIONS[option].label} ${count}`);
 }
 
-/** Picks an option of a "Label: value" pill dropdown (Status, Owner, Sort). */
+/** Picks an option of a "Label: value" pill dropdown (Group, Status, Owner, Sort). */
 export async function chooseDropdown(
   page: Page,
   label: keyof typeof DROPDOWN_BUTTON,
@@ -186,18 +186,16 @@ export function logResult(id: string, log: TestLog): void {
 // UI text of the Processes page and its dialogs (checked as written in the app).
 // ---------------------------------------------------------------------------
 
-export const GROUP_PICKER_HINT = 'Pick a group to filter the model list, or manage groups here.';
+export const GROUP_PICKER_HINT = 'Create, rename, or delete process groups in this tenant.';
 export const GROUP_CREATE_HINT = 'The id is generated from the display name. Edit it to nest with parent/child.';
 export const GROUP_EDIT_HINT = 'Display name and description only — the id does not change.';
 export const GROUP_DELETE_HINT = 'Models in this group are removed from the catalog if none have instances.';
 export const MODEL_FORM_INTRO = 'Creates a model under a process group and a default BPMN you can open in the modeler.';
 export const MODEL_ID_HELP = 'Generated from the display name. You can edit it before creating.';
 
-/** Toolbar of the Processes page: Showing pill, search, Status / Owner / Sort and the model count. */
+/** Toolbar of the Processes page: search, Group / Status / Owner / Sort and the model count. */
 export async function expectProcessesToolbar(page: Page, opts: { scope: string; models: number }): Promise<void> {
-  await expect(page.getByText('Showing', { exact: true })).toBeVisible();
-  // The Showing pill is the first button with the scope name (model rows repeat the group name).
-  await expect(page.getByRole('button', { name: opts.scope, exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: `Group: ${opts.scope}`, exact: true })).toBeEnabled();
   const search = page.getByRole('searchbox', { name: 'Search process models' });
   await expect(search).toBeEditable();
   await expect(search).toHaveAttribute('placeholder', 'Search process models');
@@ -205,6 +203,19 @@ export async function expectProcessesToolbar(page: Page, opts: { scope: string; 
     await expect(page.getByRole('button', { name, exact: true })).toBeEnabled();
   }
   await expect(page.getByText(countLabel(opts.models, 'model'), { exact: true }).first()).toBeVisible();
+}
+
+/**
+ * Opens the Manage groups list. The header "New process group" button opens the
+ * create form; Cancel goes back to the list (edit / delete / "New group").
+ */
+export async function openManageGroups(page: Page): Promise<Locator> {
+  await page.getByTestId('processes-new-group-button').click();
+  const form = page.getByRole('dialog', { name: 'New process group' });
+  await form.getByRole('button', { name: 'Cancel', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Manage groups' });
+  await expect(picker).toBeVisible();
+  return picker;
 }
 
 /** Labels, placeholders and buttons of the New / Edit process group form. */

@@ -448,7 +448,7 @@ describe('ProcessesPage', () => {
     // hidden, because a create must land in exactly one tenant.
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'New process model' })).not.toBeInTheDocument();
-    expect(screen.queryByTestId('processes-manage-groups-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
     allTenants.unmount();
 
     const scopedSa = renderWithOutlet(
@@ -462,9 +462,8 @@ describe('ProcessesPage', () => {
     );
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument());
     scopedSa.unmount();
 
     renderWithOutlet(
@@ -478,9 +477,8 @@ describe('ProcessesPage', () => {
     );
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'New process model' })).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument());
   });
 
   it('hides publish lifecycle actions from a viewer (M8F-508)', async () => {
@@ -524,7 +522,7 @@ describe('ProcessesPage', () => {
     expect(screen.queryByRole('menuitem', { name: 'Publish' })).not.toBeInTheDocument();
   });
 
-  it('opens Manage groups from the page header', async () => {
+  it('opens the New process group form from the page header; Cancel shows Manage groups', async () => {
     stubOneModel();
     renderWithOutlet({
       scopedTenantId: 't1',
@@ -534,7 +532,9 @@ describe('ProcessesPage', () => {
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    const form = await screen.findByRole('dialog', { name: 'New process group' });
+    fireEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
 
     await waitFor(() =>
       expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument(),
@@ -592,8 +592,7 @@ describe('ProcessesPage', () => {
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
-    fireEvent.click(await screen.findByRole('button', { name: /New group/i }));
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
     const dialog = await screen.findByRole('dialog', { name: 'New process group' });
     fireEvent.change(within(dialog).getByLabelText('Process group display name'), {
       target: { value: 'Operations' },
@@ -608,7 +607,9 @@ describe('ProcessesPage', () => {
 
     // Create refetches the list, so the server list (not the local merge) wins.
     await waitFor(() => expect(groupGets).toBe(2));
-    fireEvent.click(screen.getByTestId('processes-manage-groups-button'));
+    fireEvent.click(screen.getByTestId('processes-new-group-button'));
+    const reopened = await screen.findByRole('dialog', { name: 'New process group' });
+    fireEvent.click(within(reopened).getByRole('button', { name: 'Cancel' }));
     const picker = await screen.findByRole('dialog', { name: 'Manage groups' });
     expect(await within(picker).findByText('Finance')).toBeInTheDocument();
     expect(within(picker).getByText('Operations')).toBeInTheDocument();
@@ -623,7 +624,7 @@ describe('ProcessesPage', () => {
       canManageProcesses: false,
     });
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    expect(screen.queryByTestId('processes-manage-groups-button')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
   });
 
   it('offers a way out of New process model when no process groups exist', async () => {

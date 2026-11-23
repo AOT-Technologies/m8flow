@@ -344,7 +344,7 @@ export default function ProcessesPage() {
         }
         mayChangeStatus={canManageProcessModels}
         onManageGroups={
-          canCreateGroup || canUpdateGroup || canDeleteGroup ? () => openGroups() : undefined
+          canCreateGroup || canUpdateGroup || canDeleteGroup ? () => openGroups(true) : undefined
         }
       />
       <CreateProcessModelDialog

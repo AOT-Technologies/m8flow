@@ -88,7 +88,7 @@ export type ProcessesModelsListProps = {
   onDeleteModel?: (model: ProcessModelListItem) => Promise<void> | void;
   /** Opens the create dialog. Absent for viewers / super-admin. */
   onCreateModel?: () => void;
-  /** Opens the Manage groups dialog. Omitted without any group write permission. */
+  /** Opens the groups dialog (on the create form when allowed). Omitted without any group write permission. */
   onManageGroups?: () => void;
   /** All-Tenants super-admin view: adds a Tenant column so rows from
    * different tenants (which can share a model id) stay distinguishable. */
@@ -431,7 +431,7 @@ export function ProcessesModelsList({
               size="pill"
               onClick={onManageGroups}
               className="gap-2"
-              data-testid="processes-manage-groups-button"
+              data-testid="processes-new-group-button"
             >
               <Plus className="size-[15px]" strokeWidth={2.2} />
               {t('processes.newProcessGroup')}
@@ -456,7 +456,7 @@ export function ProcessesModelsList({
             onKeyDown={onSearchKeyDown}
             placeholder={t('processes.list.searchPlaceholder')}
             aria-label={t('processes.list.searchPlaceholder')}
-            className="max-w-[420px] min-w-0 flex-1"
+            className="max-w-[420px] min-w-[220px] flex-1"
           />
 
           <SortDropdown
