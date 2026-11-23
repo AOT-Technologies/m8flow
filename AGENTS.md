@@ -16,6 +16,12 @@ Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 - Prefer the eight host modules: `workflow`, `catalog`, `human_task`, `scheduler`,
   `identity`, `auth`, `authorization`, `secrets`.
 
+## Naming and Tracking Identifiers
+
+- Never use a ticket code in migration revision IDs or filenames, ownership table or
+  constraint names, or source comments. Use neutral names based on the schema change
+  or purpose instead; ticket codes are for tracking, not permanent identifiers.
+
 ## Repository Ownership
 
 Only modify files that belong to the `m8flow` repository.
