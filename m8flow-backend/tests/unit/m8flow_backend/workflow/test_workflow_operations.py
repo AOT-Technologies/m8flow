@@ -2128,8 +2128,12 @@ def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, 
     assert saved_file.read_text(encoding="utf-8") == xml
 
 
-def test_catalog_accepts_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-m8f-640", "core-1.0.0b3"])
+def test_catalog_saves_parallel_multi_instance_completion_condition_only_on_a_supporting_core(
+    db_session, tmp_path, monkeypatch, core_supports
+):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    monkeypatch.setattr(catalog, "_core_runs_parallel_completion_conditions", lambda: core_supports)
     tenant, user = _seed_actor(db_session)
     xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
     xml = xml.replace(
@@ -2139,9 +2143,15 @@ def test_catalog_accepts_parallel_multi_instance_completion_condition(db_session
         1,
     )
 
+    saved = tmp_path / tenant.id / "p" / "parallel-condition" / "parallel-condition.bpmn"
+    if not core_supports:
+        with pytest.raises(ApiError, match="installed core does not support completion conditions on parallel"):
+            catalog.save(db_session, path="p/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+        assert not saved.exists()
+        return
+
     catalog.save(db_session, path="p/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
 
-    saved = tmp_path / tenant.id / "p" / "parallel-condition" / "parallel-condition.bpmn"
     assert "nrOfCompletedInstances &gt;= 2" in saved.read_text(encoding="utf-8")
 
 
