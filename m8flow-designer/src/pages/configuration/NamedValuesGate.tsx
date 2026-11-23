@@ -34,6 +34,17 @@ function GateMessage({ title, messageTitle, body }: { title: string; messageTitl
   );
 }
 
+export function NamedValuesAccessDenied({ title }: { title: string }) {
+  const { t } = useTranslation();
+  return (
+    <GateMessage
+      title={title}
+      messageTitle={t('configuration.namedValues.gate.accessDeniedTitle')}
+      body={t('configuration.namedValues.gate.accessDeniedBody')}
+    />
+  );
+}
+
 export function NamedValuesGate({
   title,
   access = 'list',
@@ -52,13 +63,7 @@ export function NamedValuesGate({
       ? canReadNamedValueItems
       : canReadNamedValues;
   if (!allowed) {
-    return (
-      <GateMessage
-        title={title}
-        messageTitle={t('configuration.namedValues.gate.unavailableTitle')}
-        body={t('configuration.namedValues.gate.unavailableBody')}
-      />
-    );
+    return <NamedValuesAccessDenied title={title} />;
   }
   if (!tenantId) {
     return (

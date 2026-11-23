@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, import_yaml, sync_groups
 from m8flow_backend.models.named_value import NamedValueModel
 
 _COLLECTION = "/v1.0/m8flow/named-values"
+_PERMISSION_TARGETS = {
+    "/m8flow/named-values": ["GET", "POST"],
+    "/m8flow/named-values/{id}": ["GET", "PUT", "DELETE"],
+}
 
 
 def _login_user(client, db_session, *, username: str, groups: list[str], tenant_id: str):
@@ -304,3 +310,78 @@ def test_named_value_permission_matrix_for_viewer_and_tenant_admin(client, db_se
     )
     assert updated.status_code == 200
     assert updated.get_json()["value"] == "updated"
+
+
+@pytest.mark.parametrize(
+    ("role", "can_read", "can_write"),
+    [("tenant-admin", True, True), ("integrator", True, True),
+     ("viewer", True, False), ("editor", False, False)],
+)
+def test_permission_hints_match_named_value_routes(client, db_session, role, can_read, can_write):
+    headers = _login_user(
+        client, db_session, username=f"matrix-{role}",
+        groups=[f"tenant-a:{role}"], tenant_id="tenant-a",
+    )
+    row = NamedValueModel(
+        id="e17e685e-b839-4cd6-a77d-ccf61249e802", m8f_tenant_id="tenant-a",
+        name="EXISTING", value="original", is_sensitive=False, is_configured=True,
+    )
+    db_session.add(row)
+    db_session.commit()
+    variable_id = row.id
+
+    hints = client.post(
+        "/v1.0/permissions-check", headers=headers,
+        json={"requests_to_check": _PERMISSION_TARGETS},
+    )
+    assert hints.status_code == 200
+    assert hints.get_json()["results"] == {
+        "/m8flow/named-values": {"GET": can_read, "POST": can_write},
+        "/m8flow/named-values/{id}": {"GET": can_read, "PUT": can_write, "DELETE": can_write},
+    }
+    assert client.get(_COLLECTION, headers=headers).status_code == (200 if can_read else 403)
+    item_path = f"{_COLLECTION}/{variable_id}"
+    assert client.get(item_path, headers=headers).status_code == (200 if can_read else 404)
+    assert client.post(
+        _COLLECTION, headers=headers, json={"name": "CREATED", "value": "new"},
+    ).status_code == (201 if can_write else 403)
+    assert client.put(
+        item_path, headers=headers, json={"value": "updated"},
+    ).status_code == (200 if can_write else 403)
+    assert client.delete(item_path, headers=headers).status_code == (200 if can_write else 403)
+    db_session.expire_all()
+    if can_write:
+        assert db_session.get(NamedValueModel, variable_id) is None
+    else:
+        assert db_session.get(NamedValueModel, variable_id).value == "original"
+        assert db_session.query(NamedValueModel).filter_by(m8f_tenant_id="tenant-a").count() == 1
+
+
+def test_multi_org_named_value_permissions_follow_selected_tenant(client, db_session):
+    # The same shared-realm user has full access in one org, read-only in a
+    # second, and no configuration access in a third.
+    for tenant_id, role in [("tenant-a", "integrator"), ("tenant-b", "viewer"), ("tenant-c", "editor")]:
+        headers = _login_user(
+            client, db_session, username="multi-org-variables",
+            groups=[f"{tenant_id}:{role}"], tenant_id=tenant_id,
+        )
+    for tenant_id, can_read, can_write in [
+        ("tenant-a", True, True), ("tenant-b", True, False), ("tenant-c", False, False),
+        ("tenant-a", True, True),
+    ]:
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+        hints = client.post(
+            "/v1.0/permissions-check", headers=headers,
+            json={"requests_to_check": _PERMISSION_TARGETS},
+        )
+        assert hints.status_code == 200
+        assert hints.get_json()["results"]["/m8flow/named-values"] == {
+            "GET": can_read, "POST": can_write,
+        }
+        assert hints.get_json()["results"]["/m8flow/named-values/{id}"] == {
+            "GET": can_read, "PUT": can_write, "DELETE": can_write,
+        }
+        assert client.get(_COLLECTION, headers=headers).status_code == (200 if can_read else 403)
+        if tenant_id == "tenant-c":
+            assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+            assert client.get("/v1.0/tasks", headers=headers).status_code == 200

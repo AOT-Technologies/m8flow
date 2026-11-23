@@ -15,8 +15,9 @@ import {
   type NamedValue,
 } from '@/lib/namedValuesApi';
 import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
+import { ApiError } from '@/lib/api';
 
-import { NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
+import { NamedValuesAccessDenied, NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
 
 export default function NamedValuesPage() {
   const { t } = useTranslation();
@@ -41,6 +42,8 @@ function NamedValuesBody() {
   const [rows, setRows] = useState<NamedValue[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<NamedValue | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -48,6 +51,9 @@ function NamedValuesBody() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setAccessDenied(false);
+    setActionError(null);
+    setPendingDelete(null);
     fetchNamedValues(isSuperAdmin ? tenantId : null)
       .then((result) => {
         if (!cancelled) setRows(result);
@@ -55,6 +61,7 @@ function NamedValuesBody() {
       .catch((err: unknown) => {
         if (!cancelled) {
           setRows([]);
+          setAccessDenied(err instanceof ApiError && err.status === 403);
           setError(namedValuesErrorMessage(err, t('configuration.namedValues.errors.list')));
         }
       })
@@ -69,13 +76,13 @@ function NamedValuesBody() {
   async function confirmDelete() {
     const target = pendingDelete;
     setPendingDelete(null);
-    if (!target) return;
-    setError(null);
+    if (!target || !canDeleteNamedValues) return;
+    setActionError(null);
     try {
       await deleteNamedValue(target.id, isSuperAdmin ? tenantId : null);
       setReloadKey((key) => key + 1);
     } catch (err: unknown) {
-      setError(namedValuesErrorMessage(err, t('configuration.namedValues.errors.delete')));
+      setActionError(namedValuesErrorMessage(err, t('configuration.namedValues.errors.delete')));
     }
   }
 
@@ -109,7 +116,7 @@ function NamedValuesBody() {
       width: 'minmax(130px,1fr)',
       render: (row) => <span className="text-[13px] text-muted-foreground">{formatRelativeTimeVerbose(row.updatedAt)}</span>,
     },
-    ...(canEditNamedValues || canDeleteNamedValues
+    ...(canReadNamedValueItems || canDeleteNamedValues
       ? [
           {
             key: 'actions',
@@ -118,10 +125,10 @@ function NamedValuesBody() {
             width: 'minmax(130px,1fr)',
             render: (row) => (
               <div className="flex justify-end gap-1">
-                {canEditNamedValues ? (
+                {canReadNamedValueItems ? (
                   <Button asChild variant="ghost" size="sm">
                     <Link to={`/configuration/named-values/${encodeURIComponent(row.id)}`}>
-                      {t('configuration.namedValues.edit.action')}
+                      {t(canEditNamedValues ? 'configuration.namedValues.edit.action' : 'configuration.namedValues.view.action')}
                     </Link>
                   </Button>
                 ) : null}
@@ -136,6 +143,10 @@ function NamedValuesBody() {
         ]
       : []),
   ];
+
+  if (accessDenied) {
+    return <NamedValuesAccessDenied title={t('configuration.namedValues.title')} />;
+  }
 
   return (
     <main className="flex-1 px-11 py-10">
@@ -159,7 +170,8 @@ function NamedValuesBody() {
       </div>
 
       {error ? <Alert tone="error" className="mb-4">{error}</Alert> : null}
-      <Card variant="bordered" className="overflow-hidden">
+      {actionError ? <Alert tone="error" className="mb-4">{actionError}</Alert> : null}
+      {!error && <Card variant="bordered" className="overflow-hidden">
         {loading ? (
           <p className="px-[22px] py-6 text-sm text-muted-foreground">{t('configuration.namedValues.loading')}</p>
         ) : rows.length === 0 ? (
@@ -167,7 +179,7 @@ function NamedValuesBody() {
         ) : (
           <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} />
         )}
-      </Card>
+      </Card>}
       <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => !open && setPendingDelete(null)}

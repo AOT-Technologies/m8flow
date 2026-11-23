@@ -84,6 +84,8 @@
     "notAllowed": "Not allowed",
     "notAllowedBody": "Your permissions do not allow this configuration variable action.",
     "gate": {
+      "accessDeniedTitle": "Access denied",
+      "accessDeniedBody": "You do not have permission to access this configuration variable page.",
       "unavailableTitle": "Not available",
       "needsTenantTitle": "Choose a tenant",
       "unavailableBody": "You do not have permission to read configuration variables.",
@@ -99,6 +101,11 @@
       "subtitle": "Sensitive values are write-only. Supply a new value to replace one or change its sensitivity.",
       "save": "Save changes",
       "action": "Edit"
+    },
+    "view": {
+      "title": "Configuration variable",
+      "subtitle": "View this tenant's configuration variable.",
+      "action": "View"
     },
     "validation": {
       "name": "Name must use 1–255 letters, numbers, underscores, or hyphens.",

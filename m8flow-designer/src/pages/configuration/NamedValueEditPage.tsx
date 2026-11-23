@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Textarea } from '@/components/ui/textarea';
+import { ApiError } from '@/lib/api';
 import {
   createNamedValue,
   fetchNamedValue,
@@ -16,23 +17,26 @@ import {
 } from '@/lib/namedValuesApi';
 
 import { ConfigurationBackButton } from './ConfigurationBackButton';
-import { NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
+import { NamedValuesAccessDenied, NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
 
 const NAME_PATTERN = /^[A-Za-z0-9_-]{1,255}$/;
 
 export default function NamedValueEditPage() {
   const { t } = useTranslation();
   const { id } = useParams();
-  const title = t(id ? 'configuration.namedValues.edit.title' : 'configuration.namedValues.new.title');
+  const { canUpdateNamedValues } = useNamedValuesContext();
+  const title = t(id
+    ? canUpdateNamedValues ? 'configuration.namedValues.edit.title' : 'configuration.namedValues.view.title'
+    : 'configuration.namedValues.new.title');
   const access = id ? 'item' : 'create';
   return (
     <NamedValuesGate title={title} access={access}>
-      <NamedValueEditBody />
+      <NamedValueEditBody title={title} />
     </NamedValuesGate>
   );
 }
 
-function NamedValueEditBody() {
+function NamedValueEditBody({ title }: { title: string }) {
   const { t } = useTranslation();
   const { id } = useParams();
   const isEdit = Boolean(id);
@@ -47,6 +51,7 @@ function NamedValueEditBody() {
   const allowed = isEdit
     ? canReadNamedValueItems && canUpdateNamedValues
     : canCreateNamedValues;
+  const readOnly = isEdit && !canUpdateNamedValues;
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -57,6 +62,9 @@ function NamedValueEditBody() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [configured, setConfigured] = useState(false);
 
   useEffect(() => {
     if (!isEdit || !id || !canReadNamedValueItems) {
@@ -66,6 +74,8 @@ function NamedValueEditBody() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setLoadError(null);
+    setAccessDenied(false);
     fetchNamedValue(id, isSuperAdmin ? tenantId : null)
       .then((row) => {
         if (cancelled) return;
@@ -73,13 +83,17 @@ function NamedValueEditBody() {
         setDescription(row.description ?? '');
         setSensitive(row.isSensitive);
         setInitialSensitive(row.isSensitive);
+        setConfigured(row.isConfigured);
         // The API deliberately omits sensitive values.
         const loadedValue = row.isSensitive ? '' : String(row.value ?? '');
         setValue(loadedValue);
         setInitialValue(loadedValue);
       })
       .catch((err: unknown) => {
-        if (!cancelled) setError(namedValuesErrorMessage(err, t('configuration.namedValues.errors.load')));
+        if (!cancelled) {
+          setAccessDenied(err instanceof ApiError && err.status === 403);
+          setLoadError(namedValuesErrorMessage(err, t('configuration.namedValues.errors.load')));
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -91,7 +105,7 @@ function NamedValueEditBody() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (saving || !allowed) return;
+    if (saving || loading || loadError || !allowed) return;
     const cleanedName = name.trim();
     if (!NAME_PATTERN.test(cleanedName)) {
       setError(t('configuration.namedValues.validation.name'));
@@ -132,21 +146,8 @@ function NamedValueEditBody() {
   }
 
   const listPath = '/configuration/named-values';
-  if (!allowed) {
-    return (
-      <main className="flex-1 px-11 py-10">
-        <div className="mb-7">
-          <ConfigurationBackButton label={t('configuration.namedValues.title')} to={listPath} />
-          <h1 className="font-display text-[32px] font-semibold tracking-tight">
-            {t(isEdit ? 'configuration.namedValues.edit.title' : 'configuration.namedValues.new.title')}
-          </h1>
-        </div>
-        <Card variant="bordered" className="max-w-lg p-6">
-          <p className="text-[15px] font-semibold text-foreground">{t('configuration.namedValues.notAllowed')}</p>
-          <p className="mt-2 text-sm text-muted-foreground">{t('configuration.namedValues.notAllowedBody')}</p>
-        </Card>
-      </main>
-    );
+  if (accessDenied) {
+    return <NamedValuesAccessDenied title={title} />;
   }
 
   return (
@@ -154,16 +155,42 @@ function NamedValueEditBody() {
       <div className="mb-7">
         <ConfigurationBackButton label={t('configuration.namedValues.title')} to={listPath} />
         <h1 className="font-display text-[32px] font-semibold tracking-tight">
-          {t(isEdit ? 'configuration.namedValues.edit.title' : 'configuration.namedValues.new.title')}
+          {title}
         </h1>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          {t(isEdit ? 'configuration.namedValues.edit.subtitle' : 'configuration.namedValues.new.subtitle')}
+          {t(isEdit
+            ? readOnly ? 'configuration.namedValues.view.subtitle' : 'configuration.namedValues.edit.subtitle'
+            : 'configuration.namedValues.new.subtitle')}
         </p>
       </div>
       {error ? <Alert tone="error" className="mb-4 max-w-lg" role="alert">{error}</Alert> : null}
+      {loadError ? <Alert tone="error" className="mb-4 max-w-lg" role="alert">{loadError}</Alert> : (
       <Card variant="bordered" className="max-w-lg p-6">
         {loading ? (
           <p className="text-sm text-muted-foreground">{t('configuration.namedValues.loading')}</p>
+        ) : readOnly ? (
+          <dl className="space-y-4 text-sm">
+            <div>
+              <dt className="font-medium">{t('configuration.namedValues.name')}</dt>
+              <dd className="mt-1 break-words">{name}</dd>
+            </div>
+            <div>
+              <dt className="font-medium">{t('common.description')}</dt>
+              <dd className="mt-1 whitespace-pre-wrap break-words">{description || t('common.none')}</dd>
+            </div>
+            <div>
+              <dt className="font-medium">{t('configuration.namedValues.columns.sensitivity')}</dt>
+              <dd className="mt-1">{t(sensitive ? 'configuration.namedValues.sensitive' : 'configuration.namedValues.standard')}</dd>
+            </div>
+            <div>
+              <dt className="font-medium">{t('common.status')}</dt>
+              <dd className="mt-1">{t(configured ? 'configuration.namedValues.configured' : 'configuration.namedValues.notConfigured')}</dd>
+            </div>
+            <div>
+              <dt className="font-medium">{t('configuration.namedValues.value')}</dt>
+              <dd className="mt-1 whitespace-pre-wrap break-words">{sensitive ? t('configuration.namedValues.sensitiveHelp') : value}</dd>
+            </div>
+          </dl>
         ) : (
           <form onSubmit={(event) => void handleSubmit(event)}>
             <label className="block text-sm font-medium text-foreground" htmlFor="named-value-name">
@@ -246,7 +273,7 @@ function NamedValueEditBody() {
             </div>
           </form>
         )}
-      </Card>
+      </Card>)}
     </main>
   );
 }
