@@ -274,7 +274,9 @@ def _normalize_authorization_path(path: str) -> str:
     placeholders use the same target. Trailing slashes are ignored on both
     public and canonical Task Review paths.
     """
-    path = _without_api_path_prefix(path)
+    # Proxies may collapse repeated slashes before routing. Apply the same
+    # normalization before removing the version prefix and selecting an action.
+    path = _without_api_path_prefix(re.sub(r"/+", "/", path))
     public_prefix = "/m8flow/task-review"
     target_prefix = "/m8flow/task-review-access"
     normalized = path.rstrip("/") or "/"

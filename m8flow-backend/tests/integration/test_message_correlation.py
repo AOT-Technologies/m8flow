@@ -54,6 +54,9 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
         command.upgrade(cfg, "head")
         command.upgrade(cfg, "head")
         with engine.connect() as connection:
+            assert connection.execute(sa.text(
+                "SELECT version_num FROM m8flow_core_alembic_version"
+            )).scalars().all() == ["m8f_694_message_correlation"]
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
                 "m8f_694_merge_run_stats"
             )
@@ -163,3 +166,28 @@ def test_external_message_http_delivery_is_scoped_to_the_authorized_tenant():
         assert session.get(ProcessInstanceModel, duplicate_two).status == "waiting"
         assert session.get(ProcessInstanceModel, other) is None
         assert session.get(MessageDeliveryReceiptModel, (other_tenant, "payment-18")) is None
+
+
+def test_external_message_requires_a_concrete_tenant_without_dispatch(monkeypatch):
+    from m8flow_backend import workflow
+    from m8flow_backend.app import create_app
+    from m8flow_backend.auth import encode_auth_token
+    from m8flow_backend.identity import ensure_user, sync_groups
+
+    with tenant_session(None) as session:
+        user = ensure_user(
+            session, username=new_tenant_id("platform-admin"), service="local", service_id=new_tenant_id("admin"),
+        )
+        sync_groups(session, user=user, group_identifiers=["super-admin"], tenant_id="m8flow")
+        token = encode_auth_token(user=user)
+
+    def unexpected_dispatch(*args, **kwargs):
+        pytest.fail("A message must never dispatch without a concrete active tenant")
+
+    monkeypatch.setattr(workflow, "correlate_message", unexpected_dispatch)
+    with create_app().test_client() as client:
+        response = client.post(ROUTE, headers={"Authorization": f"Bearer {token}"}, json={
+            "messageName": "Payment received", "deliveryId": "no-tenant", "payload": {},
+        })
+    assert response.status_code == 400, response.text
+    assert response.json()["error_code"] == "tenant_required"

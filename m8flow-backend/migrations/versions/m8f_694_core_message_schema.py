@@ -146,6 +146,9 @@ def upgrade() -> None:
     _upgrade_journal_instance_keys()
     # Adopt core-installed tables without claiming ownership of them.
     _create_owned_tables(bind, Base.metadata)
+    # This is the normalization boundary for the compatible markers accepted
+    # by c4d5e6f7a8b9/d6e7f8a9b0c1. Advance only after the schema is installed;
+    # stamping the earlier handoff revisions would claim tables not yet present.
     bind.execute(VERSION.update().where(VERSION.c.version_num == BASELINE).values(version_num=CORE_HEAD))
 
 

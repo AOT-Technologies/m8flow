@@ -24,6 +24,7 @@ depends_on = None
 
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
 # Host migration replay can encounter the additive message schema already installed.
+# m8f_694_core_message_schema normalizes these markers after installing that schema.
 COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "m8f_694_message_correlation")
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"

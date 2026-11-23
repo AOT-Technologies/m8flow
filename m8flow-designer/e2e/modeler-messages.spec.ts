@@ -5,7 +5,7 @@ import {
   useSession,
 } from './helpers/auth';
 import { useSeededModelCopy } from './helpers/seedCatalog';
-import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from './helpers/diagram';
+import { openChangeElementMenu, openPropertiesPanelGroup } from './helpers/diagram';
 
 /**
  * Message events and process-level message models are dropped. Send/Receive
@@ -47,7 +47,9 @@ test.describe('Process Modeler: Message settings', () => {
   test('A Send Task still shows its Messages settings', async ({ page }) => {
     const menu = await openChangeElementMenu(page, SEND_TASK_ID);
     await menu.locator('[data-id="replace-with-send-task"]').click();
-    await selectElement(page, SEND_TASK_ID);
+    // Replacement keeps the task selected. Clicking it again toggles selection
+    // off and shows the collaboration's properties instead of the task's.
+    await expect(page.locator('.bio-properties-panel-header-type')).toHaveText('Send Task');
     const group = await openPropertiesPanelGroup(page, 'messages');
     await expect(group).toBeVisible();
     console.log('Send Task still shows its Messages settings.');

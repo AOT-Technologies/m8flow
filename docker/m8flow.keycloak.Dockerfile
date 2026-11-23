@@ -15,13 +15,22 @@ ENV PATH="/opt/maven/bin:$PATH"
 WORKDIR /build
 COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper
 
-RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
+# Maven Central can throttle fresh CI builders. Keep successful downloads and
+# retry transient transfer failures, while compiler errors still fail the build.
+RUN --mount=type=cache,target=/root/.m2,sharing=locked \
+    attempt=1; \
+    until mvn -B -U -f /build/realm-info-mapper/pom.xml package -q -DskipTests \
+      -Dmaven.wagon.http.retryHandler.count=5; do \
+      if [ "$attempt" -ge 4 ]; then exit 1; fi; \
+      sleep "$((attempt * 10))"; \
+      attempt="$((attempt + 1))"; \
+    done
 
 # jq's official image is built as a static binary, so it can be copied into
 # Keycloak's UBI Micro runtime without adding a package manager or shared libs.
 FROM ghcr.io/jqlang/jq:1.8.2 AS jq
 
-FROM quay.io/keycloak/keycloak:26.8.2-1 AS keycloak
+FROM quay.io/keycloak/keycloak:26.8.2-3 AS keycloak
 
 # Red Hat ships no fixed sqlite-libs for UBI 9 (CVE-2026-119374, CVE-2026-119379).
 # Only nss-softokn links it, and the JDK loads NSS only on a host in FIPS mode,

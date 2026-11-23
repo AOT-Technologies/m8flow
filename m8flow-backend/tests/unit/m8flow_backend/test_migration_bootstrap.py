@@ -1286,13 +1286,16 @@ def test_compensation_journal_upgrade_applies_tenant_rls(monkeypatch):
     engine.dispose()
 
 
-@pytest.mark.parametrize("previous_revision", ["fbcad9e02138", "c81d2e3f4a56", "m8f_694_core_message_schema"])
+@pytest.mark.parametrize("previous_revision", [
+    "c4d5e6f7a8b9", "d6e7f8a9b0c1", "fbcad9e02138", "c81d2e3f4a56", "m8f_694_core_message_schema",
+])
 def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeypatch, previous_revision):
     database_uri = f"sqlite:///{tmp_path / 'pre-message.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
     command.upgrade(cfg, previous_revision)
     engine = sa.create_engine(database_uri)
-    assert "compensation_record" in sa.inspect(engine).get_table_names()
+    if previous_revision not in {"c4d5e6f7a8b9", "d6e7f8a9b0c1"}:
+        assert "compensation_record" in sa.inspect(engine).get_table_names()
     if previous_revision != "m8f_694_core_message_schema":
         assert "signal_publication" not in sa.inspect(engine).get_table_names()
         assert "message_subscription" not in sa.inspect(engine).get_table_names()
@@ -1306,4 +1309,33 @@ def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeyp
         assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == (
             "m8f_694_message_correlation"
         )
+    engine.dispose()
+
+
+@pytest.mark.parametrize("previous_revision", ["c4d5e6f7a8b9", "d6e7f8a9b0c1", "c81d2e3f4a56"])
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "m8f_694_message_correlation"])
+def test_upgrade_normalizes_compatible_core_markers_with_preinstalled_message_tables(
+    tmp_path, monkeypatch, previous_revision, core_marker,
+):
+    from m8flow_core.models import Base
+
+    database_uri = f"sqlite:///{tmp_path / 'preinstalled-messages.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("m8f_694_core_message_schema").module
+    with engine.begin() as connection:
+        for name in revision.TABLES:
+            Base.metadata.tables[name].create(connection, checkfirst=True)
+        connection.execute(revision.VERSION.update().values(version_num=core_marker))
+        connection.execute(Base.metadata.tables["message_delivery_receipt"].insert().values(
+            m8f_tenant_id="m8flow", delivery_id="retained-receipt", request_digest="a" * 64,
+            delivered_at=datetime.now(UTC),
+        ))
+    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert connection.execute(sa.select(revision.VERSION.c.version_num)).scalars().all() == [revision.CORE_HEAD]
+        assert connection.scalar(sa.text("SELECT delivery_id FROM message_delivery_receipt")) == "retained-receipt"
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == _script_head()
     engine.dispose()

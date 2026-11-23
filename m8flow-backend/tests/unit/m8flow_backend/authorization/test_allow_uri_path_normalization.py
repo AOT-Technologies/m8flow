@@ -28,7 +28,14 @@ def test_allow_uri_normalizes_standard_granted_route(path, regular_user, monkeyp
     assert seen == ["/onboarding"]
 
 
-@pytest.mark.parametrize("path", ["/m8flow/messages/correlate", "/v1.0/m8flow/messages/correlate"])
+@pytest.mark.parametrize("path", [
+    "/m8flow/messages/correlate",
+    "/m8flow/messages/correlate/",
+    "/v1.0/m8flow/messages/correlate",
+    "/v1.0/m8flow/messages/correlate/",
+    "//v1.0//m8flow//messages//correlate",
+    "//m8flow//messages//correlate//",
+])
 @pytest.mark.parametrize("allowed", [True, False])
 def test_message_correlation_post_requires_execute(path, allowed, regular_user, monkeypatch):
     seen = []
@@ -40,6 +47,20 @@ def test_message_correlation_post_requires_execute(path, allowed, regular_user, 
     monkeypatch.setattr(authorization, "_resource_permitted", resource_permitted)
     assert authorization.allow_uri(regular_user, "POST", path, session=object()) is allowed
     assert seen == [("execute", "tenant", "/m8flow/messages/correlate")]
+
+
+@pytest.mark.parametrize("path", [
+    "/v1.0/m8flow/messages/correlate-other/",
+    "/v1.0/m8flow/messages/correlate/other",
+])
+def test_message_correlation_remap_does_not_match_other_routes(path, regular_user, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        authorization, "_resource_permitted",
+        lambda _session, _user, action, _resource_type, resource_id: seen.append((action, resource_id)) or False,
+    )
+    assert authorization.allow_uri(regular_user, "POST", path, session=object(), group_fallback=False) is False
+    assert seen == [("create", path.removeprefix("/v1.0").rstrip("/"))]
 
 
 @pytest.mark.parametrize(
