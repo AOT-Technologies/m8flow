@@ -984,8 +984,8 @@ def _error_instance_after_failed_start_script(
             "Start of %s in tenant %s failed in a task, but the failed instance's id "
             "could not be read from core (script_engine._process_instance_id); "
             "it stays not_started instead of Error",
-            process_model_identifier,
-            tenant_id,
+            sanitize_log_value(process_model_identifier),
+            sanitize_log_value(tenant_id),
         )
         return None
     failed_task_guid = str(failed_task.id)
