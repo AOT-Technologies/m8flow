@@ -867,6 +867,9 @@ def _require_core_breaking_head() -> bool:
     revisions = _core_marker_revisions()
     if not revisions:
         return False
+    # version_num is the primary key: duplicate equal rows cannot exist in a
+    # supported schema. Multiple distinct markers indicate an incomplete or
+    # corrupt upgrade and must fail closed rather than choosing a branch.
     if len(revisions) != 1 or revisions[0] not in COMPATIBLE_CORE_REVISIONS:
         raise RuntimeError(
             "m8flow-bpmn-core must be at a compatible revision for "

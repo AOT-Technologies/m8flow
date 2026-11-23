@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
+from io import StringIO
 from pathlib import Path
 from urllib.parse import unquote
 from xml.etree.ElementTree import Element, ParseError
@@ -1293,6 +1294,32 @@ def get_model_identity(
     }
 
 
+def _sequence_flow_references(xml: str, target_namespace: str):
+    """Resolve local QName references using each flow's in-scope namespaces."""
+    scopes: list[dict[str, str]] = [{}]
+    declarations: dict[str, str] = {}
+    for event, node in SafeElementTree.iterparse(StringIO(xml), events=("start-ns", "start", "end")):
+        if event == "start-ns":
+            prefix, namespace = node
+            declarations[prefix] = namespace
+        elif event == "start":
+            scope = {**scopes[-1], **declarations}
+            declarations.clear()
+            scopes.append(scope)
+            if node.tag == BPMN + "sequenceFlow":
+                references = []
+                for name in ("sourceRef", "targetRef"):
+                    raw = node.get(name) or ""
+                    prefix, separator, local = raw.partition(":")
+                    resolved = local if separator and scope.get(prefix) == target_namespace else raw
+                    # Retain exact IDs too; never silently truncate a colon in
+                    # an imported ID or interpret a foreign namespace as local.
+                    references.append({raw, resolved})
+                yield references
+        else:
+            scopes.pop()
+
+
 def _reject_unsupported_constructs(xml: str) -> Element:
     # Parse first so malformed input always has the same error contract, even
     # when its partial text also resembles an unsupported BPMN construct.
@@ -1306,10 +1333,9 @@ def _reject_unsupported_constructs(xml: str) -> Element:
         node.get("id") for node in root.iter(BPMN + "intermediateCatchEvent")
         if node.find(BPMN + "signalEventDefinition") is not None
     }
-    if any(
-        (flow.get("sourceRef") or "").rsplit(":", 1)[-1] in event_gateways
-        and (flow.get("targetRef") or "").rsplit(":", 1)[-1] in signal_catches
-        for flow in root.iter(BPMN + "sequenceFlow")
+    if event_gateways and signal_catches and any(
+        source & event_gateways and target & signal_catches
+        for source, target in _sequence_flow_references(xml, root.get("targetNamespace") or "")
     ):
         raise ApiError(
             "unsupported_bpmn",

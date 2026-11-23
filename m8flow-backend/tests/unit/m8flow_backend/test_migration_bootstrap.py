@@ -357,6 +357,39 @@ def test_upgrade_from_legacy_connector_data_backfills_schema_and_guards_downgrad
     assert "m8flow_connector_variable" in sa.inspect(engine).get_table_names()
 
 
+def test_core_marker_primary_key_prevents_duplicate_revisions(tmp_path, monkeypatch):
+    cfg = _alembic_config(f"sqlite:///{tmp_path / 'core-marker-key.db'}", monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'core-marker-key.db'}")
+    assert sa.inspect(engine).get_pk_constraint("m8flow_core_alembic_version")["constrained_columns"] == ["version_num"]
+    with engine.begin() as connection:
+        marker = connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version"))
+        with pytest.raises(sa.exc.IntegrityError), connection.begin_nested():
+            connection.execute(sa.text(
+                "INSERT INTO m8flow_core_alembic_version (version_num) VALUES (:marker)"
+            ), {"marker": marker})
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert connection.execute(sa.text(
+            "SELECT version_num FROM m8flow_core_alembic_version"
+        )).scalars().all() == ["m8f_694_message_correlation"]
+    engine.dispose()
+
+
+def test_upgrade_refuses_multiple_distinct_compatible_core_markers(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'mixed-core-markers.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "1518b05122bc")
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        connection.execute(sa.text(
+            "INSERT INTO m8flow_core_alembic_version (version_num) VALUES ('m8f_694_message_correlation')"
+        ))
+    with pytest.raises(RuntimeError, match="compatible revision"):
+        command.upgrade(cfg, "head")
+    engine.dispose()
+
+
 def test_upgrade_refuses_to_apply_breaking_cleanup_before_core_head(tmp_path, monkeypatch):
     db_path = tmp_path / "wrong-core-head.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
