@@ -142,12 +142,24 @@ export async function mockApi(page: Page, m: Matcher, status: number, body: unkn
 }
 
 /**
- * New tenant with no data: the process model list, process group list and
- * owner list come back empty. Writes (POST/PUT/DELETE) still reach the backend.
+ * New tenant with no data: lists start empty. Successful group creates still
+ * reach the backend and appear in subsequent group-list refreshes.
  */
 export async function mockEmptyCatalog(page: Page): Promise<void> {
   await mockApi(page, { method: 'GET', path: '/v1.0/m8flow/process-models' }, 200, []);
-  await mockApi(page, { method: 'GET', path: '/v1.0/m8flow/process-groups' }, 200, []);
+  const createdGroups: GroupItem[] = [];
+  await page.route('**/v1.0/**', async (route) => {
+    const path = '/v1.0/m8flow/process-groups';
+    if (matches(route, { method: 'GET', path })) {
+      await route.fulfill({ json: createdGroups });
+    } else if (matches(route, { method: 'POST', path })) {
+      const response = await route.fetch();
+      if (response.ok()) createdGroups.push(await response.json());
+      await route.fulfill({ response });
+    } else {
+      await route.fallback();
+    }
+  });
   await mockApi(
     page,
     { method: 'GET', path: '/v1.0/m8flow/process-instances/owners' },

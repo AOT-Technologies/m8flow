@@ -241,8 +241,8 @@ test.describe('Processes list', () => {
 
 // ===========================================================================
 // PRC-01..04, PRC-25..26 -- new tenant with no process groups or models.
-// The list calls are mocked to return nothing, as for a brand-new tenant;
-// writes still reach the real backend and are cleaned up.
+// Lists start empty, as for a brand-new tenant; created groups appear on
+// refresh. Writes still reach the real backend and are cleaned up.
 // ===========================================================================
 test.describe('Processes for a new tenant with no data (mocked API)', () => {
   test.beforeEach(async ({ page }) => {
@@ -1119,7 +1119,7 @@ test.describe('Processes for a tenant with data', () => {
     // Group rows are plain rows (not buttons); the row holding the renamed group's Edit button.
     const row = picker
       .locator('div')
-      .filter({ has: picker.getByRole('button', { name: `Edit ${renamed}`, exact: true }) })
+      .filter({ has: page.getByRole('button', { name: `Edit ${renamed}`, exact: true }) })
       .last();
     await expect(row).toContainText('Renamed by E2E');
     const saved = (await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups')).find((g) => g.id === group.id);
