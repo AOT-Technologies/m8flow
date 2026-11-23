@@ -11,7 +11,7 @@ vi.mock('@/lib/tasksApi', () => ({
   submitTaskReview: vi.fn(),
 }));
 
-import { ApiError } from '@/lib/api';
+import { ApiError, NetworkError } from '@/lib/api';
 import { fetchTaskReviewDetail, submitTaskReview, type TaskReviewDetail } from '@/lib/tasksApi';
 import TaskReviewDetailPage from './TaskReviewDetailPage';
 
@@ -119,6 +119,33 @@ beforeEach(() => {
 });
 
 describe('TaskReviewDetailPage', () => {
+  it('retries a failed task load in place', async () => {
+    mockFetch.mockRejectedValueOnce(new NetworkError()).mockResolvedValueOnce(mockDetail());
+    renderDetail();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('heading', { name: 'Work From Home Request' })).toBeInTheDocument();
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves entered values after a failed submit and retries only when the user submits again', async () => {
+    mockFetch.mockResolvedValue(mockDetail());
+    mockSubmit.mockRejectedValueOnce(new NetworkError()).mockResolvedValueOnce({ process_instance_id: 210 });
+    renderDetail();
+    await screen.findByRole('heading', { name: 'Work From Home Request' });
+    const reason = screen.getByLabelText(/Reason for WFH/i);
+    fireEvent.change(screen.getByLabelText(/WFH Date/i), { target: { value: '2026-09-01' } });
+    fireEvent.change(reason, { target: { value: 'Deep focus work needed at home.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
+    expect(reason).toHaveValue('Deep focus work needed at home.');
+    window.dispatchEvent(new Event('online'));
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
+    expect(mockSubmit).toHaveBeenCalledTimes(2);
+    expect(mockSubmit.mock.calls[1]).toEqual(mockSubmit.mock.calls[0]);
+  });
   it('renders editable inputs from the schema (date, enum select, textarea, applied default)', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     renderDetail();

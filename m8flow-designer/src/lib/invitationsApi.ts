@@ -1,4 +1,4 @@
-import { API_BASE_URL, ApiError } from './api';
+import { API_BASE_URL, ApiError, toNetworkError } from './api';
 
 export type InvitationValidation = {
   email: string;
@@ -33,7 +33,7 @@ async function publicJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
     headers,
     credentials: 'include',
-  });
+  }).catch(toNetworkError);
   if (!response.ok) {
     throw new ApiError(
       path,

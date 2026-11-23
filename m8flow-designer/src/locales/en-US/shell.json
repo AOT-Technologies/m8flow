@@ -40,7 +40,13 @@
   },
   "permissions": {
     "loading": "Loading permissions…",
-    "loadFailed": "Unable to load permissions. Reload to try again."
+    "loadFailed": "Unable to load permissions. Please try again."
+  },
+  "network": {
+    "unableToConnect": "Unable to connect. Please check your internet connection.",
+    "offline": "You're offline. Stay on this page to keep unsaved changes, and save them once the connection is back.",
+    "pageFailed": "Something went wrong while loading this page.",
+    "retry": "Retry"
   },
   "routeLoading": {
     "processes": "Loading processes…",
