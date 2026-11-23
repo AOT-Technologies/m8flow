@@ -1,8 +1,9 @@
-import { render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GLOBAL_TENANT_STORAGE_KEY } from '@/lib/selectedTenant';
+import { NetworkError } from '@/lib/networkErrors';
 import { SessionProvider } from './SessionProvider';
 import { useActiveTenant, useCapabilities, useTenantRegistry } from './hooks';
 
@@ -41,6 +42,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
   mockIsSuperAdmin.mockReturnValue(false);
   mockGetSelectedTenantId.mockReturnValue(null);
@@ -106,6 +108,96 @@ describe('useActiveTenant', () => {
 });
 
 describe('useCapabilities', () => {
+  it('allows an in-place retry after a failed permission bootstrap', async () => {
+    mockCheckPermissions.mockRejectedValueOnce(new NetworkError());
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.loadError).toBe('Unable to connect. Please check your internet connection.');
+    expect(result.current.canReadProcesses).toBe(false);
+    act(() => result.current.retryPermissions?.());
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.canReadProcesses).toBe(true);
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries only network-failed bootstrap reads on reconnection without remounting children', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    mockGetSelectedTenantId.mockReturnValue('second');
+    const memberships = [
+      { alias: 'm8flow', id: 'org-one', name: 'First organization' },
+      { alias: 'second', id: 'org-two', name: 'Second organization' },
+    ];
+    mockCheckPermissions.mockRejectedValueOnce(new NetworkError());
+    mockFetchOrganizationMemberships.mockRejectedValueOnce(new NetworkError()).mockResolvedValueOnce(memberships);
+    function Child() {
+      const capabilities = useCapabilities();
+      const registry = useTenantRegistry();
+      const tenant = useActiveTenant();
+      return <>
+        <span>{capabilities.status}</span><span>{registry.activeTenantLabel}</span>
+        <span data-testid="active-tenant">{tenant.activeTenantId}</span>
+        <span data-testid="organization-count">{registry.organizationMemberships.length}</span>
+        <input aria-label="Draft" />
+      </>;
+    }
+    render(<SessionProvider><Child /></SessionProvider>);
+    await screen.findByText('error');
+    const input = screen.getByLabelText('Draft');
+    fireEvent.change(input, { target: { value: 'Unsaved work' } });
+    mockGetActiveTenantDisplayLabel.mockReturnValue('Second organization');
+    act(() => {
+      online.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+    });
+    await screen.findByText('ready');
+    await screen.findByText('Second organization');
+    expect(screen.getByLabelText('Draft')).toBe(input);
+    expect(input).toHaveValue('Unsaved work');
+    expect(screen.getByTestId('active-tenant')).toHaveTextContent('second');
+    expect(screen.getByTestId('organization-count')).toHaveTextContent('2');
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(2);
+    expect(mockFetchOrganizationMemberships).toHaveBeenCalledTimes(2);
+    act(() => {
+      online.mockReturnValue(false);
+      window.dispatchEvent(new Event('offline'));
+    });
+    act(() => {
+      online.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(2);
+    expect(mockFetchOrganizationMemberships).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a network-failed tenant directory without reloading successful permissions', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    mockIsSuperAdmin.mockReturnValue(true);
+    mockFetchTenants.mockRejectedValueOnce(new NetworkError()).mockResolvedValueOnce([{ id: 't1', name: 'Tenant One' }]);
+    const { result } = renderHook(() => ({ registry: useTenantRegistry(), capabilities: useCapabilities() }), { wrapper });
+    await waitFor(() => expect(result.current.capabilities.status).toBe('ready'));
+    expect(result.current.registry.tenants).toEqual([]);
+    act(() => {
+      online.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+    });
+    await waitFor(() => expect(result.current.registry.tenants).toEqual([{ id: 't1', name: 'Tenant One' }]));
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(1);
+    expect(mockFetchTenants).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not automatically retry a permission HTTP failure on reconnection', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    mockCheckPermissions.mockRejectedValueOnce(new Error('403 Forbidden'));
+    const { result } = renderHook(() => useCapabilities(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    act(() => {
+      online.mockReturnValue(true);
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(1);
+    expect(result.current.canReadProcesses).toBe(false);
+  });
   it('checks process-list access against the process-model backend endpoint', async () => {
     renderHook(() => useCapabilities(), { wrapper });
 

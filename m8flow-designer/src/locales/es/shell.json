@@ -40,7 +40,13 @@
   },
   "permissions": {
     "loading": "Cargando permisos…",
-    "loadFailed": "No se pudieron cargar los permisos. Recargue la página para volver a intentarlo."
+    "loadFailed": "No se pudieron cargar los permisos. Vuelva a intentarlo."
+  },
+  "network": {
+    "unableToConnect": "No se puede conectar. Compruebe su conexión a internet.",
+    "offline": "Sin conexión. Permanezca en esta página para conservar los cambios sin guardar y guárdelos cuando vuelva la conexión.",
+    "pageFailed": "Se produjo un error al cargar esta página.",
+    "retry": "Reintentar"
   },
   "routeLoading": {
     "processes": "Cargando procesos…",

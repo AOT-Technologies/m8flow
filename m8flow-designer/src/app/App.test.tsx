@@ -1,9 +1,9 @@
-import { act, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { StrictMode, type ReactNode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { appRoutes } from './App';
+import App, { appRoutes } from './App';
 
 const mockShouldShowTenantSelectionGate = vi.fn();
 
@@ -42,7 +42,7 @@ vi.mock('@/components/layout/AppShell', async () => {
 });
 
 vi.mock('@/pages/home/HomePage', () => ({
-  default: () => <div>home-page</div>,
+  default: () => <div>home-page<input aria-label="Home draft" defaultValue="" /></div>,
 }));
 
 vi.mock('@/pages/processes/ProcessesPage', () => ({
@@ -106,6 +106,31 @@ function renderRoutes(path: string | string[]) {
 }
 
 describe('AppRoutes tenant gate', () => {
+  it('keeps routed content and unsaved input mounted while the app-root offline banner changes', () => {
+    mockShouldShowTenantSelectionGate.mockReturnValue(false);
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    try {
+      render(<StrictMode><App /></StrictMode>);
+      const draft = screen.getByLabelText('Home draft');
+      fireEvent.change(draft, { target: { value: 'Unsaved draft' } });
+      act(() => {
+        onLine.mockReturnValue(false);
+        window.dispatchEvent(new Event('offline'));
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent("You're offline.");
+      expect(screen.getByText('home-page')).toBeInTheDocument();
+      expect(screen.getByLabelText('Home draft')).toBe(draft);
+      act(() => {
+        onLine.mockReturnValue(true);
+        window.dispatchEvent(new Event('online'));
+      });
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByLabelText('Home draft')).toBe(draft);
+      expect(draft).toHaveValue('Unsaved draft');
+    } finally {
+      onLine.mockRestore();
+    }
+  });
   afterEach(() => {
     vi.clearAllMocks();
   });

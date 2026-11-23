@@ -34,6 +34,8 @@ export type ActiveTenant = {
 /** UI capability flags (camelCase mirror of the backend `Capabilities`). */
 export type CapabilityFlags = {
   status?: 'loading' | 'ready' | 'error';
+  loadError?: string | null;
+  retryPermissions?: () => void;
   canStartProcesses: boolean;
   canReviewTasks: boolean;
   /** May open the Task Review inbox (permissions-check GET /m8flow/task-review-access).

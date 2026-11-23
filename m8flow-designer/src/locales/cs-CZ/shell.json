@@ -40,7 +40,13 @@
   },
   "permissions": {
     "loading": "Načítání oprávnění…",
-    "loadFailed": "Oprávnění se nepodařilo načíst. Načtěte stránku znovu a zkuste to znovu."
+    "loadFailed": "Oprávnění se nepodařilo načíst. Zkuste to prosím znovu."
+  },
+  "network": {
+    "unableToConnect": "Nelze se připojit. Zkontrolujte připojení k internetu.",
+    "offline": "Jste offline. Zůstaňte na této stránce, aby se neuložené změny zachovaly, a uložte je, až se připojení obnoví.",
+    "pageFailed": "Při načítání této stránky došlo k chybě.",
+    "retry": "Zkusit znovu"
   },
   "routeLoading": {
     "processes": "Načítání procesů…",
