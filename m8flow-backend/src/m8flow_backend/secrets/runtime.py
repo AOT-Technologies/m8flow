@@ -53,7 +53,13 @@ def masked_service_task_error(
     # Longest first, so a secret that is a substring of another can't leave a tail.
     for value in sorted({v for v in secret_values if isinstance(v, str) and v}, key=len, reverse=True):
         masked = masked.replace(value, "***")
-    return None if masked == message else ServiceTaskExecutionError(masked)
+    if masked == message:
+        return None
+    copy = ServiceTaskExecutionError(masked)
+    # Core catches a coded failure on a matching error boundary (M8F-675).
+    # Set, not passed: core 1.0.0b3's error takes no ``error_code`` argument.
+    copy.error_code = getattr(exc, "error_code", None)
+    return copy
 
 
 def _resolve_tree(value: object, *, session: Any, tenant_id: str, found: list[str]) -> object:

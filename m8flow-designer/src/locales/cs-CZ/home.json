@@ -8,7 +8,15 @@
     "completedToday": "Dokončeno dnes",
     "avgCompletionTime": "Prům. doba dokončení",
     "minutesUnit": "min",
-    "totalTenants": "Celkem tenantů"
+    "totalTenants": "Celkem tenantů",
+    "descriptions": {
+      "activeProcessInstances": "Běžící, čekající nebo čekající na vstup",
+      "errorsNeedingReview": "Instance zastavené chybou",
+      "completedToday": "Instance dokončené od půlnoci (UTC)",
+      "tasksWaitingOnMe": "Otevřené úkoly přiřazené vám",
+      "avgCompletionTime": "Průměrná doba běhu dokončených instancí",
+      "totalTenants": "Tenanti napříč platformou"
+    }
   },
   "myTasks": {
     "title": "Moje úlohy",

@@ -212,6 +212,45 @@ def test_status_and_search_filters(client, db_session):
     ]
 
 
+def test_home_card_filters_active_and_completed_today(client, db_session):
+    """M8F-711: the Home Active / Completed today cards link to these filters."""
+    user, token = _login_user(
+        client, db_session, username="editor711", groups=["t1:editor"], tenant_id="t1"
+    )
+    now = int(time.time())
+    for identifier, start, status in (
+        ("live/running", now, "running"),
+        ("live/waiting", now, "waiting"),
+        ("halted/suspended", now, "suspended"),
+        ("done/today", now, "complete"),
+        ("done/old", now - 3 * 86400, "complete"),
+    ):
+        _seed_instance(
+            db_session,
+            tenant_id="t1",
+            initiator_id=user.id,
+            process_model_identifier=identifier,
+            start=start,
+            status=status,
+        )
+    db_session.commit()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    active = client.get("/v1.0/m8flow/process-instances?status=active", headers=headers)
+    assert active.status_code == 200
+    assert {r["process_model_identifier"] for r in active.get_json()["results"]} == {
+        "live/running",
+        "live/waiting",
+    }
+
+    today = client.get("/v1.0/m8flow/process-instances?status=complete&completed=today", headers=headers)
+    assert today.status_code == 200
+    assert [r["process_model_identifier"] for r in today.get_json()["results"]] == ["done/today"]
+
+    bad = client.get("/v1.0/m8flow/process-instances?completed=yesterday", headers=headers)
+    assert bad.status_code == 400
+
+
 def test_pagination_pages(client, db_session):
     user, token = _login_user(
         client, db_session, username="editor3", groups=["t1:editor"], tenant_id="t1"
