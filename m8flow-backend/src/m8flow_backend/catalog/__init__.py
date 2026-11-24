@@ -976,6 +976,11 @@ def update_process_model_metadata(
 
 
 def _first_bpmn_name(model_dir: Path) -> str:
+    # A first save can resolve the model directory before it has been created.
+    # Treat that as an empty model so callers can fall back to the filename
+    # being saved; Path.iterdir() raises FileNotFoundError for this valid case.
+    if not model_dir.is_dir():
+        return ""
     names = sorted(
         path.name
         for path in model_dir.iterdir()

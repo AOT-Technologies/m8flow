@@ -153,6 +153,42 @@ def test_catalog_save_acquires_tenant_lock_once_before_import(
     assert lock_and_import_order == [("lock", tenant_id), ("import", tenant_id)]
 
 
+def test_first_catalog_save_creates_model_when_model_directory_is_missing(
+    db_session, monkeypatch, tmp_path
+):
+    tenant_id = "timer-first-save-tenant"
+    model_id = "timers/first-save"
+    monkeypatch.setenv(
+        "M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "specs")
+    )
+    tenant = ensure_tenant(db_session, tenant_id=tenant_id, slug=tenant_id)
+    user = ensure_user(
+        db_session,
+        username="timer-first-save-admin",
+        service="https://example.test/realms/m8flow",
+        service_id="timer-first-save-admin",
+    )
+    ensure_membership(db_session, user, tenant)
+    ensure_v1_role(
+        db_session,
+        tenant_id=tenant_id,
+        role_name=ROLE_ADMIN,
+        user_ids=[user.id],
+    )
+    model_dir = tmp_path / "specs" / tenant_id / model_id
+    assert not model_dir.exists()
+
+    catalog.save(
+        db_session,
+        path=model_id,
+        xml=TIMER_START_BPMN,
+        tenant_id=tenant_id,
+        user_id=user.id,
+    )
+
+    assert (model_dir / "first-save.bpmn").read_text(encoding="utf-8") == TIMER_START_BPMN
+
+
 def test_saving_secondary_bpmn_preserves_primary_timer_start_schedule(
     db_session, monkeypatch, tmp_path
 ):
