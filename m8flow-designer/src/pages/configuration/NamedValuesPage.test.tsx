@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
+import { useLayoutEffect } from 'react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, MemoryRouter, Outlet, Route, RouterProvider, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseActiveTenant = vi.fn();
@@ -13,7 +14,10 @@ const mockDeleteNamedValue = vi.fn();
 vi.mock('@/components/session/hooks', () => ({
   useActiveTenant: () => mockUseActiveTenant(),
   useCapabilities: () => mockUseCapabilities(),
-  useTenantRegistry: () => ({ tenants: [{ id: 'tenant-1', name: 'Tenant 1' }] }),
+  useTenantRegistry: () => ({ tenants: [
+    { id: 'tenant-1', name: 'Tenant 1' },
+    { id: 'tenant-2', name: 'Tenant 2' },
+  ] }),
 }));
 
 vi.mock('@/lib/namedValuesApi', () => ({
@@ -34,6 +38,55 @@ const ROW = {
   isSensitive: false, isConfigured: true, value: 'https://example.test',
   createdAt: null, updatedAt: null,
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function renderWithTenant(path: string, admin: boolean, editable = false) {
+  const commits: string[] = [];
+  mockUseCapabilities.mockReturnValue({
+    canReadNamedValues: true,
+    canReadNamedValueItems: true,
+    canCreateNamedValues: editable,
+    canUpdateNamedValues: editable,
+    canDeleteNamedValues: editable,
+  });
+  function TenantPage({ tenantId }: { tenantId: string }) {
+    mockUseActiveTenant.mockReturnValue({
+      activeTenantId: admin ? null : tenantId,
+      scopedTenantId: admin ? tenantId : null,
+      isSuperAdmin: admin,
+    });
+    // Capture the committed DOM before passive fetch effects can hide stale data.
+    useLayoutEffect(() => {
+      commits.push([
+        document.body.textContent,
+        ...Array.from(document.querySelectorAll('input, textarea'), (input) =>
+          (input as HTMLInputElement | HTMLTextAreaElement).value),
+      ].join('\n'));
+    });
+    return (
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/configuration/named-values" element={<NamedValuesPage />} />
+          <Route path="/configuration/named-values/new" element={<NamedValueEditPage />} />
+          <Route path="/configuration/named-values/:id" element={<NamedValueEditPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+  }
+  const view = render(<TenantPage tenantId="tenant-1" />);
+  return {
+    commits,
+    switchTenant(tenantId: string) {
+      commits.length = 0;
+      view.rerender(<TenantPage tenantId={tenantId} />);
+    },
+  };
+}
 
 function renderAt(
   path: string,
@@ -73,7 +126,87 @@ function renderAt(
 describe('named value pages', () => {
   afterEach(() => {
     cleanup();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
+  });
+
+  describe.each([false, true])('tenant switches (super-admin: %s)', (admin) => {
+    it('hides the old list and delete dialog before effects while the next fetch is pending', async () => {
+      const next = deferred<typeof ROW[]>();
+      mockFetchNamedValues.mockResolvedValueOnce([ROW]).mockReturnValueOnce(next.promise);
+      const view = renderWithTenant('/configuration/named-values', admin, true);
+      fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+      view.switchTenant('tenant-2');
+
+      expect(view.commits).toHaveLength(1);
+      expect(view.commits[0]).not.toContain(ROW.name);
+      expect(screen.queryByText(ROW.name)).not.toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByText('Loading configuration variables…')).toBeInTheDocument();
+      expect(mockFetchNamedValues).toHaveBeenLastCalledWith(admin ? 'tenant-2' : null);
+      await act(async () => next.resolve([{ ...ROW, tenantId: 'tenant-2', name: 'tenant_two_endpoint' }]));
+      expect(await screen.findByText('tenant_two_endpoint')).toBeInTheDocument();
+      expect(screen.queryByText(ROW.name)).not.toBeInTheDocument();
+    });
+
+    it.each([false, true])('hides old details before effects (editable: %s)', async (editable) => {
+      const next = deferred<typeof ROW>();
+      mockFetchNamedValue.mockResolvedValueOnce(ROW).mockReturnValueOnce(next.promise);
+      const view = renderWithTenant('/configuration/named-values/var-1', admin, editable);
+      if (editable) {
+        expect(await screen.findByTestId('named-value-value')).toHaveValue(ROW.value);
+      } else {
+        expect(await screen.findByText(ROW.value)).toBeInTheDocument();
+      }
+
+      view.switchTenant('tenant-2');
+
+      expect(view.commits).toHaveLength(1);
+      expect(view.commits[0]).not.toContain(ROW.name);
+      expect(view.commits[0]).not.toContain(ROW.description);
+      expect(view.commits[0]).not.toContain(ROW.value);
+      expect(screen.queryByTestId('named-value-save')).not.toBeInTheDocument();
+      expect(screen.getByText('Loading configuration variables…')).toBeInTheDocument();
+      expect(mockFetchNamedValue).toHaveBeenLastCalledWith('var-1', admin ? 'tenant-2' : null);
+      const nextValue = 'https://tenant-two.example.test';
+      await act(async () => next.resolve({ ...ROW, tenantId: 'tenant-2', name: 'tenant_two_endpoint', value: nextValue }));
+      if (editable) {
+        expect(await screen.findByTestId('named-value-value')).toHaveValue(nextValue);
+      } else {
+        expect(await screen.findByText(nextValue)).toBeInTheDocument();
+      }
+      expect(screen.queryByText(ROW.value)).not.toBeInTheDocument();
+    });
+
+    it.each(['list', 'detail'])('ignores a late %s response from the previous tenant', async (page) => {
+      const previous = deferred<typeof ROW>();
+      const next = deferred<typeof ROW>();
+      mockFetchNamedValues
+        .mockImplementationOnce(() => previous.promise.then((row) => [row]))
+        .mockImplementationOnce(() => next.promise.then((row) => [row]));
+      mockFetchNamedValue.mockReturnValueOnce(previous.promise).mockReturnValueOnce(next.promise);
+      const view = renderWithTenant(`/configuration/named-values${page === 'detail' ? '/var-1' : ''}`, admin);
+      view.switchTenant('tenant-2');
+      await act(async () => next.resolve({ ...ROW, tenantId: 'tenant-2', name: 'tenant_two_endpoint', value: 'tenant-two-value' }));
+      expect(await screen.findByText('tenant_two_endpoint')).toBeInTheDocument();
+      await act(async () => previous.resolve(ROW));
+      expect(screen.queryByText(ROW.name)).not.toBeInTheDocument();
+      expect(screen.queryByText(ROW.value)).not.toBeInTheDocument();
+      expect(screen.getByText('tenant_two_endpoint')).toBeInTheDocument();
+    });
+
+    it('clears an unsaved create draft when switching tenants', () => {
+      const view = renderWithTenant('/configuration/named-values/new', admin, true);
+      fireEvent.change(screen.getByTestId('named-value-name'), { target: { value: 'tenant_one_draft' } });
+      fireEvent.change(screen.getByTestId('named-value-value'), { target: { value: 'tenant-one-secret' } });
+      view.switchTenant('tenant-2');
+      expect(view.commits[0]).not.toContain('tenant_one_draft');
+      expect(view.commits[0]).not.toContain('tenant-one-secret');
+      expect(screen.getByTestId('named-value-name')).toHaveValue('');
+      expect(screen.getByTestId('named-value-value')).toHaveValue('');
+      expect(mockCreateNamedValue).not.toHaveBeenCalled();
+    });
   });
 
   it.each([

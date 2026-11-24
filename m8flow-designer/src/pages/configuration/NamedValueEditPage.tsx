@@ -24,14 +24,15 @@ const NAME_PATTERN = /^[A-Za-z0-9_-]{1,255}$/;
 export default function NamedValueEditPage() {
   const { t } = useTranslation();
   const { id } = useParams();
-  const { canUpdateNamedValues } = useNamedValuesContext();
+  const { tenantId, isSuperAdmin, canUpdateNamedValues } = useNamedValuesContext();
   const title = t(id
     ? canUpdateNamedValues ? 'configuration.namedValues.edit.title' : 'configuration.namedValues.view.title'
     : 'configuration.namedValues.new.title');
   const access = id ? 'item' : 'create';
   return (
     <NamedValuesGate title={title} access={access}>
-      <NamedValueEditBody title={title} />
+      {/* Never render fields or drafts belonging to a previous tenant or item. */}
+      <NamedValueEditBody key={JSON.stringify([tenantId, isSuperAdmin, id])} title={title} />
     </NamedValuesGate>
   );
 }

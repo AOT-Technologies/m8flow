@@ -21,9 +21,11 @@ import { NamedValuesAccessDenied, NamedValuesGate, useNamedValuesContext } from 
 
 export default function NamedValuesPage() {
   const { t } = useTranslation();
+  const { tenantId, isSuperAdmin } = useNamedValuesContext();
   return (
     <NamedValuesGate title={t('configuration.namedValues.title')}>
-      <NamedValuesBody />
+      {/* Discard tenant-owned rows and dialogs in render, before fetch effects run. */}
+      <NamedValuesBody key={JSON.stringify([tenantId, isSuperAdmin])} />
     </NamedValuesGate>
   );
 }
