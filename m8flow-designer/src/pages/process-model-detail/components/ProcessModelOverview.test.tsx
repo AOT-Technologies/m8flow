@@ -104,6 +104,24 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument();
   });
 
+  it('lists the primary BPMN first regardless of API order', () => {
+    const at = DETAIL.files[0].updated_at;
+    renderOverview({
+      ...DETAIL,
+      files: [
+        { name: 'a-schema.json', size_bytes: 10, updated_at: at, primary: false },
+        { name: 'b.md', size_bytes: 10, updated_at: at, primary: false },
+        { name: 'z-main.bpmn', size_bytes: 10, updated_at: at, primary: true },
+      ],
+    });
+
+    expect(screen.getAllByText(/\.(bpmn|json|md)$/).map((el) => el.textContent)).toEqual([
+      'z-main.bpmn',
+      'a-schema.json',
+      'b.md',
+    ]);
+  });
+
   it('renders live identity, stats, instances, and files', () => {
     renderOverview();
 
