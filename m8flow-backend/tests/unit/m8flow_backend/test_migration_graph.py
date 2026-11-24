@@ -7,7 +7,8 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "m8f_694_merge_run_stats"
+_HEAD = "merge_message_error_timestamp"
+_FINAL_REVISIONS = {"merge_message_run_stats", "d8e9f0a1b2c3", _HEAD}
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -24,7 +25,9 @@ def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
         required.add(revision_id)
         node = script.get_revision(revision_id)
         parents = node.down_revision
-        pending.extend(parents if isinstance(parents, tuple) else (parents,) if parents else ())
+        pending.extend(
+            parents if isinstance(parents, tuple) else (parents,) if parents else ()
+        )
     return required
 
 
@@ -55,9 +58,19 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
 
     # Both feature branches must be reachable from the common host history.
     assert _required_revisions(script, "f7a8b9c0d1e2") == {
-        "fa8b9c0d1e2f", "fbcad9e02138", "e2f3a4b5c6d7", "e1f2a3b4c5d6",
-        "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "fa8b9c0d1e2f",
+        "fbcad9e02138",
+        "e2f3a4b5c6d7",
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "9f2c6d4b8e71",
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
     assert _required_revisions(script, "fa8b9c0d1e2f") == {
         "d1e2f3a4b5c6",
         "d2f4a6b8c0e1",
@@ -68,36 +81,112 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         "e1f2a3b4c5d6",
         "b603fd822b22",
         "9f2c6d4b8e71",
-        "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
 
     # Keep the upgrade paths for databases already stamped on either branch.
     assert _required_revisions(script, "fbcad9e02138") == {
-        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "e2f3a4b5c6d7",
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "9f2c6d4b8e71",
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
     assert _required_revisions(script, "e2f3a4b5c6d7") == {
-        "d2f4a6b8c0e1", "e3f5a7c9d1b2", "f7a8b9c0d1e2", "fa8b9c0d1e2f", "fbcad9e02138",
-        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "d2f4a6b8c0e1",
+        "e3f5a7c9d1b2",
+        "f7a8b9c0d1e2",
+        "fa8b9c0d1e2f",
+        "fbcad9e02138",
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "9f2c6d4b8e71",
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
     assert _required_revisions(script, "b603fd822b22") == {
-        "e2f3a4b5c6d7", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "e2f3a4b5c6d7",
+        "9f2c6d4b8e71",
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
     assert _required_revisions(script, "9f2c6d4b8e71") == {
-        "e1f2a3b4c5d6", "b603fd822b22", "c81d2e3f4a56", "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "c81d2e3f4a56",
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
 
 
 def test_upgrade_paths_from_both_previous_heads():
     script = ScriptDirectory(str(_MIGRATIONS_DIR))
-    assert _required_revisions(script, "c81d2e3f4a56") == {"m8f_694_core_message_schema", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD}
-    assert _required_revisions(script, "m8f_694_core_message_schema") == {
-        "e1f2a3b4c5d6", "b603fd822b22", "e2f3a4b5c6d7", "9f2c6d4b8e71", "c81d2e3f4a56", "m8f_694_merge_host_heads", "c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
-    }
+    assert _required_revisions(script, "c81d2e3f4a56") == {
+        "core_message_schema",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
+    assert _required_revisions(script, "core_message_schema") == {
+        "e1f2a3b4c5d6",
+        "b603fd822b22",
+        "e2f3a4b5c6d7",
+        "9f2c6d4b8e71",
+        "c81d2e3f4a56",
+        "merge_message_host_heads",
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
 
 
 def test_new_main_and_message_heads_converge():
     script = ScriptDirectory(str(_MIGRATIONS_DIR))
-    assert _required_revisions(script, "m8f_694_merge_host_heads") == {"c7e9a1b3d5f7", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD}
+    assert _required_revisions(script, "merge_message_host_heads") == {
+        "c7e9a1b3d5f7",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
     assert _required_revisions(script, "c7e9a1b3d5f7") == {
-        "m8f_694_core_message_schema", "m8f_694_merge_host_heads", "m8f_694_merge_nats_permissions", "e9c4b2a71f53", _HEAD,
+        "core_message_schema",
+        "merge_message_host_heads",
+        "merge_message_nats_permissions",
+        "e9c4b2a71f53",
+    } | _FINAL_REVISIONS
+
+
+def test_message_and_error_timestamp_heads_converge():
+    script = ScriptDirectory(str(_MIGRATIONS_DIR))
+    assert _required_revisions(script, "merge_message_run_stats") == {
+        "d8e9f0a1b2c3",
+        _HEAD,
+    }
+    assert _required_revisions(script, "d8e9f0a1b2c3") == {
+        "core_message_schema",
+        "merge_message_host_heads",
+        "merge_message_nats_permissions",
+        "merge_message_run_stats",
+        _HEAD,
     }

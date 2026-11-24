@@ -16,6 +16,7 @@
   },
   "status": {
     "all": "Todas",
+    "active": "Ativas",
     "running": "Em execução",
     "waiting": "Em espera",
     "userInputRequired": "Requer intervenção do utilizador",
@@ -57,7 +58,8 @@
       "label": "Ações da instância",
       "open": "Abrir",
       "copyId": "Copiar ID da instância"
-    }
+    },
+    "clearCompletedToday": "Limpar o filtro Concluídas hoje"
   },
   "detail": {
     "heading": "ID da instância de processo: {{id}}",

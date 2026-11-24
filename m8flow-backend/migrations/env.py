@@ -30,6 +30,53 @@ def get_url():
     return url
 
 
+def _reconcile_legacy_message_revisions(connection: Connection) -> None:
+    """Adopt the original message migration names without replaying their DDL."""
+    aliases = {
+        "m8f_694_core_message_schema": "core_message_schema",
+        "m8f_694_merge_host_heads": "merge_message_host_heads",
+        "m8f_694_merge_nats_permissions": "merge_message_nats_permissions",
+        "m8f_694_merge_run_stats": "merge_message_run_stats",
+    }
+    legacy_ownership = "m8flow_m8f_694_message_ownership"
+    ownership_name = "m8flow_message_schema_ownership"
+    inspector = sa.inspect(connection)
+    if VERSION_TABLE not in inspector.get_table_names():
+        return
+    version_table = sa.table(VERSION_TABLE, sa.column("version_num"))
+    recorded = set(connection.execute(sa.select(version_table.c.version_num)).scalars())
+    for legacy, current in aliases.items():
+        if legacy not in recorded:
+            continue
+        if current in recorded:
+            connection.execute(version_table.delete().where(version_table.c.version_num == legacy))
+        else:
+            connection.execute(
+                version_table.update().where(version_table.c.version_num == legacy).values(version_num=current)
+            )
+        recorded.discard(legacy)
+        recorded.add(current)
+
+    if not inspector.has_table(legacy_ownership):
+        return
+    if inspector.has_table(ownership_name):
+        raise RuntimeError("Both legacy and current message ownership tables exist; reconcile provenance before upgrading.")
+    # Ensure SQLite begins a write transaction before the table rename, even
+    # when the host stamp already uses the neutral revision name.
+    connection.execute(version_table.update().where(sa.false()).values(version_num="core_message_schema"))
+    connection.execute(sa.DDL(f"ALTER TABLE {legacy_ownership} RENAME TO {ownership_name}"))
+    ownership = sa.table(ownership_name, sa.column("table_name"), sa.column("creation_marker"))
+    connection.execute(
+        ownership.update().where(
+            ownership.c.table_name == legacy_ownership,
+            ownership.c.creation_marker == "m8f_694_core_message_schema",
+        ).values(creation_marker="core_message_schema")
+    )
+    connection.execute(
+        ownership.update().where(ownership.c.table_name == legacy_ownership).values(table_name=ownership_name)
+    )
+
+
 def _reconcile_pre_squash_stamp(connection: Connection) -> None:
     """Self-heal databases stamped by the retired pre-squash migration chain.
 
@@ -93,6 +140,7 @@ def run_migrations_online():
             transactional_ddl=connection.dialect.name in TRANSACTIONAL_DDL_DIALECTS,
         )
         with context.begin_transaction():
+            _reconcile_legacy_message_revisions(connection)
             _reconcile_pre_squash_stamp(connection)
             context.run_migrations()
 

@@ -11,9 +11,93 @@ pytestmark = pytest.mark.usefixtures("host_db")
 ROUTE = "/v1.0/m8flow/messages/correlate"
 
 
+@pytest.mark.parametrize("legacy_revision", [
+    "m8f_694_core_message_schema", "m8f_694_merge_host_heads",
+    "m8f_694_merge_nats_permissions", "m8f_694_merge_run_stats",
+])
+def test_legacy_host_stamps_preserve_live_message_waits(admin_engine, monkeypatch, legacy_revision):
+    from pathlib import Path
+
+    import sqlalchemy as sa
+    from alembic import command
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    from m8flow_core.models import MessageDeliveryReceiptModel, MessageSubscriptionModel, ProcessInstanceModel
+
+    from m8flow_backend import workflow
+
+    tenant = new_tenant_id("legacy-message")
+    with tenant_session(tenant) as session:
+        admin = provision_member(session, tenant_id=tenant, role="tenant-admin")
+        admin_id = admin.id
+        save_model(session, tenant_id=tenant, user_id=admin_id, path="payment", fixture="message_waiting.bpmn")
+        instances = [
+            workflow.start(
+                session, tenant_id=tenant, user_id=admin_id, process_model_identifier="payment",
+                submission_metadata={"case_number": case_number, "region": "west"},
+            ).id
+            for case_number in (18, 19)
+        ]
+    delivery = dict(
+        tenant_id=tenant, user_id=admin_id, message_name="Payment received", delivery_id="legacy-payment",
+        payload={"payment": {"caseNumber": 18, "region": "west"}},
+    )
+    with tenant_session(tenant) as session:
+        assert workflow.correlate_message(session, **delivery).process_instance_id == instances[0]
+        subscription_table = MessageSubscriptionModel.__table__
+        subscriptions = session.execute(sa.select(subscription_table).where(
+            subscription_table.c.m8f_tenant_id == tenant,
+        )).mappings().all()
+        assert len(subscriptions) == 1
+
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(__file__).resolve().parents[2] / "migrations"))
+    revision = ScriptDirectory.from_config(cfg).get_revision("core_message_schema").module
+    ownership = revision.OWNERSHIP
+    monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", admin_engine.url.render_as_string(hide_password=False))
+    with admin_engine.begin() as connection:
+        markers = dict(connection.execute(sa.select(ownership)).tuples().all())
+        for name, marker in markers.items():
+            if name in revision.TABLES and marker.startswith("ck_message_schema_"):
+                legacy_marker = marker.replace("ck_message_schema_", "ck_m8f_694_", 1)
+                connection.execute(sa.DDL(f'ALTER TABLE "{name}" RENAME CONSTRAINT "{marker}" TO "{legacy_marker}"'))
+                connection.execute(ownership.update().where(ownership.c.table_name == name).values(
+                    creation_marker=legacy_marker,
+                ))
+        markers = dict(connection.execute(sa.select(ownership)).tuples().all())
+        connection.execute(ownership.update().where(ownership.c.table_name == ownership.name).values(
+            table_name="m8flow_m8f_694_message_ownership", creation_marker="m8f_694_core_message_schema",
+        ))
+        connection.exec_driver_sql(
+            "ALTER TABLE m8flow_message_schema_ownership RENAME TO m8flow_m8f_694_message_ownership"
+        )
+        connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = :legacy"), {"legacy": legacy_revision})
+    try:
+        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")
+        with admin_engine.connect() as connection:
+            assert dict(connection.execute(sa.select(ownership)).tuples().all()) == markers
+            assert connection.scalar(sa.select(revision.VERSION.c.version_num)) == revision.CORE_HEAD
+        with tenant_session(tenant) as session:
+            assert session.execute(sa.select(subscription_table).where(
+                subscription_table.c.m8f_tenant_id == tenant,
+            )).mappings().all() == subscriptions
+            assert session.get(MessageDeliveryReceiptModel, (tenant, "legacy-payment")) is not None
+            assert workflow.correlate_message(session, **delivery).process_instance_id == instances[0]
+            assert session.get(ProcessInstanceModel, instances[1]).status == "waiting"
+            remaining = workflow.correlate_message(session, **{
+                **delivery, "delivery_id": "remaining-payment",
+                "payload": {"payment": {"caseNumber": 19, "region": "west"}},
+            })
+            assert remaining.process_instance_id == instances[1]
+            assert session.get(ProcessInstanceModel, instances[1]).status == "complete"
+    finally:
+        command.upgrade(cfg, "head")
+
+
 @pytest.mark.parametrize(
     ("previous_revision", "preinstalled"),
-    [("c81d2e3f4a56", False), ("m8f_694_core_message_schema", False), ("c81d2e3f4a56", True)],
+    [("c81d2e3f4a56", False), ("core_message_schema", False), ("c81d2e3f4a56", True)],
 )
 def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tmp_path, previous_revision, preinstalled):
     from datetime import UTC, datetime
@@ -37,7 +121,7 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
     try:
         command.upgrade(cfg, previous_revision)
         if preinstalled:
-            revision = ScriptDirectory.from_config(cfg).get_revision("m8f_694_core_message_schema").module
+            revision = ScriptDirectory.from_config(cfg).get_revision("core_message_schema").module
             with engine.begin() as connection:
                 for table, name in revision.PARENT_INDEXES.items():
                     if name not in {index["name"] for index in sa.inspect(connection).get_indexes(table)}:
@@ -58,7 +142,7 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
                 "SELECT version_num FROM m8flow_core_alembic_version"
             )).scalars().all() == ["m8f_694_message_correlation"]
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
-                "m8f_694_merge_run_stats"
+                "merge_message_error_timestamp"
             )
             assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "retained-tenant"
             assert {"message_subscription", "message_delivery_receipt", "m8flow_process_model_release"} <= set(

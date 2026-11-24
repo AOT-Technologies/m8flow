@@ -19,7 +19,7 @@ def _revision(name):
 def test_message_downgrade_preserves_adopted_tables_and_receipts(db_engine, preexisting):
     from m8flow_core.models import Base
 
-    revision = _revision("m8f_694_core_message_schema")
+    revision = _revision("core_message_schema")
     if preexisting == "all":
         preexisting = revision.TABLES
     with db_engine.begin() as connection, Operations.context(MigrationContext.configure(connection)):
@@ -51,7 +51,7 @@ def test_message_downgrade_preserves_adopted_tables_and_receipts(db_engine, pree
 def test_message_downgrade_keeps_tables_without_provenance_or_with_external_references(db_engine, missing_provenance):
     from m8flow_core.models import Base
 
-    revision = _revision("m8f_694_core_message_schema")
+    revision = _revision("core_message_schema")
     with db_engine.begin() as connection, Operations.context(MigrationContext.configure(connection)) as operations:
         for name in reversed(revision.TABLES):
             Base.metadata.tables[name].drop(connection)

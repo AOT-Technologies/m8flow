@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import type { ProcessInstanceListItem, ProcessInstanceScope, ProcessInstanceSort } from '@/lib/processInstancesApi';
 import { ActionMenu } from '@/components/library/action-menu/ActionMenu';
 import { Alert } from '@/components/library/alert/Alert';
+import { Chip } from '@/components/library/chip/Chip';
 import { DataTable, type DataTableColumn } from '@/components/library/data-table/DataTable';
 import { Pagination } from '@/components/library/pagination/Pagination';
 import { Pill } from '@/components/library/pill/Pill';
@@ -24,6 +25,9 @@ export type ProcessInstancesListProps = {
   onSearchChange: (value: string) => void;
   status: string;
   onStatusChange: (value: string) => void;
+  /** `completed=today` filter (Home "Completed today" card, M8F-711); shown as a removable chip. */
+  completedToday?: boolean;
+  onClearCompletedToday?: () => void;
   owners: string[];
   startedBy: string;
   onStartedByChange: (value: string) => void;
@@ -52,6 +56,8 @@ export type ProcessInstancesListProps = {
  * report-style data (status/timing columns), not browsable content. */
 const STATUS_OPTIONS: { value: string; labelKey: ParseKeys }[] = [
   { value: '', labelKey: 'processInstances.status.all' },
+  // Backend pseudo-status: every live status (the Home "Active" card's set).
+  { value: 'active', labelKey: 'processInstances.status.active' },
   { value: 'running', labelKey: 'processInstances.status.running' },
   { value: 'waiting', labelKey: 'processInstances.status.waiting' },
   { value: 'user_input_required', labelKey: 'processInstances.status.userInputRequired' },
@@ -89,6 +95,8 @@ export function ProcessInstancesList({
   onSearchChange,
   status,
   onStatusChange,
+  completedToday = false,
+  onClearCompletedToday,
   owners,
   startedBy,
   onStartedByChange,
@@ -294,6 +302,16 @@ export function ProcessInstancesList({
             className="min-w-0"
           />
 
+          {completedToday && (
+            <Chip
+              removable
+              onRemove={onClearCompletedToday}
+              removeLabel={t('processInstances.list.clearCompletedToday')}
+            >
+              {t('home.stats.completedToday')}
+            </Chip>
+          )}
+
           <div className="ml-auto whitespace-nowrap text-[13px] text-muted-foreground">
             {loading ? t('common.loading') : resultCount}
           </div>
@@ -312,7 +330,7 @@ export function ProcessInstancesList({
             <div className="px-6 py-[52px] text-center">
               <div className="text-[15.5px] font-semibold text-foreground">{t('processInstances.list.emptyTitle')}</div>
               <p className="mt-2 text-[13.5px] text-muted-foreground">
-                {search.trim() || status || startedBy || scope
+                {search.trim() || status || completedToday || startedBy || scope
                   ? t('processInstances.list.emptyFiltered')
                   : canReadAllInstances
                     ? t('processInstances.list.emptyNoRuns')

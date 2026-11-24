@@ -8,12 +8,13 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision = "m8f_694_core_message_schema"
+revision = "core_message_schema"
 down_revision = "fbcad9e02138"
 branch_labels = None
 depends_on = None
 
 BASELINE = "k2l3m4n5o6p7"
+# Published core-package marker; retain it for existing installations.
 CORE_HEAD = "m8f_694_message_correlation"
 VERSION = sa.table("m8flow_core_alembic_version", sa.column("version_num"))
 TABLES = (
@@ -26,7 +27,7 @@ PARENT_INDEXES = {
     "bpmn_process_definition": "m8f_definition_tenant_id_key",
 }
 OWNERSHIP = sa.table(
-    "m8flow_m8f_694_message_ownership",
+    "m8flow_message_schema_ownership",
     sa.column("table_name", sa.String(63)),
     sa.column("creation_marker", sa.String(63)),
 )
@@ -49,7 +50,7 @@ def _create_owned_tables(bind: sa.Connection, metadata: sa.MetaData) -> None:
         table.to_metadata(copies)
     for name in TABLES:
         if not sa.inspect(bind).has_table(name):
-            marker = f"ck_m8f_694_{uuid4().hex}"
+            marker = f"ck_message_schema_{uuid4().hex}"
             bind.execute(OWNERSHIP.delete().where(OWNERSHIP.c.table_name == name))
             table = copies.tables[name]
             table.append_constraint(sa.CheckConstraint("m8f_tenant_id IS NOT NULL", name=marker))

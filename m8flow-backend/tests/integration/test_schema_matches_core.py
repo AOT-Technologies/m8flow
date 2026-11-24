@@ -65,7 +65,7 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         diffs = compare_metadata(context, CoreBase.metadata)
         ownership = sa.table(
-            "m8flow_m8f_694_message_ownership", sa.column("table_name"), sa.column("creation_marker"),
+            "m8flow_message_schema_ownership", sa.column("table_name"), sa.column("creation_marker"),
         )
         creation_markers = {
             name: marker for name, marker in conn.execute(sa.select(ownership)) if name in core_tables

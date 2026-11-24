@@ -8,7 +8,15 @@
     "completedToday": "今日完成",
     "avgCompletionTime": "平均完成时间",
     "minutesUnit": "分钟",
-    "totalTenants": "租户总数"
+    "totalTenants": "租户总数",
+    "descriptions": {
+      "activeProcessInstances": "运行中、等待中或等待输入",
+      "errorsNeedingReview": "因错误而停止的实例",
+      "completedToday": "自午夜 (UTC) 以来完成的实例",
+      "tasksWaitingOnMe": "分配给您的待办任务",
+      "avgCompletionTime": "已完成实例的平均运行时间",
+      "totalTenants": "平台上的所有租户"
+    }
   },
   "myTasks": {
     "title": "我的任务",
