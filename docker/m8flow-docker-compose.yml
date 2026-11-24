@@ -123,11 +123,11 @@ services:
     ports:
       - "${KEYCLOAK_MGMT_PORT:-6849}:9000"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "test -f /opt/keycloak/.m8flow-readiness/ready && /opt/keycloak/bin/kcadm.sh config credentials --server \"http://127.0.0.1:$${KC_HTTP_PORT:-8080}$${KC_HTTP_RELATIVE_PATH:-}\" --realm master --user \"$${KC_BOOTSTRAP_ADMIN_USERNAME:-admin}\" --password \"$${KC_BOOTSTRAP_ADMIN_PASSWORD:-admin}\" >/dev/null 2>&1"]
       # start_period covers Keycloak's slow first boot (JVM cold start + realm import +
       # post-start realm configuration). Failing checks during this window do not count
       # toward retries, so dependents won't see "container is unhealthy" on a slow machine.
-      start_period: 180s
+      start_period: 300s
       interval: 10s
       timeout: 10s
       retries: 12
@@ -142,7 +142,9 @@ services:
     volumes:
       - ./nginx-keycloak-proxy.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - keycloak
+      keycloak:
+        condition: service_healthy
+        restart: true
   keycloak-master-admin-init:
     image: m8flow-keycloak
     pull_policy: never
@@ -503,6 +505,8 @@ services:
     build:
       context: ..
       dockerfile: docker/m8flow.backend.Dockerfile
+      # The E2E gate builds this target; the production override selects prod.
+      target: dev
       args:
         UPSTREAM_TAG: ${UPSTREAM_TAG:-}
         # Shared base image. Override to build/test against a locally-built base.
