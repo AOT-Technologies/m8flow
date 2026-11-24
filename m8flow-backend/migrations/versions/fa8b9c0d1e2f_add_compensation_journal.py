@@ -77,25 +77,37 @@ def _validate_process_instance_tenant_key(bind: sa.Connection) -> None:
             "'process_instance' is missing. Upgrade the core schema first."
         )
 
-    primary_key = tuple(inspector.get_pk_constraint(table).get("constrained_columns") or ())
-    unique_constraints = {
-        tuple(constraint.get("column_names") or ())
+    def is_compatible_key(reflected_columns: list[str] | tuple[str, ...] | None) -> bool:
+        # Names and column order do not change uniqueness semantics. The key
+        # must contain exactly the referenced columns: a unique key with extra
+        # columns does not guarantee uniqueness of this FK target pair and is
+        # not a valid referenced key on supported databases.
+        return reflected_columns is not None and len(reflected_columns) == len(columns) and set(
+            reflected_columns
+        ) == set(columns)
+
+    primary_key = inspector.get_pk_constraint(table).get("constrained_columns")
+    unique_constraints = [
+        constraint.get("column_names")
         for constraint in inspector.get_unique_constraints(table)
-    }
-    unique_indexes = {
-        tuple(index.get("column_names") or ())
+    ]
+    unique_indexes = [
+        index.get("column_names")
         for index in inspector.get_indexes(table)
         if index.get("unique")
         and index.get("column_names")
         and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
-    }
-    if not any(key == columns for key in (primary_key, *unique_constraints, *unique_indexes)):
+    ]
+    if not any(
+        is_compatible_key(key)
+        for key in (primary_key, *unique_constraints, *unique_indexes)
+    ):
         raise RuntimeError(
             "Cannot create the compensation journal: 'process_instance' must have a "
             "primary key, unique constraint, or non-partial unique index on "
             "(m8f_tenant_id, id) for the tenant-scoped foreign key. "
-            "Restore the core schema's 'm8f_process_instance_tenant_id_key' unique index "
-            "and rerun the migration."
+            "Restore a schema-level unique key covering exactly these two columns "
+            "(column order and object name may vary), then rerun the migration."
         )
 
 

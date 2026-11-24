@@ -27,10 +27,13 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
+# Default version for the packaged sample set. Bump this when a release updates
+# the samples together; keep per-template overrides only when one template must
+# advance independently. Remove an override once VERSION reaches that value so
+# the map stays limited to active exceptions rather than becoming a history.
 VERSION = "V3"
-# A template's version is part of its immutable storage key. Bump only the
-# timer verification template when its BPMN changes so the next startup loads
-# the new pool/lane without re-versioning every other sample.
+# Template versions are immutable storage keys. This exception lets the timer
+# verification template ship its BPMN update without re-versioning every sample.
 _TEMPLATE_VERSION_OVERRIDES = {"recurring-timer-start-verification": "V4"}
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 

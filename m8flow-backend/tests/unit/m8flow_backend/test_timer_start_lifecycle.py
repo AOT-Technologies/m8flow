@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql, sqlite
 
 from m8flow_core.models.bpmn_process_definition import (
     BpmnProcessDefinitionModel,
@@ -12,6 +14,7 @@ from m8flow_core.models.process_instance import ProcessInstanceModel
 from m8flow_core.models.scheduler_job import SchedulerJobModel
 
 from m8flow_backend import catalog, workflow
+from m8flow_backend.catalog import versions
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.identity import (
@@ -121,6 +124,51 @@ def _timer_jobs(session, tenant_id: str, model_id: str):
     )
 
 
+def test_catalog_save_acquires_tenant_lock_once_before_import(
+    db_session, monkeypatch, tmp_path
+):
+    tenant_id = "timer-lock-contract-tenant"
+    lock_and_import_order = []
+    original_lock = versions.lock_tenant
+    original_import = workflow.import_definition
+
+    def record_lock(session, requested_tenant_id):
+        lock_and_import_order.append(("lock", requested_tenant_id))
+        return original_lock(session, requested_tenant_id)
+
+    def record_import(*args, **kwargs):
+        lock_and_import_order.append(("import", kwargs["tenant_id"]))
+        return original_import(*args, **kwargs)
+
+    monkeypatch.setattr(versions, "lock_tenant", record_lock)
+    monkeypatch.setattr(workflow, "import_definition", record_import)
+    _seed_model(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        tenant_id=tenant_id,
+        model_id="timers/lock-contract",
+    )
+
+    assert lock_and_import_order == [("lock", tenant_id), ("import", tenant_id)]
+
+
+@pytest.mark.parametrize("dialect", [sqlite.dialect(), postgresql.dialect()])
+def test_timer_start_model_identifier_json_filter_compiles_for_supported_dialects(dialect):
+    """The JSON text filter used by reconcile/list queries must compile on SQLite and PG."""
+    expression = (
+        BpmnProcessDefinitionModel.properties_json[
+            PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+        ].as_string()
+        == "timers/recurring"
+    )
+    statement = sa.select(BpmnProcessDefinitionModel.id).where(expression)
+
+    compiled = statement.compile(dialect=dialect)
+    assert "bpmn_process_definition" in str(compiled)
+    assert "timers/recurring" in compiled.params.values()
+
+
 def _poll_twice(session, *, tenant_id: str) -> None:
     now = datetime.now(timezone.utc)
     assert workflow.run_due(
@@ -187,6 +235,16 @@ def test_timer_start_lifecycle_publishes_recurring_independent_instances_and_pau
     )
     jobs = _timer_jobs(db_session, tenant_id, model_id)
     assert [job.job_type for job in jobs] == ["timer_start"]
+    # This query uses the same JSON `.as_string()` filter against SQLite that
+    # production uses against PostgreSQL; assert the API metadata query sees
+    # only this tenant/model's active timer-start row.
+    schedules = workflow.list_process_model_timer_start_schedules(
+        db_session,
+        tenant_id=tenant_id,
+        process_model_identifier=model_id,
+    )
+    assert len(schedules) == 1
+    assert schedules[0]["next_run_at"] == jobs[0].run_at.isoformat()
 
     # Repeating the same publish reconciliation must reuse the active
     # definition and preserve its scheduled fire time instead of importing a

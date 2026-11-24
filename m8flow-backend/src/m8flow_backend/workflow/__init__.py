@@ -367,6 +367,7 @@ def reconcile_process_model_timer_starts(
     status: str,
     user_id: int,
     active_definition_id: int | None = None,
+    tenant_lock_held: bool = False,
 ) -> None:
     """Keep core timer-start jobs aligned with the catalog's deployed state.
 
@@ -376,6 +377,9 @@ def reconcile_process_model_timer_starts(
     When called during publication without an active definition, sync the
     current primary BPMN through core before retiring historical definitions.
     Reuse an unchanged definition when it already owns an active timer job.
+    Callers that acquire the tenant lock before importing a definition must
+    pass ``tenant_lock_held=True``; otherwise this function acquires it. The
+    import and reconciliation must remain in the same locked transaction.
     """
     from m8flow_backend import catalog
     from m8flow_backend.catalog import versions
@@ -383,7 +387,8 @@ def reconcile_process_model_timer_starts(
     # Use the same transaction-scoped tenant lock as catalog mutations and
     # PostgreSQL scheduler polling. A second publish reconciliation must see
     # the first one's committed timer job before deciding to import BPMN.
-    versions.lock_tenant(session, tenant_id)
+    if not tenant_lock_held:
+        versions.lock_tenant(session, tenant_id)
 
     if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED and active_definition_id is None:
         files = catalog.list_model_files(

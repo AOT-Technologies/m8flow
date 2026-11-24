@@ -734,6 +734,44 @@ def test_started_by_filter(client, db_session):
     assert [r["started_by"] for r in body["results"]] == ["bob"]
 
 
+def test_timer_started_instances_filter_by_system_username_but_return_scheduler_label(
+    client, db_session
+):
+    """The filter remains keyed by the internal username; API output is friendly."""
+    from m8flow_backend.identity import TIMER_SYSTEM_USERNAME, ensure_user
+
+    _, token = _login_user(
+        client, db_session, username="timer-list-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    scheduler = ensure_user(
+        db_session,
+        username=TIMER_SYSTEM_USERNAME,
+        service="https://example.test/realms/m8flow",
+        service_id=TIMER_SYSTEM_USERNAME,
+        email="m8flow-scheduler@example.test",
+    )
+    instance = _seed_instance(
+        db_session,
+        tenant_id="t1",
+        initiator_id=scheduler.id,
+        process_model_identifier="timers/recurring",
+        start=int(time.time()),
+        status="waiting",
+    )
+    db_session.commit()
+
+    response = client.get(
+        f"/v1.0/m8flow/process-instances?started_by={TIMER_SYSTEM_USERNAME}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["pagination"]["total"] == 1
+    assert body["results"][0]["id"] == instance.id
+    assert body["results"][0]["started_by"] == "M8flow scheduler"
+
+
 def test_sort_oldest_and_recent_start(client, db_session):
     user, token = _login_user(
         client, db_session, username="sorter", groups=["t1:editor"], tenant_id="t1"

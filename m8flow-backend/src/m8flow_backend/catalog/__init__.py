@@ -176,6 +176,7 @@ def save(
         ),
         user_id=user_id,
         active_definition_id=definition.id,
+        tenant_lock_held=True,
     )
 
 
