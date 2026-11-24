@@ -2614,13 +2614,16 @@ def list_recent_instances_for_process_model(
     return rows
 
 
+TIMER_SYSTEM_DISPLAY_NAME = "M8flow scheduler"
+
+
 def _started_by_display_name(username: str | None) -> str:
     """Return a human-readable initiator label while preserving identity keys elsewhere."""
     if not username:
         return ""
     from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
 
-    return "M8flow scheduler" if username == TIMER_SYSTEM_USERNAME else username
+    return TIMER_SYSTEM_DISPLAY_NAME if username == TIMER_SYSTEM_USERNAME else username
 
 
 # Pseudo-status for the list filter: the same live statuses the Home "Active" card counts.
@@ -2658,9 +2661,9 @@ def list_instances_for_designer(
     (case-insensitive substring) — no free-text task/summary search, same
     scope as the Templates gallery's own `search` param.
 
-    `started_by` filters by the exact initiator username; the response returns
-    a display label for the initiator (presenting the timer system identity as
-    "M8flow scheduler"). Options for the
+    `started_by` filters by the initiator username. The display label
+    "M8flow scheduler" is also accepted as an alias for the timer system
+    username. Options for the
     UI dropdown come from `list_instance_owners_for_designer`. `sort` is
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
@@ -2692,7 +2695,14 @@ def list_instances_for_designer(
         if completed_today:
             stmt = stmt.where(_completed_today_clause())
         if started_by:
-            stmt = stmt.where(UserModel.username == started_by)
+            from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+            filter_username = (
+                TIMER_SYSTEM_USERNAME
+                if started_by == TIMER_SYSTEM_DISPLAY_NAME
+                else started_by
+            )
+            stmt = stmt.where(UserModel.username == filter_username)
         stmt = _scope_instances(stmt, viewer_id=viewer_id, scope=scope)
         if search:
             like = f"%{search}%"

@@ -2117,8 +2117,9 @@ paths:
           schema:
             type: string
           description: >-
-            Exact initiator-username match. Options come from
-            GET /process-instances/owners.
+            Initiator username match. The display label "M8flow scheduler" is
+            accepted as an alias for the timer-start system username. Options
+            come from GET /process-instances/owners.
         - name: scope
           in: query
           schema:
