@@ -771,6 +771,13 @@ def test_timer_started_instances_filter_by_system_username_but_return_scheduler_
     assert body["results"][0]["id"] == instance.id
     assert body["results"][0]["started_by"] == "M8flow scheduler"
 
+    detail_response = client.get(
+        f"/v1.0/m8flow/process-instances/{instance.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.get_json()["started_by"] == "M8flow scheduler"
+
 
 def test_sort_oldest_and_recent_start(client, db_session):
     user, token = _login_user(

@@ -977,17 +977,87 @@ def test_compensation_upgrade_requires_composite_process_instance_key(tmp_path, 
         for table_name in reversed(_JOURNAL_TABLES):
             connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
         connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+
+    # Recreate the legacy journal schema, then stop before the new forward
+    # migration. The core revision repairs the process_instance key, so drop it
+    # only after that revision has run.
+    command.upgrade(cfg, "a3f4e5d6c7b8")
+    with engine.begin() as connection:
         for index in composite_unique_indexes:
             connection.execute(sa.text(f'DROP INDEX "{index["name"]}"'))
 
-    with pytest.raises(RuntimeError, match="unique index on \\(m8f_tenant_id, id\\)"):
+    with pytest.raises(RuntimeError, match="non-partial unique index"):
         command.upgrade(cfg, "head")
 
     inspector = sa.inspect(engine)
-    assert not set(_JOURNAL_TABLES) & set(inspector.get_table_names())
+    assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
+    for table in _JOURNAL_TABLES:
+        references = [
+            (tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
+            for fk in inspector.get_foreign_keys(table)
+            if fk["referred_table"] == "process_instance"
+        ]
+        assert references == [(('process_instance_id',), 'process_instance', ('id',))]
     with engine.connect() as connection:
-        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == previous_revision
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == "a3f4e5d6c7b8"
     engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("index_metadata", "is_accepted"),
+    [
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "dialect_options": {"postgresql_where": None},
+            },
+            True,
+        ),
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "dialect_options": {"postgresql_where": "m8f_tenant_id IS NOT NULL"},
+            },
+            False,
+        ),
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "where": "m8f_tenant_id IS NOT NULL",
+            },
+            False,
+        ),
+    ],
+)
+def test_compensation_key_reflection_handles_dialect_partial_index_metadata(
+    monkeypatch, index_metadata, is_accepted
+):
+    migration = runpy.run_path(
+        str(_MIGRATIONS_DIR / "versions" / "b6c7d8e9f0a1_scope_compensation_foreign_keys.py")
+    )
+
+    class Inspector:
+        def has_table(self, _table):
+            return True
+
+        def get_pk_constraint(self, _table):
+            return {"constrained_columns": ["id"]}
+
+        def get_unique_constraints(self, _table):
+            return []
+
+        def get_indexes(self, _table):
+            return [index_metadata]
+
+    monkeypatch.setattr(sa, "inspect", lambda _bind: Inspector())
+    if is_accepted:
+        migration["_validate_process_instance_tenant_key"](object())
+    else:
+        with pytest.raises(RuntimeError, match="non-partial unique index"):
+            migration["_validate_process_instance_tenant_key"](object())
 
 
 def test_compensation_upgrade_accepts_reordered_composite_unique_index(tmp_path, monkeypatch):
@@ -1026,6 +1096,59 @@ def test_compensation_upgrade_accepts_reordered_composite_unique_index(tmp_path,
     assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) != previous_revision
+    engine.dispose()
+
+
+def test_compensation_forward_migration_replaces_legacy_fk_and_preserves_rows(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-tenant-fk-forward.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "c1e4f5a6b7d8")
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table_name in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
+        connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+    command.upgrade(cfg, "a3f4e5d6c7b8")
+
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO compensation_scope "
+                "(m8f_tenant_id, process_instance_id, created_at, updated_at, scope_id, "
+                "activity_id, completed, data_hash) "
+                "VALUES ('m8flow', 73, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'scope-preserved', 'order', 0, 'hash')"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        fk = [
+            item for item in inspector.get_foreign_keys("compensation_scope")
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in fk] == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
+        row = connection.execute(
+            sa.text("SELECT scope_id, activity_id FROM compensation_scope")
+        ).one()
+        assert row == ("scope-preserved", "order")
+
+    command.downgrade(cfg, _JOURNAL_REVISION)
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        fk = [
+            item for item in inspector.get_foreign_keys("compensation_scope")
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in fk] == [
+            (["process_instance_id"], ["id"])
+        ]
+        assert connection.scalar(
+            sa.text("SELECT scope_id FROM compensation_scope")
+        ) == "scope-preserved"
     engine.dispose()
 
 

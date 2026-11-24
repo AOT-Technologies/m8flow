@@ -898,6 +898,21 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
                 m8f_tenant_id="t1",
             )
         )
+        # The same model identifier in another tenant deliberately has both
+        # kinds of timer row. Neither may leak into the t1 detail response.
+        other_occurrence_run_at = datetime(2026, 2, 3, 2, 15, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key="timer-occurrence-t2",
+                job_type=occurrence_type.value,
+                bpmn_process_definition_id=schedule_definitions[2][2].id,
+                run_at=other_occurrence_run_at,
+                payload_json={},
+                created_at=other_occurrence_run_at,
+                updated_at=other_occurrence_run_at,
+                m8f_tenant_id="t2",
+            )
+        )
     db_session.commit()
 
     response = client.get(
@@ -918,6 +933,13 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
         {"next_run_at": "2026-02-03T04:05:00+00:00"},
         {"next_run_at": "2026-02-03T05:05:00+00:00"},
     ]
+    assert all(
+        row["next_run_at"] not in {
+            "2026-02-03T03:05:00+00:00",
+            "2026-02-03T02:15:00+00:00",
+        }
+        for row in body["timer_start_schedules"]
+    )
     assert len(body["recent_instances"]) == 2
     assert body["recent_instances"][0]["status"] == "running"
     assert body["recent_instances"][0]["started_by"] == "admin-detail"

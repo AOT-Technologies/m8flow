@@ -136,7 +136,14 @@ def save(
     then to {leaf-of-path}.bpmn for a genuinely new model with no metadata
     yet. Guessing the leaf name unconditionally (the old behavior) wrote a
     phantom {leaf}.bpmn alongside the real file for every non-default-named
-    model."""
+    model.
+
+    The tenant transaction lock intentionally spans core import, the BPMN file
+    write, and timer-job reconciliation. The import creates scheduler rows and
+    reconciliation chooses the active definition; allowing a scheduler poll or
+    another save between those steps could expose a definition/job set that does
+    not match the catalog file being saved. BPMN files are small, so the bounded
+    write cost is preferable to splitting this consistency boundary."""
     _reject_unsupported_constructs(xml)
     source_dmn_xml = model_dmn_xml(
         tenant_id=tenant_id,

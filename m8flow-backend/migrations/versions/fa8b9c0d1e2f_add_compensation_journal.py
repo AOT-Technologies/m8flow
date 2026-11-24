@@ -28,16 +28,14 @@ def _common(table: str) -> list[sa.Column]:
             sa.ForeignKey("m8flow_tenant.id", name=_ownership_fk(table)),
             nullable=False,
         ),
-        # Match core's tenant-scoped composite FK. The independent tenant FK is
-        # inherited from M8fTenantScopedMixin; this constraint additionally
-        # prevents a journal row from referencing another tenant's instance.
-        sa.Column("process_instance_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "process_instance_id",
+            sa.Integer(),
+            sa.ForeignKey("process_instance.id"),
+            nullable=False,
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["m8f_tenant_id", "process_instance_id"],
-            ["process_instance.m8f_tenant_id", "process_instance.id"],
-        ),
     ]
 
 
@@ -64,51 +62,6 @@ def _ownership_fk(table: str) -> str:
 
 def _tenant_index(table: str) -> str:
     return f"ix_{revision}_{table}_m8f_tenant_id"
-
-
-def _validate_process_instance_tenant_key(bind: sa.Connection) -> None:
-    """Fail before creating journal tables if the composite FK target is absent."""
-    inspector = sa.inspect(bind)
-    table = "process_instance"
-    columns = ("m8f_tenant_id", "id")
-    if not inspector.has_table(table):
-        raise RuntimeError(
-            "Cannot create the compensation journal: required table "
-            "'process_instance' is missing. Upgrade the core schema first."
-        )
-
-    def is_compatible_key(reflected_columns: list[str] | tuple[str, ...] | None) -> bool:
-        # Names and column order do not change uniqueness semantics. The key
-        # must contain exactly the referenced columns: a unique key with extra
-        # columns does not guarantee uniqueness of this FK target pair and is
-        # not a valid referenced key on supported databases.
-        return reflected_columns is not None and len(reflected_columns) == len(columns) and set(
-            reflected_columns
-        ) == set(columns)
-
-    primary_key = inspector.get_pk_constraint(table).get("constrained_columns")
-    unique_constraints = [
-        constraint.get("column_names")
-        for constraint in inspector.get_unique_constraints(table)
-    ]
-    unique_indexes = [
-        index.get("column_names")
-        for index in inspector.get_indexes(table)
-        if index.get("unique")
-        and index.get("column_names")
-        and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
-    ]
-    if not any(
-        is_compatible_key(key)
-        for key in (primary_key, *unique_constraints, *unique_indexes)
-    ):
-        raise RuntimeError(
-            "Cannot create the compensation journal: 'process_instance' must have a "
-            "primary key, unique constraint, or non-partial unique index on "
-            "(m8f_tenant_id, id) for the tenant-scoped foreign key. "
-            "Restore a schema-level unique key covering exactly these two columns "
-            "(column order and object name may vary), then rerun the migration."
-        )
 
 
 def _owns_table(bind: sa.Connection, table: str, creation_marker: str) -> bool:
@@ -216,7 +169,22 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
                 constraint["constrained_columns"], constraint["referred_columns"], strict=True
             )
         ))
-    if actual_fks != expected_fks:
+    # The squashed baseline is built from the current ORM metadata. It can
+    # therefore already contain the tenant-scoped process-instance FK, even
+    # though this historical revision creates the legacy single-column FK for
+    # databases that run it incrementally. Accept either shape while adopting
+    # baseline-created tables; the forward migration after this revision
+    # converges both paths on the tenant-scoped FK.
+    baseline_composite_fks = set(expected_fks)
+    legacy_process_instance_fk = (("process_instance_id", "process_instance.id"),)
+    composite_process_instance_fk = (
+        ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
+        ("process_instance_id", "process_instance.id"),
+    )
+    if legacy_process_instance_fk in baseline_composite_fks:
+        baseline_composite_fks.remove(legacy_process_instance_fk)
+        baseline_composite_fks.add(composite_process_instance_fk)
+    if actual_fks not in (expected_fks, baseline_composite_fks):
         required = sorted(f"{column} references {target}" for key in expected_fks for column, target in key)
         problems.append(f"expected foreign keys: {', '.join(required)}")
 
@@ -340,7 +308,6 @@ def _journal_definitions() -> dict[str, list[SchemaItem]]:
 
 def upgrade() -> None:
     bind = op.get_bind()
-    _validate_process_instance_tenant_key(bind)
     definitions = _journal_definitions()
     inspector = sa.inspect(bind)
     for name, items in definitions.items():
