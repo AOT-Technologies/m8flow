@@ -169,22 +169,7 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
                 constraint["constrained_columns"], constraint["referred_columns"], strict=True
             )
         ))
-    # The squashed baseline is built from the current ORM metadata. It can
-    # therefore already contain the tenant-scoped process-instance FK, even
-    # though this historical revision creates the legacy single-column FK for
-    # databases that run it incrementally. Accept either shape while adopting
-    # baseline-created tables; the forward migration after this revision
-    # converges both paths on the tenant-scoped FK.
-    baseline_composite_fks = set(expected_fks)
-    legacy_process_instance_fk = (("process_instance_id", "process_instance.id"),)
-    composite_process_instance_fk = (
-        ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
-        ("process_instance_id", "process_instance.id"),
-    )
-    if legacy_process_instance_fk in baseline_composite_fks:
-        baseline_composite_fks.remove(legacy_process_instance_fk)
-        baseline_composite_fks.add(composite_process_instance_fk)
-    if actual_fks not in (expected_fks, baseline_composite_fks):
+    if actual_fks != expected_fks:
         required = sorted(f"{column} references {target}" for key in expected_fks for column, target in key)
         problems.append(f"expected foreign keys: {', '.join(required)}")
 

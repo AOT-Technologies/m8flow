@@ -85,6 +85,15 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
     assert "ix_process_instance_collaboration_lookup" in {
         index["name"] for index in inspector.get_indexes("process_instance")
     }
+    for table_name in _JOURNAL_TABLES:
+        journal_fks = [
+            item
+            for item in inspector.get_foreign_keys(table_name)
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in journal_fks] == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
 
     # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:
@@ -515,7 +524,10 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
     """Databases already at c4 are upgraded without replaying c4."""
     db_path = tmp_path / "old-head-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
-    command.upgrade(cfg, "head")
+    # Build the actual schema at c4 before simulating its legacy version
+    # markers. Starting at head and merely rewinding the marker leaves the
+    # newer composite compensation FKs in place, which is not a valid c4 DB.
+    command.upgrade(cfg, "c4d5e6f7a8b9")
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     with engine.begin() as connection:
@@ -1152,6 +1164,31 @@ def test_compensation_forward_migration_replaces_legacy_fk_and_preserves_rows(tm
     engine.dispose()
 
 
+def test_compensation_migration_chain_keeps_prior_revision_immutable(tmp_path, monkeypatch):
+    """The prior journal revision stays legacy; this PR's migration scopes it."""
+    database_uri = f"sqlite:///{tmp_path / 'journal-immutable-history.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, _JOURNAL_REVISION)
+    engine = sa.create_engine(database_uri)
+
+    def process_instance_fks(table_name: str) -> list[tuple[list[str], list[str]]]:
+        return [
+            (foreign_key["constrained_columns"], foreign_key["referred_columns"])
+            for foreign_key in sa.inspect(engine).get_foreign_keys(table_name)
+            if foreign_key["referred_table"] == "process_instance"
+        ]
+
+    for table_name in _JOURNAL_TABLES:
+        assert process_instance_fks(table_name) == [(["process_instance_id"], ["id"])]
+
+    command.upgrade(cfg, "head")
+    for table_name in _JOURNAL_TABLES:
+        assert process_instance_fks(table_name) == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
+    engine.dispose()
+
+
 def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
     database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
@@ -1312,8 +1349,10 @@ def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     db_path = tmp_path / "legacy.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
 
-    # Build the schema, then forge a pre-squash stamp Alembic can't resolve.
-    command.upgrade(cfg, "head")
+    # Build the schema at the old valid head, then forge a pre-squash stamp
+    # Alembic can't resolve. A head-level schema with an old marker would not
+    # represent a database that could have existed before the squash.
+    command.upgrade(cfg, "c4d5e6f7a8b9")
     engine = sa.create_engine(f"sqlite:///{db_path}")
     with engine.begin() as connection:
         connection.execute(

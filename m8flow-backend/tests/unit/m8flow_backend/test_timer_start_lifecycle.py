@@ -153,6 +153,56 @@ def test_catalog_save_acquires_tenant_lock_once_before_import(
     assert lock_and_import_order == [("lock", tenant_id), ("import", tenant_id)]
 
 
+def test_saving_secondary_bpmn_preserves_primary_timer_start_schedule(
+    db_session, monkeypatch, tmp_path
+):
+    tenant_id = "timer-secondary-file-tenant"
+    model_id = "timers/secondary-file"
+    user = _seed_model(
+        db_session,
+        monkeypatch,
+        tmp_path,
+        tenant_id=tenant_id,
+        model_id=model_id,
+    )
+
+    published = catalog.update_process_model_metadata(
+        tenant_id=tenant_id,
+        process_model_identifier=model_id,
+        status=catalog.PROCESS_MODEL_STATUS_PUBLISHED,
+    )
+    workflow.reconcile_process_model_timer_starts(
+        db_session,
+        tenant_id=tenant_id,
+        process_model_identifier=model_id,
+        status=published["status"],
+        user_id=user.id,
+    )
+    primary_job = next(
+        job for job in _timer_jobs(db_session, tenant_id, model_id)
+        if job.job_type == "timer_start"
+    )
+    primary_job_id = primary_job.id
+    primary_run_at = primary_job.run_at
+
+    secondary_bpmn = TIMER_START_BPMN.replace(
+        "Process_timer_lifecycle", "Process_secondary_timer"
+    )
+    catalog.save(
+        db_session,
+        path=model_id,
+        file_name="secondary.bpmn",
+        xml=secondary_bpmn,
+        tenant_id=tenant_id,
+        user_id=user.id,
+    )
+
+    jobs = _timer_jobs(db_session, tenant_id, model_id)
+    assert len(jobs) == 1
+    assert jobs[0].id == primary_job_id
+    assert jobs[0].run_at == primary_run_at
+
+
 @pytest.mark.parametrize("dialect", [sqlite.dialect(), postgresql.dialect()])
 def test_timer_start_model_identifier_json_filter_compiles_for_supported_dialects(dialect):
     """The JSON text filter used by reconcile/list queries must compile on SQLite and PG."""

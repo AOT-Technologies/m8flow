@@ -169,6 +169,17 @@ def save(
         if file_name
         else _model_file_path(tenant_id, path)
     )
+    # A named-file update can import a secondary BPMN definition. Only make
+    # that definition active when it is the model's primary BPMN; otherwise
+    # reconciliation must resolve the primary definition from the catalog and
+    # retain its timer-start schedule.
+    primary_file_name = _primary_bpmn_file_name_for_save(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=path,
+        fallback_file_name=disk_path.name,
+    )
+    is_primary_file = disk_path.name == primary_file_name
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
     # bytes must remain byte-for-byte identical after the BPMN re-import.
@@ -182,9 +193,40 @@ def save(
             process_model_identifier=path,
         ),
         user_id=user_id,
-        active_definition_id=definition.id,
+        active_definition_id=definition.id if is_primary_file else None,
         tenant_lock_held=True,
     )
+
+
+def _primary_bpmn_file_name_for_save(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    fallback_file_name: str,
+) -> str:
+    """Resolve the model's primary BPMN filename before a named-file save.
+
+    A versioned working copy is authoritative when present. Legacy models use
+    their metadata, then the same first-BPMN fallback as schedule
+    reconciliation. A new model with no BPMN yet treats the file being saved
+    as primary.
+    """
+    model = versions.state(session, tenant_id, process_model_identifier)
+    if model is not None and not model.deleted:
+        primary = versions.primary_bpmn(model.working, process_model_identifier)
+        return primary or fallback_file_name
+
+    model_dir = _resolved_inside_tenant(
+        tenant_id, process_model_identifier, **_MODEL_PATH_ERROR
+    )
+    metadata = _tenant_json(
+        tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR
+    )
+    primary = metadata.get("primary_file_name")
+    if isinstance(primary, str) and primary.strip():
+        return primary.strip()
+    return _first_bpmn_name(model_dir) or fallback_file_name
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:
