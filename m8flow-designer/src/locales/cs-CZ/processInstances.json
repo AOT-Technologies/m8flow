@@ -16,6 +16,7 @@
   },
   "status": {
     "all": "Vše",
+    "active": "Aktivní",
     "running": "Běží",
     "waiting": "Čeká",
     "userInputRequired": "Vyžaduje vstup uživatele",
@@ -58,7 +59,8 @@
       "label": "Akce instance",
       "open": "Otevřít",
       "copyId": "Kopírovat ID instance"
-    }
+    },
+    "clearCompletedToday": "Zrušit filtr Dokončené dnes"
   },
   "detail": {
     "heading": "ID instance procesu: {{id}}",

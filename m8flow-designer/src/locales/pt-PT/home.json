@@ -8,7 +8,15 @@
     "completedToday": "Concluídas hoje",
     "avgCompletionTime": "Tempo médio de conclusão",
     "minutesUnit": "min",
-    "totalTenants": "Total de inquilinos"
+    "totalTenants": "Total de inquilinos",
+    "descriptions": {
+      "activeProcessInstances": "Em execução, em espera ou a aguardar dados",
+      "errorsNeedingReview": "Instâncias paradas por um erro",
+      "completedToday": "Instâncias concluídas desde a meia-noite (UTC)",
+      "tasksWaitingOnMe": "Tarefas abertas atribuídas a si",
+      "avgCompletionTime": "Tempo médio de execução das instâncias concluídas",
+      "totalTenants": "Inquilinos em toda a plataforma"
+    }
   },
   "myTasks": {
     "title": "As minhas tarefas",

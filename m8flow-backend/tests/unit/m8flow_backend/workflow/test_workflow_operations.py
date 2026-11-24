@@ -442,6 +442,656 @@ def test_call_activity_resolves_child_process_within_tenant(db_session, tmp_path
     assert instance.status == ProcessInstanceStatus.complete.value
 
 
+FAILS_AT_START_BPMN = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+  <bpmn:process id="Process_fails_at_start" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="explode" name="Explode" scriptFormat="python">
+      <bpmn:script>raise Exception('boom at start')</bpmn:script>
+    </bpmn:scriptTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="explode" />
+    <bpmn:sequenceFlow id="f2" sourceRef="explode" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>
+"""
+
+
+def _failed_start_script_error(process_instance_id: int):
+    """Shaped like Spiff's WorkflowTaskException from a failed start: the failed
+    task, whose workflow's script engine carries the instance id."""
+    exception_type = type(
+        "WorkflowTaskException", (RuntimeError,), {"__module__": "SpiffWorkflow.bpmn.exceptions"}
+    )
+    failure = exception_type("Exception:boom at start")
+    engine = SimpleNamespace(_process_instance_id=process_instance_id)
+    failure.task = SimpleNamespace(
+        id="failed-script-task",
+        task_spec=SimpleNamespace(bpmn_name="Explode"),
+        workflow=SimpleNamespace(top_workflow=SimpleNamespace(script_engine=engine)),
+    )
+    return failure
+
+
+def _not_started_instance(db_session, tenant, user):
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.not_started.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    return instance
+
+
+@pytest.mark.parametrize("starter_role", ["admin", "user"])
+def test_failed_start_recovery_moves_the_instance_to_error(db_session, starter_role):
+    """Core commits a new instance before running it and only moves it to Error
+    for a service-task failure; a failing script left it not_started. The
+    recovery runs on its own session, as in the app after a failed start. A
+    starter with only the ``user`` role (start, claim, complete) gets the same
+    result: recording the failure needs no rights beyond starting."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.services.authorization import ensure_v1_role
+
+    tenant, starter = _seed_actor(db_session)
+    if starter_role == "user":
+        starter = identity.ensure_user(
+            db_session,
+            username="starter",
+            service="https://example.test/realms/m8flow",
+            service_id="starter-1",
+            email="starter@example.test",
+        )
+        identity.ensure_membership(db_session, starter, tenant)
+        ensure_v1_role(db_session, tenant_id=tenant.id, role_name="user", user_ids=(starter.id,))
+    instance = _not_started_instance(db_session, tenant, starter)
+    # The app commits before the run; the recovery's own session sees committed rows only.
+    db_session.commit()
+
+    failed_id = workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=starter.id,
+        process_model_identifier="examples/fails-at-start",
+        exc=_failed_start_script_error(instance.id),
+    )
+
+    db_session.expire_all()
+    assert failed_id == instance.id
+    assert db_session.get(ProcessInstanceModel, instance.id).status == ProcessInstanceStatus.error.value
+    errors = workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=instance.id)
+    assert errors == [("failed-script-task", "Explode: Exception:boom at start")]
+    failed_events = (
+        db_session.query(ProcessInstanceEventModel)
+        .filter_by(process_instance_id=instance.id, event_type="task_failed")
+        .all()
+    )
+    assert [event.task_guid for event in failed_events] == ["failed-script-task"]
+
+
+def test_installed_core_still_exposes_the_failed_start_instance_id(db_session, tmp_path, monkeypatch):
+    """Contract with the installed m8flow-core: the failed start's instance id is
+    read from its private ``script_engine._process_instance_id``. If core
+    renames it, this fails instead of failed starts quietly staying not_started."""
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    resolved = []
+    real_resolve = workflow._failed_task_process_instance_id
+    monkeypatch.setattr(
+        workflow,
+        "_failed_task_process_instance_id",
+        lambda task: resolved.append(real_resolve(task)) or resolved[-1],
+    )
+
+    with pytest.raises(ApiError):
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    # The full recovery is covered by the super-admin start test below.
+    assert resolved and isinstance(resolved[0], int), "core no longer exposes _process_instance_id"
+
+
+def test_failed_start_recovery_warns_when_the_instance_id_cannot_be_read(db_session, caplog):
+    """A core that no longer carries the id leaves the instance not_started;
+    that must be logged at WARNING, not skipped silently."""
+    tenant, user = _seed_actor(db_session)
+    failure = _failed_start_script_error(1)
+    failure.task.workflow.top_workflow.script_engine = SimpleNamespace()  # attribute renamed away
+
+    with caplog.at_level("WARNING", logger=workflow.LOGGER.name):
+        assert workflow._error_instance_after_failed_start_script(
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+            exc=failure,
+        ) is None
+
+    assert any(
+        record.levelname == "WARNING" and "_process_instance_id" in record.getMessage()
+        for record in caplog.records
+    )
+
+
+def test_failed_start_recovery_marks_only_its_own_instance(db_session):
+    """A concurrent start of the same model by the same user leaves a newer
+    not_started instance. Only the instance the failed task ran in moves to
+    Error; another tenant's, model's or user's instance is never touched."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    tenant, user = _seed_actor(db_session)
+    failed = _not_started_instance(db_session, tenant, user)
+    concurrent = _not_started_instance(db_session, tenant, user)
+    db_session.commit()
+
+    assert workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/other-model",
+        exc=_failed_start_script_error(failed.id),
+    ) is None
+    assert workflow._error_instance_after_failed_start_script(
+        tenant_id=tenant.id,
+        user_id=user.id,
+        process_model_identifier="examples/fails-at-start",
+        exc=_failed_start_script_error(failed.id),
+    ) == failed.id
+
+    db_session.expire_all()
+    assert db_session.get(ProcessInstanceModel, failed.id).status == ProcessInstanceStatus.error.value
+    assert (
+        db_session.get(ProcessInstanceModel, concurrent.id).status
+        == ProcessInstanceStatus.not_started.value
+    )
+
+
+def test_super_admin_start_failure_in_another_tenant_reaches_error(db_session, tmp_path, monkeypatch):
+    """A super-admin starts in a tenant they don't belong to through a temporary
+    membership. The recovery runs in its own session after that scope ended, so
+    it must take the same membership or core rejects the Error transition."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+
+    from m8flow_backend.authorization import HostAuthorizationPolicy
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, admin = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=admin.id,
+    )
+    home = identity.ensure_tenant(db_session, tenant_id="home", slug="home")
+    root = identity.ensure_user(
+        db_session,
+        username="root",
+        service="https://example.test/realms/home",
+        service_id="root-1",
+        email="root@example.test",
+    )
+    identity.ensure_membership(db_session, root, home)
+    identity.sync_groups(db_session, user=root, group_identifiers=["super-admin"], tenant_id="home")
+    db_session.commit()
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
+    external_user_id_before = root.external_user_id
+
+    # The app installs the host policy, which lets a super-admin act anywhere.
+    with workflow.api.authorization_policy_scope(HostAuthorizationPolicy()):
+        with pytest.raises(ApiError) as raised:
+            workflow.start(
+                db_session,
+                tenant_id=tenant.id,
+                user_id=root.id,
+                process_model_identifier="examples/fails-at-start",
+            )
+
+    db_session.expire_all()
+    failed_id = raised.value.process_instance_id
+    assert failed_id is not None
+    assert db_session.get(ProcessInstanceModel, failed_id).status == ProcessInstanceStatus.error.value
+    assert raised.value.status_code == 422
+    assert "boom at start" in raised.value.message
+    assert f"Process instance {failed_id} is now in Error." in raised.value.message
+    errors = workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=failed_id)
+    assert len(errors) == 1 and errors[0][1].startswith("Explode: Exception:boom at start")
+    root = db_session.get(UserModel, root.id)
+    assert root.external_user_id == external_user_id_before
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
+
+
+def _cross_tenant_super_admin(db_session, tmp_path, monkeypatch):
+    """A tenant with a script-failing model, and a super-admin from another tenant."""
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, admin = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=admin.id,
+    )
+    home = identity.ensure_tenant(db_session, tenant_id="home", slug="home")
+    root = identity.ensure_user(
+        db_session,
+        username="root",
+        service="https://example.test/realms/home",
+        service_id="root-1",
+        email="root@example.test",
+    )
+    identity.ensure_membership(db_session, root, home)
+    identity.sync_groups(db_session, user=root, group_identifiers=["super-admin"], tenant_id="home")
+    db_session.commit()
+    return tenant, root
+
+
+@pytest.mark.parametrize("failing_write", ["task_failed event", "error message"])
+def test_failed_recovery_write_rolls_back_before_restoring_temporary_membership(
+    db_session, tmp_path, monkeypatch, failing_write
+):
+    """The cross-tenant membership scope commits on entry and exit. If any
+    recovery write fails, every recovery write is rolled back before the exit
+    commit, so the super-admin's temporary membership is still restored and the
+    instance is never left half in Error (M8F-675 review)."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from m8flow_core.models.user import UserModel
+    from m8flow_core.services.tenant_users import tenant_identifiers_for, user_belongs_to_tenant
+    from sqlalchemy import text
+
+    from m8flow_backend.authorization import HostAuthorizationPolicy
+    from m8flow_backend.errors import ApiError
+
+    tenant, root = _cross_tenant_super_admin(db_session, tmp_path, monkeypatch)
+    external_user_id_before = root.external_user_id
+
+    if failing_write == "task_failed event":
+        real_execute_command = workflow.api.execute_command
+
+        def _execute_command(session, command):
+            if getattr(command, "event_type", None) == "task_failed":
+                session.execute(text("INSERT INTO no_such_table VALUES (1)"))  # a real database error
+            return real_execute_command(session, command)
+
+        monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+    else:
+
+        def _failing_record(*_args, **_kwargs):
+            raise RuntimeError("error table unavailable")
+
+        monkeypatch.setattr(workflow, "_record_process_instance_error", _failing_record)
+
+    with workflow.api.authorization_policy_scope(HostAuthorizationPolicy()):
+        with pytest.raises(ApiError) as raised:
+            workflow.start(
+                db_session,
+                tenant_id=tenant.id,
+                user_id=root.id,
+                process_model_identifier="examples/fails-at-start",
+            )
+
+    db_session.expire_all()
+    root = db_session.get(UserModel, root.id)
+    assert root.external_user_id == external_user_id_before
+    assert not user_belongs_to_tenant(root, tenant_identifiers_for(db_session, tenant.id))
+    assert raised.value.status_code == 422
+    assert raised.value.process_instance_id is None
+    (instance,) = db_session.query(ProcessInstanceModel).filter_by(m8f_tenant_id=tenant.id).all()
+    assert instance.status == ProcessInstanceStatus.not_started.value
+    assert (
+        db_session.query(ProcessInstanceEventModel)
+        .filter_by(process_instance_id=instance.id, event_type="task_failed")
+        .count()
+        == 0
+    )
+    assert workflow.list_instance_errors(db_session, tenant_id=tenant.id, process_instance_id=instance.id) == []
+
+
+def test_start_failure_message_is_redacted_even_without_an_instance(db_session, tmp_path, monkeypatch):
+    """The 422 echoes the Spiff error text, which can carry a secret from a
+    script or model. It is redacted whether or not an instance was marked."""
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+    spiff_error = type("ValidationException", (RuntimeError,), {"__module__": "SpiffWorkflow.bpmn.parser"})
+
+    def _execute_command(_session, _command):
+        raise spiff_error("bad expression token=start-secret-123")
+
+    monkeypatch.setattr(workflow.api, "execute_command", _execute_command)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    assert raised.value.status_code == 422
+    assert raised.value.process_instance_id is None
+    assert "start-secret-123" not in raised.value.message
+
+
+def test_failing_to_record_a_start_failure_still_reports_the_script_error(
+    db_session, tmp_path, monkeypatch
+):
+    from m8flow_backend.errors import ApiError
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(
+        db_session,
+        path="examples/fails-at-start",
+        xml=FAILS_AT_START_BPMN,
+        tenant_id=tenant.id,
+        user_id=user.id,
+    )
+
+    def _broken_record(*_args, **_kwargs):
+        raise RuntimeError("error table unavailable")
+
+    monkeypatch.setattr(workflow, "_record_process_instance_error", _broken_record)
+
+    with pytest.raises(ApiError) as raised:
+        workflow.start(
+            db_session,
+            tenant_id=tenant.id,
+            user_id=user.id,
+            process_model_identifier="examples/fails-at-start",
+        )
+
+    assert raised.value.status_code == 422
+    assert "boom at start" in raised.value.message
+    assert raised.value.process_instance_id is None
+
+
+@pytest.mark.parametrize("last_attempt_fails_a_task", [True, False])
+def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attempt_fails_a_task):
+    """Error -> retry -> Error with different tasks and messages, then (when the
+    last attempt records no task_failed) an Error with no failure of its own.
+    Each Error event row shows its own attempt's message, never another
+    attempt's, and the banner follows the latest Error (M8F-675 review). The
+    host's script paths record task_failed after the Error event and core's
+    service-task path before it; both belong to the same attempt. The rows are
+    from before ``created_at`` existed, so they use the whole-second fallback."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+    from sqlalchemy import update
+
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/retried",
+        process_model_display_name="Retried",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    t0 = datetime(2026, 11, 18, 10, 0, 0, tzinfo=UTC)
+
+    def event(event_type, seconds, task_guid=None):
+        row = ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type=event_type,
+            occurred_at=t0 + timedelta(seconds=seconds),
+            task_guid=task_guid,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row.id
+
+    def error_row(task_guid, message, seconds):
+        db_session.add(
+            ProcessInstanceErrorModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                task_guid=task_guid,
+                message=message,
+                created_at_in_seconds=int((t0 + timedelta(seconds=seconds)).timestamp()),
+            )
+        )
+        db_session.flush()
+        db_session.execute(update(ProcessInstanceErrorModel).values(created_at=None))
+
+    event("process_instance_created", 0)
+    error_row("g-first", "first failure", 10)
+    first_failed = event("task_failed", 10, "g-first")  # core: task_failed, then Error
+    first_error = event("process_instance_error", 10)
+    event("process_instance_retried", 20)
+    error_row("g-second", "second failure", 30)
+    second_error = event("process_instance_error", 30)
+    second_failed = event("task_failed", 30, "g-second")  # host script path: Error, then task_failed
+    event("process_instance_retried", 40)
+    third_error = None
+    if not last_attempt_fails_a_task:
+        third_error = event("process_instance_error", 50)  # no task_failed, no message of its own
+
+    rows = workflow.list_instance_events_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )["results"]
+    message_by_event = {row["id"]: row["error_message"] for row in rows if row["id"] is not None}
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert message_by_event[first_failed] == "first failure"
+    assert message_by_event[first_error] == "first failure"
+    assert message_by_event[second_error] == "second failure"
+    assert message_by_event[second_failed] == "second failure"
+    if last_attempt_fails_a_task:
+        assert detail["error_message"] == "second failure"
+    else:
+        assert message_by_event[third_error] is None
+        assert detail["error_message"] is None
+
+
+def test_same_second_retry_on_the_same_task_keeps_each_attempts_failure(db_session):
+    """Error -> retry -> Error inside one second, failing the same task GUID
+    both times. Whole-second rows would put the second failure in both
+    attempts; the full ``created_at`` keeps each Error on its own message
+    (M8F-675 review)."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    from m8flow_backend.models.process_instance_error import ProcessInstanceErrorModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/retried-fast",
+        process_model_display_name="Retried fast",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    t0 = datetime(2026, 11, 18, 10, 0, 0, tzinfo=UTC)
+
+    def at(ms):
+        return t0 + timedelta(milliseconds=ms)
+
+    def event(event_type, ms, task_guid=None):
+        row = ProcessInstanceEventModel(
+            m8f_tenant_id=tenant.id,
+            process_instance_id=instance.id,
+            event_type=event_type,
+            occurred_at=at(ms),
+            task_guid=task_guid,
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row.id
+
+    def error_row(message, ms):
+        db_session.add(
+            ProcessInstanceErrorModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                task_guid="g-same",
+                message=message,
+                created_at_in_seconds=int(at(ms).timestamp()),
+                created_at=at(ms),
+            )
+        )
+        db_session.flush()
+
+    event("process_instance_created", 100)
+    error_row("first failure", 200)
+    first_failed = event("task_failed", 200, "g-same")
+    first_error = event("process_instance_error", 200)
+    event("process_instance_retried", 500)
+    error_row("second failure", 800)
+    second_failed = event("task_failed", 800, "g-same")
+    second_error = event("process_instance_error", 800)
+
+    rows = workflow.list_instance_events_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )["results"]
+    message_by_event = {row["id"]: row["error_message"] for row in rows if row["id"] is not None}
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert message_by_event[first_failed] == "first failure"
+    assert message_by_event[first_error] == "first failure"
+    assert message_by_event[second_failed] == "second failure"
+    assert message_by_event[second_error] == "second failure"
+    assert detail["error_message"] == "second failure"
+
+
+def test_caught_service_task_error_row_is_not_shown_on_a_completed_instance(db_session):
+    """The host records every coded connector failure, since it fails before
+    core decides whether a boundary catches it. When one did catch it, the
+    instance completes, so its row must not surface as an instance error."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/caught",
+        process_model_display_name="Caught",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.complete.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    workflow._record_process_instance_error(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        task_guid="g-lookup",
+        message="proxy said 404 Not Found",
+    )
+    db_session.flush()
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert detail["status"] == ProcessInstanceStatus.complete.value
+    assert detail["error_message"] is None
+
+
+def test_caught_service_task_error_is_not_shown_for_a_later_failure(db_session):
+    """A boundary caught `lookup`'s connector error, so its row exists but core
+    logged no task_failed for it. The run later failed at another task that
+    left no message: neither the banner nor the Error event may show the
+    caught error as the failure (M8F-675 review). Once that failure has its
+    own message, that one is shown."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+    from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/caught-then-failed",
+        process_model_display_name="Caught then failed",
+        process_initiator_id=user.id,
+        status=ProcessInstanceStatus.error.value,
+    )
+    db_session.add(instance)
+    db_session.flush()
+    workflow._record_process_instance_error(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        task_guid="g-lookup",
+        message="proxy said 404 Not Found",
+    )
+    for event_type, task_guid in (("task_failed", "g-later"), ("process_instance_error", None)):
+        db_session.add(
+            ProcessInstanceEventModel(
+                m8f_tenant_id=tenant.id,
+                process_instance_id=instance.id,
+                event_type=event_type,
+                occurred_at=datetime.now(UTC),
+                task_guid=task_guid,
+            )
+        )
+    db_session.flush()
+
+    def shown_errors():
+        detail = workflow.get_instance_detail_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id
+        )
+        events = workflow.list_instance_events_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id
+        )["results"]
+        (error_event,) = [e for e in events if e["event_type"] == "process_instance_error"]
+        return detail["error_message"], error_event["error_message"]
+
+    assert shown_errors() == (None, None)
+
+    workflow._record_process_instance_error(
+        db_session,
+        tenant_id=tenant.id,
+        process_instance_id=instance.id,
+        task_guid="g-later",
+        message="later step failed",
+    )
+    db_session.flush()
+
+    assert shown_errors() == ("later step failed", "later step failed")
+
+
 def test_instance_detail_drills_into_called_child_process(db_session, tmp_path, monkeypatch):
     from m8flow_backend.errors import ApiError
 
@@ -1724,6 +2374,121 @@ def test_instance_diagram_shows_task_failed_event_as_error_even_if_engine_termin
     assert failed_task["state"] == "ERROR"
 
 
+def test_instance_diagram_falls_back_to_the_snapshot_when_a_start_failure_saved_no_task_rows(
+    db_session, monkeypatch
+):
+    """A failure while starting leaves core's workflow snapshot but no task
+    rows, so the diagram had nothing to colour. It reads the snapshot instead."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    tenant, user = _seed_actor(db_session)
+    snapshot = {
+        "spec": {
+            "task_specs": {
+                "Start": {"typename": "BpmnStartTask", "bpmn_name": None},
+                "Work": {"typename": "ServiceTask", "bpmn_name": "GET returns 404"},
+                "NormalPath": {"typename": "ScriptTask", "bpmn_name": "Normal path"},
+                "Sub": {"typename": "SubWorkflowTask", "bpmn_name": "Sub-process"},
+            }
+        },
+        "tasks": {
+            "g-start": {"task_spec": "Start", "state": 64, "last_state_change": 1.0},
+            "g-work": {"task_spec": "Work", "state": 128, "last_state_change": 2.0},
+            "g-normal": {"task_spec": "NormalPath", "state": 4, "last_state_change": 1.5},
+        },
+        "subprocess_specs": {
+            "Sub": {"task_specs": {"Inner": {"typename": "ScriptTask", "bpmn_name": "Inner"}}}
+        },
+        "subprocesses": {
+            "g-sub": {
+                "spec": "Sub",
+                "tasks": {"g-inner": {"task_spec": "Inner", "state": 256, "last_state_change": 3.0}},
+            }
+        },
+    }
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status="error",
+    )
+    db_session.add(instance)
+    db_session.flush()
+    # Core reads the snapshot from the instance's process JSON data.
+    monkeypatch.setattr(
+        ProcessInstanceModel, "workflow_state_json", property(lambda _self: json.dumps(snapshot))
+    )
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    by_guid = {task["guid"]: task for task in detail["tasks"]}
+    assert by_guid["g-work"]["bpmn_identifier"] == "Work"
+    assert by_guid["g-work"]["state"] == "ERROR"
+    assert by_guid["g-work"]["typename"] == "ServiceTask"
+    assert by_guid["g-work"]["bpmn_name"] == "GET returns 404"
+    assert by_guid["g-work"]["last_state_change"] == 2.0
+    assert by_guid["g-start"]["state"] == "COMPLETED"
+    assert by_guid["g-normal"]["state"] == "FUTURE"
+    # Core keys a sub-process's tasks as "<spec>::<task>", as in its task rows.
+    assert by_guid["g-inner"]["bpmn_identifier"] == "Sub::Inner"
+    assert by_guid["g-inner"]["state"] == "CANCELLED"
+
+    # Clicking the failed task on the diagram opens it from the snapshot too.
+    clicked = workflow.get_instance_task_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid="g-work"
+    )
+    assert clicked["bpmn_identifier"] == "Work"
+    assert clicked["state"] == "ERROR"
+    assert (
+        workflow.get_instance_task_for_designer(
+            db_session, tenant_id="other-tenant", process_instance_id=instance.id, task_guid="g-work"
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "snapshot",
+    [
+        "{",  # invalid JSON
+        "[]",  # not an object
+        json.dumps({"tasks": [], "spec": "x", "subprocesses": {"g": "x"}}),  # wrong shapes
+        json.dumps({"tasks": {"g-1": "not a task"}}),
+        None,  # no snapshot
+    ],
+)
+def test_instance_diagram_ignores_an_unreadable_snapshot(db_session, monkeypatch, snapshot):
+    """A corrupt snapshot must not break the designer: no tasks, not a 500."""
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    tenant, user = _seed_actor(db_session)
+    instance = ProcessInstanceModel(
+        m8f_tenant_id=tenant.id,
+        process_model_identifier="examples/fails-at-start",
+        process_model_display_name="Fails at start",
+        process_initiator_id=user.id,
+        status="error",
+    )
+    db_session.add(instance)
+    db_session.flush()
+    monkeypatch.setattr(ProcessInstanceModel, "workflow_state_json", property(lambda _self: snapshot))
+
+    detail = workflow.get_instance_detail_for_designer(
+        db_session, tenant_id=tenant.id, process_instance_id=instance.id
+    )
+
+    assert detail["tasks"] == []
+    assert (
+        workflow.get_instance_task_for_designer(
+            db_session, tenant_id=tenant.id, process_instance_id=instance.id, task_guid="g-1"
+        )
+        is None
+    )
+
+
 def test_delete_instance_requires_finished_status_then_removes_run_data(db_session, tmp_path, monkeypatch):
     import pytest
     from m8flow_core.models.work_item import WorkItemModel
@@ -2371,3 +3136,48 @@ def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp
     (failed_event,) = [e for e in events if e["event_type"] == "task_failed"]
     assert failed_event["task_identifier"] == "fail"
     assert "deliberate" in failed_event["error_message"]
+
+
+def test_designer_list_active_and_completed_today_filters_match_home_counts(db_session):
+    """M8F-711: Home stat cards link to these list filters, so they must return
+    exactly the instances the cards count."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    tenant, user = _seed_actor(db_session)
+    now = datetime.now(UTC)
+    seeded = {
+        "running": (ProcessInstanceStatus.running, None),
+        "waiting": (ProcessInstanceStatus.waiting, None),
+        "suspended": (ProcessInstanceStatus.suspended, None),
+        "error": (ProcessInstanceStatus.error, None),
+        "done_today": (ProcessInstanceStatus.complete, now),
+        "done_before": (ProcessInstanceStatus.complete, now - timedelta(days=2)),
+    }
+    ids = {}
+    for name, (status, ended_at) in seeded.items():
+        instance = ProcessInstanceModel(
+            m8f_tenant_id=tenant.id,
+            process_model_identifier=f"m8f711/{name}",
+            process_model_display_name=name,
+            process_initiator_id=user.id,
+            status=status.value,
+            ended_at=ended_at,
+        )
+        db_session.add(instance)
+        db_session.flush()
+        ids[name] = instance.id
+
+    active, page = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id, status="active")
+    assert {row["id"] for row in active} == {ids["running"], ids["waiting"]}
+    assert page["total"] == workflow.count_active_process_instances(db_session, tenant_id=tenant.id)
+
+    today, page = workflow.list_instances_for_designer(
+        db_session, tenant_id=tenant.id, status="complete", completed_today=True
+    )
+    assert [row["id"] for row in today] == [ids["done_today"]]
+    assert page["total"] == workflow.count_process_instances_completed_today(db_session, tenant_id=tenant.id)
+
+    errors, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id, status="error")
+    assert [row["id"] for row in errors] == [ids["error"]]
