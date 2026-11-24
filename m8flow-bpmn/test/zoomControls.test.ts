@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fillViewbox, ZoomControls, zoomControlsModule } from '../lib/features/zoomControls';
 
@@ -204,6 +204,93 @@ describe('zoomControlsModule', () => {
     expect(expand.getAttribute('aria-label')).toBe('Exit expanded view');
     expand.click();
     expect(expand.getAttribute('aria-label')).toBe('Expand view');
+  });
+
+  describe('viewport resize while expanded', () => {
+    // Run animation frames on demand so each test controls when a refit lands.
+    let frames: Map<number, FrameRequestCallback>;
+    let nextFrame: number;
+    beforeEach(() => {
+      frames = new Map();
+      nextFrame = 1;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+        frames.set(nextFrame, callback);
+        return nextFrame++;
+      });
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+        frames.delete(id);
+      });
+    });
+    afterEach(() => vi.restoreAllMocks());
+    const runFrames = () => {
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback(0));
+    };
+
+    // A canvas whose outer size the test can change, like a resized window.
+    function mountResizable() {
+      const parent = document.createElement('div');
+      const outer = { width: 1000, height: 600 };
+      const inner = { x: 0, y: 0, width: 5000, height: 1000 };
+      const viewbox = vi.fn((box?: unknown) => box ?? { outer: { ...outer }, inner });
+      const zoom = vi.fn();
+      const handlers = new Map<string, Array<() => void>>();
+      const canvas = { getContainer: () => parent, zoom, resized: vi.fn(), viewbox };
+      const eventBus = {
+        on: (event: string, handler: () => void) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
+        fire: vi.fn(),
+      };
+      new (ZoomControls as unknown as new (...args: unknown[]) => void)(canvas, eventBus, (t: string) => t);
+      const expand = parent.querySelector('[data-zoom="expand"]') as HTMLButtonElement;
+      const destroy = () => (handlers.get('diagram.destroy') ?? []).forEach((handler) => handler());
+      return { outer, viewbox, zoom, expand, destroy };
+    }
+    const lastBox = (viewbox: ReturnType<typeof vi.fn>) =>
+      viewbox.mock.calls.filter(([box]) => box).at(-1)?.[0] as { width: number; height: number };
+
+    it('refits to the new viewport size when the window resizes', () => {
+      const { outer, viewbox, expand, destroy } = mountResizable();
+      expand.click();
+      expect(lastBox(viewbox)).toEqual(fillViewbox({ width: 1000, height: 600 }, { x: 0, y: 0, width: 5000, height: 1000 }));
+
+      // Rotate / resize: taller and narrower.
+      outer.width = 600;
+      outer.height = 1000;
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('resize'));
+      runFrames();
+
+      const box = lastBox(viewbox);
+      expect(box).toEqual(fillViewbox({ width: 600, height: 1000 }, { x: 0, y: 0, width: 5000, height: 1000 }));
+      // A burst of resize events refits once.
+      expect(viewbox.mock.calls.filter(([b]) => b)).toHaveLength(2);
+      destroy();
+    });
+
+    it('leaves the zoom alone when the view is not expanded', () => {
+      const { viewbox, zoom, destroy } = mountResizable();
+      window.dispatchEvent(new Event('resize'));
+      runFrames();
+      expect(viewbox.mock.calls.filter(([box]) => box)).toHaveLength(0);
+      expect(zoom).not.toHaveBeenCalled();
+      destroy();
+    });
+
+    it('stops listening on diagram.destroy, including a refit already queued', () => {
+      const { outer, viewbox, expand, destroy } = mountResizable();
+      expand.click();
+      const refits = () => viewbox.mock.calls.filter(([box]) => box).length;
+      const before = refits();
+
+      outer.width = 800;
+      window.dispatchEvent(new Event('resize'));
+      destroy();
+      runFrames();
+      window.dispatchEvent(new Event('resize'));
+      runFrames();
+      expect(refits()).toBe(before);
+    });
   });
 
   it('removes the chrome on diagram.destroy', () => {

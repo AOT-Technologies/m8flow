@@ -133,6 +133,19 @@ export function ZoomControls(
   };
   document.addEventListener('keydown', onKeydown);
 
+  // Expanded view tracks the viewport: a browser resize or device rotation
+  // changes the overlay's size, so refit for the new dimensions. Batched to
+  // one refit per frame; outside expanded view the user's zoom is left alone.
+  let resizeFrame = 0;
+  const onResize = () => {
+    if (!expanded || resizeFrame) return;
+    resizeFrame = requestAnimationFrame(() => {
+      resizeFrame = 0;
+      if (expanded) this.refit();
+    });
+  };
+  window.addEventListener('resize', onResize);
+
   root.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
     const action = target?.closest?.('[data-zoom]')?.getAttribute('data-zoom');
@@ -152,6 +165,9 @@ export function ZoomControls(
 
   eventBus.on('diagram.destroy', () => {
     document.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', onResize);
+    if (resizeFrame) cancelAnimationFrame(resizeFrame);
+    resizeFrame = 0;
     expandedElement?.classList.remove(EXPANDED_CLASS);
     expandedElement = null;
     root.remove();
