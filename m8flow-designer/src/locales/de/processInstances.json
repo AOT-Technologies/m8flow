@@ -16,6 +16,7 @@
   },
   "status": {
     "all": "Alle",
+    "active": "Aktiv",
     "running": "Läuft",
     "waiting": "Wartend",
     "userInputRequired": "Benutzereingabe erforderlich",
@@ -56,7 +57,8 @@
       "label": "Instanzaktionen",
       "open": "Öffnen",
       "copyId": "Instanz-ID kopieren"
-    }
+    },
+    "clearCompletedToday": "Filter „Heute abgeschlossen“ entfernen"
   },
   "detail": {
     "heading": "Prozessinstanz-ID: {{id}}",

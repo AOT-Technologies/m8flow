@@ -276,6 +276,55 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('search=Invoice+Approval'));
   });
 
+  it('applies status and completed filters from a Home stat-card deep link (M8F-711)', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch();
+
+    renderWithOutlet(
+      { scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true },
+      '/process-instances?status=complete&completed=today',
+    );
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=complete'));
+    expect(lastListUrl(fetchMock)).toContain('completed=today');
+    expect(screen.getByRole('button', { name: /^Status:/ })).toHaveTextContent('Complete');
+
+    await user.click(screen.getByRole('button', { name: 'Clear Completed today filter' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).not.toContain('completed='));
+    expect(lastListUrl(fetchMock)).toContain('status=complete');
+  });
+
+  it('drops the Completed today filter when another status is picked', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetch();
+
+    renderWithOutlet(
+      { scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true },
+      '/process-instances?status=complete&completed=today',
+    );
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('completed=today'));
+
+    await user.click(screen.getByRole('button', { name: /^Status:/ }));
+    await user.click(await screen.findByRole('menuitemradio', { name: 'Error' }));
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=error'));
+    expect(lastListUrl(fetchMock)).not.toContain('completed=');
+    expect(screen.queryByRole('button', { name: 'Clear Completed today filter' })).not.toBeInTheDocument();
+  });
+
+  it('shows the Active pseudo-status from a deep link', async () => {
+    const fetchMock = stubFetch();
+
+    renderWithOutlet(
+      { scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true },
+      '/process-instances?status=active',
+    );
+
+    await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=active'));
+    expect(screen.getByRole('button', { name: /^Status:/ })).toHaveTextContent('Active');
+  });
+
   it('navigates to the instance detail route when a row is opened', async () => {
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 } });
 

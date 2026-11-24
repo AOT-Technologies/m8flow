@@ -3136,3 +3136,48 @@ def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp
     (failed_event,) = [e for e in events if e["event_type"] == "task_failed"]
     assert failed_event["task_identifier"] == "fail"
     assert "deliberate" in failed_event["error_message"]
+
+
+def test_designer_list_active_and_completed_today_filters_match_home_counts(db_session):
+    """M8F-711: Home stat cards link to these list filters, so they must return
+    exactly the instances the cards count."""
+    from datetime import timedelta
+
+    from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
+
+    tenant, user = _seed_actor(db_session)
+    now = datetime.now(UTC)
+    seeded = {
+        "running": (ProcessInstanceStatus.running, None),
+        "waiting": (ProcessInstanceStatus.waiting, None),
+        "suspended": (ProcessInstanceStatus.suspended, None),
+        "error": (ProcessInstanceStatus.error, None),
+        "done_today": (ProcessInstanceStatus.complete, now),
+        "done_before": (ProcessInstanceStatus.complete, now - timedelta(days=2)),
+    }
+    ids = {}
+    for name, (status, ended_at) in seeded.items():
+        instance = ProcessInstanceModel(
+            m8f_tenant_id=tenant.id,
+            process_model_identifier=f"m8f711/{name}",
+            process_model_display_name=name,
+            process_initiator_id=user.id,
+            status=status.value,
+            ended_at=ended_at,
+        )
+        db_session.add(instance)
+        db_session.flush()
+        ids[name] = instance.id
+
+    active, page = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id, status="active")
+    assert {row["id"] for row in active} == {ids["running"], ids["waiting"]}
+    assert page["total"] == workflow.count_active_process_instances(db_session, tenant_id=tenant.id)
+
+    today, page = workflow.list_instances_for_designer(
+        db_session, tenant_id=tenant.id, status="complete", completed_today=True
+    )
+    assert [row["id"] for row in today] == [ids["done_today"]]
+    assert page["total"] == workflow.count_process_instances_completed_today(db_session, tenant_id=tenant.id)
+
+    errors, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id, status="error")
+    assert [row["id"] for row in errors] == [ids["error"]]

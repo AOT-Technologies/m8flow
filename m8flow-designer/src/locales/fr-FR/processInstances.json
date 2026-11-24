@@ -16,6 +16,7 @@
   },
   "status": {
     "all": "Toutes",
+    "active": "Actives",
     "running": "En cours",
     "waiting": "En attente",
     "userInputRequired": "Saisie utilisateur requise",
@@ -57,7 +58,8 @@
       "label": "Actions sur l’instance",
       "open": "Ouvrir",
       "copyId": "Copier l’ID de l’instance"
-    }
+    },
+    "clearCompletedToday": "Effacer le filtre Terminées aujourd'hui"
   },
   "detail": {
     "heading": "ID de l’instance de processus : {{id}}",

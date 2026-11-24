@@ -17,7 +17,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
+from sqlalchemy import and_, case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -2153,6 +2153,18 @@ def count_error_process_instances(
     return int(session.scalar(_scope_instances(stmt, viewer_id=viewer_id)) or 0)
 
 
+def _completed_today_clause(now: datetime | None = None) -> Any:
+    """Completed since the server's UTC midnight. Shared by the Home "Completed today"
+    card and the instance list's ``completed=today`` filter so the two never disagree."""
+    reference = now or datetime.now(timezone.utc)
+    start_of_day = reference.replace(hour=0, minute=0, second=0, microsecond=0)
+    return and_(
+        ProcessInstanceModel.status == ProcessInstanceStatus.complete,
+        ProcessInstanceModel.ended_at.is_not(None),
+        ProcessInstanceModel.ended_at >= start_of_day,
+    )
+
+
 def count_process_instances_completed_today(
     session: Session,
     *,
@@ -2168,17 +2180,7 @@ def count_process_instances_completed_today(
     """
     # tenant_id=None (all tenants) is caller-verified-super-admin-only --
     # see count_active_process_instances for why this isn't re-checked here.
-    reference = now or datetime.now(timezone.utc)
-    start_of_day = reference.replace(hour=0, minute=0, second=0, microsecond=0)
-    stmt = (
-        select(func.count())
-        .select_from(ProcessInstanceModel)
-        .where(
-            ProcessInstanceModel.status == ProcessInstanceStatus.complete,
-            ProcessInstanceModel.ended_at.is_not(None),
-            ProcessInstanceModel.ended_at >= start_of_day,
-        )
-    )
+    stmt = select(func.count()).select_from(ProcessInstanceModel).where(_completed_today_clause(now))
     if tenant_id is not None:
         stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
     return int(session.scalar(_scope_instances(stmt, viewer_id=viewer_id)) or 0)
@@ -2408,6 +2410,10 @@ def list_recent_instances_for_process_model(
     return rows
 
 
+# Pseudo-status for the list filter: the same live statuses the Home "Active" card counts.
+INSTANCE_STATUS_ACTIVE = "active"
+
+
 def list_instances_for_designer(
     session: Session,
     *,
@@ -2421,6 +2427,7 @@ def list_instances_for_designer(
     viewer_id: int | None = None,
     scope: str | None = None,
     user_id: int | None = None,
+    completed_today: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Process Instances page (m8flow-designer). Real filters/pagination —
     NOT a wrapper around `list_instances`/`ListProcessInstancesQuery`
@@ -2429,6 +2436,10 @@ def list_instances_for_designer(
     select instead, same "core has no matching query shape, drop to a
     direct SELECT" precedent as `process_model_run_stats`/
     `list_recent_instances_for_process_model` above.
+
+    ``status="active"`` matches every live status (see ``INSTANCE_STATUS_ACTIVE``);
+    ``completed_today`` keeps instances completed since UTC midnight. Both mirror
+    the Home stat cards that link here.
 
     `search` matches process_model_display_name/process_model_identifier
     (case-insensitive substring) — no free-text task/summary search, same
@@ -2460,8 +2471,12 @@ def list_instances_for_designer(
         # count_active_process_instances above.
         if tenant_id is not None:
             stmt = stmt.where(ProcessInstanceModel.m8f_tenant_id == tenant_id)
-        if status:
+        if status == INSTANCE_STATUS_ACTIVE:
+            stmt = stmt.where(ProcessInstanceModel.status.in_(ProcessInstanceModel.active_statuses()))
+        elif status:
             stmt = stmt.where(ProcessInstanceModel.status == status)
+        if completed_today:
+            stmt = stmt.where(_completed_today_clause())
         if started_by:
             stmt = stmt.where(UserModel.username == started_by)
         stmt = _scope_instances(stmt, viewer_id=viewer_id, scope=scope)
