@@ -17,6 +17,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
+from m8flow_backend.migration_compatibility import compatible_core_revision, core_revision
+
 revision = "c4d5e6f7a8b9"
 down_revision = "b7e1c2d3f4a5"
 branch_labels = None
@@ -25,7 +27,7 @@ depends_on = None
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
 # Host migration replay can encounter the additive message schema already installed.
 # core_message_schema normalizes these markers after installing that schema.
-COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "m8f_694_message_correlation")
+COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "message_correlation")
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
@@ -836,7 +838,7 @@ def _core_marker_revisions() -> list[str] | None:
             _bind().execute(sa.select(core_version.c.version_num)).scalars().all()
         )
         if revisions:
-            return revisions
+            return [compatible_core_revision(_bind(), value) for value in revisions]
 
     if not _has_table(LEGACY_CORE_VERSION_TABLE):
         return [] if _has_table(CORE_VERSION_TABLE) else None
@@ -845,15 +847,16 @@ def _core_marker_revisions() -> list[str] | None:
     legacy_revisions = list(
         _bind().execute(sa.select(legacy_version.c.version_num)).scalars().all()
     )
-    if REQUIRED_CORE_MIGRATION not in legacy_revisions:
+    normalized = [core_revision(value) for value in legacy_revisions]
+    if not set(normalized).intersection(COMPATIBLE_CORE_REVISIONS):
         return []
-    if legacy_revisions != [REQUIRED_CORE_MIGRATION]:
+    if len(legacy_revisions) != 1:
         raise RuntimeError(
             "Legacy alembic_version contains mixed host/core revisions; "
             f"move the core marker to {CORE_VERSION_TABLE} before upgrading: "
             f"found {legacy_revisions!r}"
         )
-    return [REQUIRED_CORE_MIGRATION]
+    return [compatible_core_revision(_bind(), value) for value in legacy_revisions]
 
 
 def _require_core_breaking_head() -> bool:
@@ -917,12 +920,8 @@ def _record_core_breaking_head() -> None:
             sa.PrimaryKeyConstraint("version_num"),
         )
     core_version = _table(CORE_VERSION_TABLE, "version_num")
-    exists = _bind().execute(
-        sa.select(core_version.c.version_num)
-        .where(core_version.c.version_num.in_(COMPATIBLE_CORE_REVISIONS))
-        .limit(1)
-    ).scalar()
-    if exists is None:
+    recorded = _bind().scalars(sa.select(core_version.c.version_num)).all()
+    if not any(compatible_core_revision(_bind(), value) in COMPATIBLE_CORE_REVISIONS for value in recorded):
         _bind().execute(
             sa.insert(core_version).values(version_num=REQUIRED_CORE_MIGRATION)
         )

@@ -77,6 +77,26 @@ To upgrade, follow these steps:
 4. If the changelog says the Keycloak realm changed, re-import it as the
    changelog describes.
 
+## Message and compensation migration names
+
+The core migration revisions are now `message_correlation` and
+`compensation_journal`. Historical stamps with a numeric namespace and a recognized schema purpose
+remain supported by updated migration tooling after schema validation.
+Use the neutral names for explicit migration targets.
+
+Deploy the coordinated host and core migration updates before using these
+names with standalone core Alembic tooling; older scripts cannot resolve
+neutral stamps. The host normalizes its dedicated
+`m8flow_core_alembic_version` message marker even when its own migrations
+are already at head. It accepts either message marker during schema handoff
+and leaves unrelated generic `alembic_version` rows unchanged.
+
+Existing ticket-based host migration stamps and the old message ownership
+table name are translated automatically without replaying table creation.
+Existing provenance constraints and their ownership records are retained;
+newly created constraints use neutral names. No manual stamping, table
+recreation, or data migration is needed.
+
 ## Process model versions
 
 The process-model version migration imports the model folders available under

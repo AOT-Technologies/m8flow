@@ -8,12 +8,20 @@ from .support import new_tenant_id, provision_member, save_model, tenant_session
 
 pytestmark = pytest.mark.usefixtures("host_db")
 
+# Synthetic examples of the historical namespace format, unrelated to a ticket.
+_HISTORICAL_NAMESPACE = "m8f_1"
+_LEGACY_CORE_MARKER = f"{_HISTORICAL_NAMESPACE}_message_correlation"
+_LEGACY_SCHEMA_REVISION = f"{_HISTORICAL_NAMESPACE}_core_message_schema"
+_LEGACY_OWNERSHIP = f"m8flow_{_HISTORICAL_NAMESPACE}_message_ownership"
+_LEGACY_CHECK_PREFIX = f"ck_{_HISTORICAL_NAMESPACE}_"
+
+
 ROUTE = "/v1.0/m8flow/messages/correlate"
 
 
 @pytest.mark.parametrize("legacy_revision", [
-    "m8f_694_core_message_schema", "m8f_694_merge_host_heads",
-    "m8f_694_merge_nats_permissions", "m8f_694_merge_run_stats",
+    _LEGACY_SCHEMA_REVISION, f"{_HISTORICAL_NAMESPACE}_merge_host_heads",
+    f"{_HISTORICAL_NAMESPACE}_merge_nats_permissions", f"{_HISTORICAL_NAMESPACE}_merge_run_stats",
 ])
 def test_legacy_host_stamps_preserve_live_message_waits(admin_engine, monkeypatch, legacy_revision):
     from pathlib import Path
@@ -59,17 +67,17 @@ def test_legacy_host_stamps_preserve_live_message_waits(admin_engine, monkeypatc
         markers = dict(connection.execute(sa.select(ownership)).tuples().all())
         for name, marker in markers.items():
             if name in revision.TABLES and marker.startswith("ck_message_schema_"):
-                legacy_marker = marker.replace("ck_message_schema_", "ck_m8f_694_", 1)
+                legacy_marker = marker.replace("ck_message_schema_", _LEGACY_CHECK_PREFIX, 1)
                 connection.execute(sa.DDL(f'ALTER TABLE "{name}" RENAME CONSTRAINT "{marker}" TO "{legacy_marker}"'))
                 connection.execute(ownership.update().where(ownership.c.table_name == name).values(
                     creation_marker=legacy_marker,
                 ))
         markers = dict(connection.execute(sa.select(ownership)).tuples().all())
         connection.execute(ownership.update().where(ownership.c.table_name == ownership.name).values(
-            table_name="m8flow_m8f_694_message_ownership", creation_marker="m8f_694_core_message_schema",
+            table_name=_LEGACY_OWNERSHIP, creation_marker=_LEGACY_SCHEMA_REVISION,
         ))
         connection.exec_driver_sql(
-            "ALTER TABLE m8flow_message_schema_ownership RENAME TO m8flow_m8f_694_message_ownership"
+            f"ALTER TABLE m8flow_message_schema_ownership RENAME TO {_LEGACY_OWNERSHIP}"
         )
         connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = :legacy"), {"legacy": legacy_revision})
     try:
@@ -140,7 +148,7 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
         with engine.connect() as connection:
             assert connection.execute(sa.text(
                 "SELECT version_num FROM m8flow_core_alembic_version"
-            )).scalars().all() == ["m8f_694_message_correlation"]
+            )).scalars().all() == ["message_correlation"]
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
                 "merge_message_error_timestamp"
             )

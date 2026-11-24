@@ -7,6 +7,8 @@ from uuid import uuid4
 import sqlalchemy as sa
 from alembic import op
 
+from m8flow_backend.migration_compatibility import core_revision, require_message_schema
+
 
 revision = "core_message_schema"
 down_revision = "fbcad9e02138"
@@ -14,8 +16,7 @@ branch_labels = None
 depends_on = None
 
 BASELINE = "k2l3m4n5o6p7"
-# Published core-package marker; retain it for existing installations.
-CORE_HEAD = "m8f_694_message_correlation"
+CORE_HEAD = "message_correlation"
 VERSION = sa.table("m8flow_core_alembic_version", sa.column("version_num"))
 TABLES = (
     "signal_registry_state", "signal_publication", "signal_subscription", "signal_delivery",
@@ -137,7 +138,7 @@ def upgrade() -> None:
     if not all(name in Base.metadata.tables for name in TABLES):
         raise RuntimeError("Install the m8flow-core build with message correlation before upgrading.")
     markers = bind.execute(sa.select(VERSION.c.version_num)).scalars().all()
-    if markers not in ([BASELINE], [CORE_HEAD]):
+    if len(markers) != 1 or core_revision(markers[0]) not in (BASELINE, CORE_HEAD):
         raise RuntimeError(f"Unexpected m8flow-core migration marker: {markers!r}")
 
     inspector = sa.inspect(bind)
@@ -150,7 +151,9 @@ def upgrade() -> None:
     # This is the normalization boundary for the compatible markers accepted
     # by c4d5e6f7a8b9/d6e7f8a9b0c1. Advance only after the schema is installed;
     # stamping the earlier handoff revisions would claim tables not yet present.
-    bind.execute(VERSION.update().where(VERSION.c.version_num == BASELINE).values(version_num=CORE_HEAD))
+    if core_revision(markers[0]) != markers[0]:
+        require_message_schema(bind)
+    bind.execute(VERSION.update().where(VERSION.c.version_num == markers[0]).values(version_num=CORE_HEAD))
 
 
 def downgrade() -> None:
@@ -162,6 +165,7 @@ def downgrade() -> None:
             with op.batch_alter_table(table) as batch:
                 batch.drop_constraint(name, type_="foreignkey")
     # The shared indexes also support core's native compensation journal foreign keys.
-    op.get_bind().execute(
-        VERSION.update().where(VERSION.c.version_num == CORE_HEAD).values(version_num=BASELINE)
-    )
+    bind = op.get_bind()
+    for value in bind.scalars(sa.select(VERSION.c.version_num)).all():
+        if core_revision(value) == CORE_HEAD:
+            bind.execute(VERSION.update().where(VERSION.c.version_num == value).values(version_num=BASELINE))

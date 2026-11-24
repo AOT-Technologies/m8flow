@@ -32,10 +32,31 @@ from alembic.util import CommandError
 import m8flow_backend.db as backend_db
 from m8flow_backend.db import alembic_target_metadata
 
+# Synthetic examples of the historical namespace format, unrelated to a ticket.
+_HISTORICAL_NAMESPACE = "m8f_1"
+_LEGACY_CORE_MARKER = f"{_HISTORICAL_NAMESPACE}_message_correlation"
+_LEGACY_SCHEMA_REVISION = f"{_HISTORICAL_NAMESPACE}_core_message_schema"
+_LEGACY_OWNERSHIP = f"m8flow_{_HISTORICAL_NAMESPACE}_message_ownership"
+_LEGACY_CHECK_PREFIX = f"ck_{_HISTORICAL_NAMESPACE}_"
+
+
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 _JOURNAL_TABLES = ("compensation_scope", "compensation_run", "compensation_record")
 _JOURNAL_REVISION = "fa8b9c0d1e2f"
 _JOURNAL_OWNERSHIP = f"m8flow_{_JOURNAL_REVISION}_journal_ownership"
+
+
+def _install_message_tables(connection):
+    """A completed historical message stamp must have its corresponding schema."""
+    from m8flow_core.models import Base
+
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("core_message_schema").module
+    inspector = sa.inspect(connection)
+    for table, name in revision.PARENT_INDEXES.items():
+        if name not in {index["name"] for index in inspector.get_indexes(table)}:
+            connection.execute(sa.DDL(f"CREATE UNIQUE INDEX {name} ON {table} (m8f_tenant_id, id)"))
+    for name in revision.TABLES:
+        Base.metadata.tables[name].create(connection, checkfirst=True)
 
 
 def _script_head() -> str:
@@ -89,7 +110,7 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
         stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version_m8flow")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
+    assert core_stamped == "message_correlation"
     assert stamped == _script_head()
 
     # Base tenant seed lands regardless of dialect.
@@ -373,7 +394,7 @@ def test_core_marker_primary_key_prevents_duplicate_revisions(tmp_path, monkeypa
     with engine.connect() as connection:
         assert connection.execute(sa.text(
             "SELECT version_num FROM m8flow_core_alembic_version"
-        )).scalars().all() == ["m8f_694_message_correlation"]
+        )).scalars().all() == ["message_correlation"]
     engine.dispose()
 
 
@@ -384,7 +405,7 @@ def test_upgrade_refuses_multiple_distinct_compatible_core_markers(tmp_path, mon
     engine = sa.create_engine(database_uri)
     with engine.begin() as connection:
         connection.execute(sa.text(
-            "INSERT INTO m8flow_core_alembic_version (version_num) VALUES ('m8f_694_message_correlation')"
+            "INSERT INTO m8flow_core_alembic_version (version_num) VALUES ('message_correlation')"
         ))
     with pytest.raises(RuntimeError, match="compatible revision"):
         command.upgrade(cfg, "head")
@@ -439,7 +460,7 @@ def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, mon
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
+    assert core_stamped == "message_correlation"
 
 
 def test_upgrade_applies_core_column_cleanup_when_marker_was_preseeded(tmp_path, monkeypatch):
@@ -478,7 +499,7 @@ def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
+    assert core_stamped == "message_correlation"
 
 
 def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
@@ -508,11 +529,12 @@ def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
+    assert core_stamped == "message_correlation"
     assert legacy_stamped == "legacy-host-head"
 
 
-def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
+def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch, core_marker):
     """A pre-dedicated core marker is accepted and copied safely."""
     db_path = tmp_path / "legacy-core-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
@@ -520,6 +542,8 @@ def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     with engine.begin() as connection:
+        if core_marker != "k2l3m4n5o6p7":
+            _install_message_tables(connection)
         connection.execute(sa.text("DROP TABLE m8flow_core_alembic_version"))
         connection.execute(
             sa.text(
@@ -527,7 +551,7 @@ def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
             )
         )
         connection.execute(
-            sa.text("INSERT INTO alembic_version (version_num) VALUES ('k2l3m4n5o6p7')")
+            sa.text("INSERT INTO alembic_version (version_num) VALUES (:marker)"), {"marker": core_marker}
         )
 
     command.upgrade(cfg, "head")
@@ -536,10 +560,11 @@ def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch):
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
+    assert core_stamped == "message_correlation"
 
 
-def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monkeypatch):
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
+def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monkeypatch, core_marker):
     """Databases already at c4 are upgraded without replaying c4."""
     db_path = tmp_path / "old-head-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
@@ -554,7 +579,7 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
             )
         )
         connection.execute(
-            sa.text("INSERT INTO alembic_version (version_num) VALUES ('k2l3m4n5o6p7')")
+            sa.text("INSERT INTO alembic_version (version_num) VALUES (:marker)"), {"marker": core_marker}
         )
         connection.execute(
             sa.text(
@@ -571,11 +596,12 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "m8f_694_message_correlation"
-    assert legacy_stamped == "k2l3m4n5o6p7"
+    assert core_stamped == "message_correlation"
+    assert legacy_stamped == core_marker
 
 
-def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch):
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
+def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch, core_marker):
     """Ambiguous legacy marker ownership fails explicitly and safely."""
     db_path = tmp_path / "mixed-legacy-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
@@ -592,8 +618,8 @@ def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch):
         connection.execute(
             sa.text(
                 "INSERT INTO alembic_version (version_num) VALUES "
-                "('k2l3m4n5o6p7'), ('legacy-host-head')"
-            )
+                "(:marker), ('legacy-host-head')"
+            ), {"marker": core_marker}
         )
 
     with pytest.raises(RuntimeError, match="mixed host/core revisions"):
@@ -605,7 +631,7 @@ def test_upgrade_rejects_mixed_legacy_core_and_host_rows(tmp_path, monkeypatch):
         legacy_rows = connection.execute(
             sa.text("SELECT version_num FROM alembic_version ORDER BY version_num")
         ).scalars().all()
-    assert legacy_rows == ["k2l3m4n5o6p7", "legacy-host-head"]
+    assert set(legacy_rows) == {core_marker, "legacy-host-head"}
 
 
 def test_upgrade_succeeds_when_permission_target_has_no_uri(tmp_path, monkeypatch):
@@ -1341,13 +1367,13 @@ def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeyp
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "m8flow"
         assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == (
-            "m8f_694_message_correlation"
+            "message_correlation"
         )
     engine.dispose()
 
 
 @pytest.mark.parametrize("previous_revision", ["c4d5e6f7a8b9", "d6e7f8a9b0c1", "c81d2e3f4a56"])
-@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "m8f_694_message_correlation"])
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
 def test_upgrade_normalizes_compatible_core_markers_with_preinstalled_message_tables(
     tmp_path, monkeypatch, previous_revision, core_marker,
 ):
@@ -1376,10 +1402,10 @@ def test_upgrade_normalizes_compatible_core_markers_with_preinstalled_message_ta
 
 
 @pytest.mark.parametrize("legacy_revision,current_revision", [
-    ("m8f_694_core_message_schema", "core_message_schema"),
-    ("m8f_694_merge_host_heads", "merge_message_host_heads"),
-    ("m8f_694_merge_nats_permissions", "merge_message_nats_permissions"),
-    ("m8f_694_merge_run_stats", "merge_message_run_stats"),
+    (_LEGACY_SCHEMA_REVISION, "core_message_schema"),
+    (f"{_HISTORICAL_NAMESPACE}_merge_host_heads", "merge_message_host_heads"),
+    (f"{_HISTORICAL_NAMESPACE}_merge_nats_permissions", "merge_message_nats_permissions"),
+    (f"{_HISTORICAL_NAMESPACE}_merge_run_stats", "merge_message_run_stats"),
 ])
 def test_legacy_message_names_upgrade_without_bootstrap_replay(
     tmp_path, monkeypatch, caplog, legacy_revision, current_revision,
@@ -1399,12 +1425,24 @@ def test_legacy_message_names_upgrade_without_bootstrap_replay(
         ))
         connection.execute(sa.text("UPDATE m8flow_tenant SET slug = 'retained-tenant' WHERE id = 'm8flow'"))
         connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = :legacy"), {"legacy": legacy_revision})
+        # Preserve historical constraint names and matching provenance on upgrade.
+        with Operations.context(MigrationContext.configure(connection)) as operations:
+            for name, marker in connection.execute(sa.select(ownership)).all():
+                if name not in revision.TABLES or not marker.startswith("ck_message_schema_"):
+                    continue
+                legacy_marker = marker.replace("ck_message_schema_", _LEGACY_CHECK_PREFIX, 1)
+                with operations.batch_alter_table(name) as batch:
+                    batch.drop_constraint(marker, type_="check")
+                    batch.create_check_constraint(legacy_marker, "m8f_tenant_id IS NOT NULL")
+                connection.execute(ownership.update().where(ownership.c.table_name == name).values(
+                    creation_marker=legacy_marker,
+                ))
         connection.execute(ownership.update().where(ownership.c.table_name == ownership.name).values(
-            table_name="m8flow_m8f_694_message_ownership", creation_marker="m8f_694_core_message_schema",
+            table_name=_LEGACY_OWNERSHIP, creation_marker=_LEGACY_SCHEMA_REVISION,
         ))
         before = dict(connection.execute(sa.select(ownership)).tuples().all())
         connection.exec_driver_sql(
-            "ALTER TABLE m8flow_message_schema_ownership RENAME TO m8flow_m8f_694_message_ownership"
+            f"ALTER TABLE m8flow_message_schema_ownership RENAME TO {_LEGACY_OWNERSHIP}"
         )
 
     caplog.clear()
@@ -1418,9 +1456,9 @@ def test_legacy_message_names_upgrade_without_bootstrap_replay(
         assert connection.scalar(sa.select(revision.VERSION.c.version_num)) == revision.CORE_HEAD
         after = dict(connection.execute(sa.select(ownership)).tuples().all())
         assert after.pop(ownership.name) == revision.revision
-        before.pop("m8flow_m8f_694_message_ownership")
+        before.pop(_LEGACY_OWNERSHIP)
         assert after == before
-        assert "m8flow_m8f_694_message_ownership" not in sa.inspect(connection).get_table_names()
+        assert _LEGACY_OWNERSHIP not in sa.inspect(connection).get_table_names()
 
     # Provenance still identifies the originally created tables on downgrade.
     command.downgrade(cfg, "core_message_schema")
@@ -1437,27 +1475,27 @@ def test_legacy_message_ownership_rename_rolls_back_with_failed_upgrade(tmp_path
     cfg = _alembic_config(uri, monkeypatch)
     command.upgrade(cfg, "core_message_schema")
     engine = sa.create_engine(uri)
-    original_stamp = "m8f_694_core_message_schema" if legacy_stamp else "core_message_schema"
+    original_stamp = _LEGACY_SCHEMA_REVISION if legacy_stamp else "core_message_schema"
     with engine.begin() as connection:
         connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = :stamp"), {"stamp": original_stamp})
         connection.exec_driver_sql(
-            "UPDATE m8flow_message_schema_ownership SET table_name = 'm8flow_m8f_694_message_ownership', "
-            "creation_marker = 'm8f_694_core_message_schema' WHERE table_name = 'm8flow_message_schema_ownership'"
+            f"UPDATE m8flow_message_schema_ownership SET table_name = '{_LEGACY_OWNERSHIP}', "
+            f"creation_marker = '{_LEGACY_SCHEMA_REVISION}' WHERE table_name = 'm8flow_message_schema_ownership'"
         )
         connection.exec_driver_sql(
-            "ALTER TABLE m8flow_message_schema_ownership RENAME TO m8flow_m8f_694_message_ownership"
+            f"ALTER TABLE m8flow_message_schema_ownership RENAME TO {_LEGACY_OWNERSHIP}"
         )
     # Even a neutral stamp must begin a real SQLite transaction before the DDL.
     with pytest.raises(CommandError, match="Can't locate revision"):
         command.upgrade(cfg, "nonexistent_message_revision")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == original_stamp
-        assert "m8flow_m8f_694_message_ownership" in sa.inspect(connection).get_table_names()
+        assert _LEGACY_OWNERSHIP in sa.inspect(connection).get_table_names()
         assert "m8flow_message_schema_ownership" not in sa.inspect(connection).get_table_names()
         assert connection.scalar(sa.text(
-            "SELECT creation_marker FROM m8flow_m8f_694_message_ownership "
-            "WHERE table_name = 'm8flow_m8f_694_message_ownership'"
-        )) == "m8f_694_core_message_schema"
+            f"SELECT creation_marker FROM {_LEGACY_OWNERSHIP} "
+            f"WHERE table_name = '{_LEGACY_OWNERSHIP}'"
+        )) == _LEGACY_SCHEMA_REVISION
     engine.dispose()
 
 
@@ -1468,17 +1506,139 @@ def test_legacy_message_ownership_collision_fails_without_changing_stamp(tmp_pat
     engine = sa.create_engine(uri)
     with engine.begin() as connection:
         connection.exec_driver_sql(
-            "CREATE TABLE m8flow_m8f_694_message_ownership (table_name VARCHAR(63) PRIMARY KEY, "
+            f"CREATE TABLE {_LEGACY_OWNERSHIP} (table_name VARCHAR(63) PRIMARY KEY, "
             "creation_marker VARCHAR(63) NOT NULL)"
         )
-        connection.exec_driver_sql("UPDATE alembic_version_m8flow SET version_num = 'm8f_694_core_message_schema'")
+        connection.exec_driver_sql(f"UPDATE alembic_version_m8flow SET version_num = '{_LEGACY_SCHEMA_REVISION}'")
     with pytest.raises(RuntimeError, match="Both legacy and current message ownership tables exist"):
         command.upgrade(cfg, "head")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
-            "m8f_694_core_message_schema"
+            _LEGACY_SCHEMA_REVISION
         )
-        assert {"m8flow_message_schema_ownership", "m8flow_m8f_694_message_ownership"} <= set(
+        assert {"m8flow_message_schema_ownership", _LEGACY_OWNERSHIP} <= set(
             sa.inspect(connection).get_table_names()
         )
+    engine.dispose()
+
+
+@pytest.mark.parametrize("fail_upgrade", [False, True])
+def test_legacy_core_marker_normalizes_at_host_head_atomically(tmp_path, monkeypatch, fail_upgrade):
+    from m8flow_core.models import Base
+
+    uri = f"sqlite:///{tmp_path / 'core-alias-at-head.db'}"
+    cfg = _alembic_config(uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(uri)
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("core_message_schema").module
+    with engine.begin() as connection:
+        connection.execute(revision.VERSION.update().values(version_num=_LEGACY_CORE_MARKER))
+        connection.execute(Base.metadata.tables["message_delivery_receipt"].insert().values(
+            m8f_tenant_id="m8flow", delivery_id="alias-receipt", request_digest="a" * 64,
+            delivered_at=datetime.now(UTC),
+        ))
+        # The generic version table belongs to other migration tooling.
+        connection.exec_driver_sql("CREATE TABLE alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
+        connection.exec_driver_sql("INSERT INTO alembic_version VALUES ('unrelated_host_revision')")
+    if fail_upgrade:
+        with pytest.raises(CommandError, match="Can't locate revision"):
+            command.upgrade(cfg, "nonexistent_message_revision")
+    else:
+        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        expected = _LEGACY_CORE_MARKER if fail_upgrade else "message_correlation"
+        assert connection.scalar(sa.select(revision.VERSION.c.version_num)) == expected
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == _script_head()
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "unrelated_host_revision"
+        assert connection.scalar(sa.text("SELECT delivery_id FROM message_delivery_receipt")) == "alias-receipt"
+    engine.dispose()
+
+
+@pytest.mark.parametrize("other_marker", ["message_correlation", "unknown_core_revision"])
+def test_legacy_core_marker_rejects_ambiguous_host_state(tmp_path, monkeypatch, other_marker):
+    uri = f"sqlite:///{tmp_path / 'ambiguous-core-alias.db'}"
+    cfg = _alembic_config(uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(uri)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            f"UPDATE m8flow_core_alembic_version SET version_num = '{_LEGACY_CORE_MARKER}'"
+        )
+        connection.execute(sa.text("INSERT INTO m8flow_core_alembic_version VALUES (:marker)"), {"marker": other_marker})
+    with pytest.raises(RuntimeError, match="Ambiguous core migration markers"):
+        command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert set(connection.scalars(sa.text("SELECT version_num FROM m8flow_core_alembic_version"))) == {
+            _LEGACY_CORE_MARKER, other_marker,
+        }
+    engine.dispose()
+
+
+@pytest.mark.parametrize("state", [
+    "malformed", "unsupported", "duplicate", "missing-table", "missing-column", "missing-fk",
+    "missing-provenance", "malformed-ownership", "multiple-ownership",
+])
+def test_historical_host_adoption_rejects_unsafe_state_without_writes(tmp_path, monkeypatch, state):
+    uri = f"sqlite:///{tmp_path / 'invalid-historical-schema.db'}"
+    cfg = _alembic_config(uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(uri)
+    revision = ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision("core_message_schema").module
+    stamp = _LEGACY_SCHEMA_REVISION
+    if state == "malformed":
+        stamp = "m8f_invalid_core_message_schema"
+    elif state == "unsupported":
+        stamp = f"{_HISTORICAL_NAMESPACE}_unknown_schema"
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = :stamp"), {"stamp": stamp})
+        if state == "duplicate":
+            connection.execute(sa.text("INSERT INTO alembic_version_m8flow VALUES (:stamp)"), {
+                "stamp": "m8f_2_core_message_schema",
+            })
+        elif state == "missing-table":
+            connection.exec_driver_sql("DROP TABLE message_delivery_receipt")
+        elif state == "missing-column":
+            connection.exec_driver_sql("ALTER TABLE message_delivery_receipt DROP COLUMN delivered_at")
+        elif state == "missing-fk":
+            key = next(key for key in sa.inspect(connection).get_foreign_keys("message_subscription")
+                       if key["referred_table"] == "process_instance")
+            with Operations.context(MigrationContext.configure(connection)) as operations:
+                with operations.batch_alter_table("message_subscription") as batch:
+                    batch.drop_constraint(key["name"], type_="foreignkey")
+        elif state == "missing-provenance":
+            connection.execute(sa.DDL(f"ALTER TABLE {revision.OWNERSHIP.name} RENAME TO {_LEGACY_OWNERSHIP}"))
+        elif state in {"malformed-ownership", "multiple-ownership"}:
+            names = (["m8flow_m8f_invalid_message_ownership"] if state == "malformed-ownership"
+                     else [_LEGACY_OWNERSHIP, "m8flow_m8f_2_message_ownership"])
+            for name in names:
+                connection.execute(sa.DDL(
+                    f"CREATE TABLE {name} (table_name VARCHAR(63) PRIMARY KEY, creation_marker VARCHAR(63) NOT NULL)"
+                ))
+        before = set(connection.scalars(sa.text("SELECT version_num FROM alembic_version_m8flow")))
+        tables = set(sa.inspect(connection).get_table_names())
+    with pytest.raises(RuntimeError):
+        command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert set(connection.scalars(sa.text("SELECT version_num FROM alembic_version_m8flow"))) == before
+        assert set(sa.inspect(connection).get_table_names()) == tables
+        assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "m8flow"
+    engine.dispose()
+
+
+@pytest.mark.parametrize("stamp", [
+    "m8f_invalid_message_correlation", "m8f_1_other_schema", "m8f_1_message_correlation_extra",
+    "M8F_1_message_correlation", "m8f-1_message_correlation",
+])
+def test_unsupported_historical_core_markers_are_rejected_at_host_head(tmp_path, monkeypatch, stamp):
+    uri = f"sqlite:///{tmp_path / 'invalid-historical-core.db'}"
+    cfg = _alembic_config(uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(uri)
+    with engine.begin() as connection:
+        connection.execute(sa.text("UPDATE m8flow_core_alembic_version SET version_num = :stamp"), {"stamp": stamp})
+    with pytest.raises(RuntimeError, match="Unsupported historical core migration name"):
+        command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == stamp
     engine.dispose()

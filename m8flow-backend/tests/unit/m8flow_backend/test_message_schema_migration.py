@@ -10,13 +10,18 @@ from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 
 
+# Synthetic historical namespace used only by migration fixtures.
+_LEGACY_CORE_MARKER = "m8f_1_message_correlation"
+
+
 def _revision(name):
     scripts = ScriptDirectory(str(Path(__file__).resolve().parents[3] / "migrations"))
     return scripts.get_revision(name).module
 
 
+@pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
 @pytest.mark.parametrize("preexisting", [(), ("signal_publication", "message_delivery_receipt"), "all"])
-def test_message_downgrade_preserves_adopted_tables_and_receipts(db_engine, preexisting):
+def test_message_downgrade_preserves_adopted_tables_and_receipts(db_engine, preexisting, core_marker):
     from m8flow_core.models import Base
 
     revision = _revision("core_message_schema")
@@ -28,7 +33,7 @@ def test_message_downgrade_preserves_adopted_tables_and_receipts(db_engine, pree
         for name in preexisting:
             Base.metadata.tables[name].create(connection)
         connection.exec_driver_sql("CREATE TABLE m8flow_core_alembic_version (version_num VARCHAR(32) PRIMARY KEY)")
-        connection.execute(revision.VERSION.insert().values(version_num=revision.BASELINE))
+        connection.execute(revision.VERSION.insert().values(version_num=core_marker))
         if "message_delivery_receipt" in preexisting:
             connection.execute(Base.metadata.tables["message_delivery_receipt"].insert().values(
                 m8f_tenant_id="existing", delivery_id="keep-me", request_digest="a" * 64,
