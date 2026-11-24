@@ -34,7 +34,9 @@ export default function NavigatedViewer(options: Record<string, any> = {}) {
     m8flowRenderer: { neutralEndEvents: true, ...options.m8flowRenderer },
   });
   const container = this.get('canvas').getContainer();
-  container.classList.add('m8flow-bpmn');
+  // m8flow-bpmn--viewer: hosts embed the viewer below the fold, so its
+  // zoom pill sits at the top (zoom-controls.css).
+  container.classList.add('m8flow-bpmn', 'm8flow-bpmn--viewer');
 }
 
 inherits(NavigatedViewer, BpmnNavigatedViewer);

@@ -8,6 +8,7 @@
  */
 import { isAny } from 'bpmn-js/lib/util/ModelUtil';
 import '../assets/task-state.css';
+import { CHEVRON_UP_PATHS, svgIcon } from './svgIcon';
 
 export type BpmnInstanceTask = {
   bpmn_identifier: string;
@@ -97,13 +98,26 @@ function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (temp
 
   const root = document.createElement('div');
   root.className = 'm8flow-bpmn-legend';
+  // Open by default; the title doubles as the minimize toggle.
+  let collapsed = false;
 
   // textContent, not innerHTML: labels come from translators. Re-run on
   // i18n.changed so a language switch reaches an open diagram.
   const render = () => {
-    const title = document.createElement('div');
+    const title = document.createElement('button');
+    title.type = 'button';
     title.className = 'm8flow-bpmn-legend-title';
-    title.textContent = translate('Task state');
+    title.title = translate(collapsed ? 'Expand' : 'Minimize');
+    title.setAttribute('aria-expanded', String(!collapsed));
+    const label = document.createElement('span');
+    label.textContent = translate('Task state');
+    title.append(label);
+    title.append(svgIcon(CHEVRON_UP_PATHS, 14, 'm8flow-bpmn-legend-chevron'));
+    title.addEventListener('click', () => {
+      collapsed = !collapsed;
+      render();
+    });
+    root.classList.toggle('m8flow-bpmn-legend--collapsed', collapsed);
     const rows = LEGEND_ROWS.map(({ swatch, label }) => {
       const row = document.createElement('div');
       row.className = 'm8flow-bpmn-legend-row';
@@ -116,6 +130,19 @@ function TaskStateLegend(this: any, canvas: any, eventBus: any, translate: (temp
   };
   render();
   eventBus.on('i18n.changed', render);
+
+  // Expanded view (zoomControls). Runs only when the view enters or leaves
+  // expanded mode, not on the user's own toggle clicks:
+  // - entering: remember the current state, then minimize so the legend
+  //   doesn't cover the diagram (the user can still reopen it);
+  // - leaving: restore the state from *before* expanding. Changes made while
+  //   expanded do not carry over to the normal view.
+  let collapsedBeforeExpand = false;
+  eventBus.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
+    if (expanded) collapsedBeforeExpand = collapsed;
+    collapsed = expanded || collapsedBeforeExpand;
+    render();
+  });
 
   parent.appendChild(root);
   eventBus.on('diagram.destroy', () => root.remove());

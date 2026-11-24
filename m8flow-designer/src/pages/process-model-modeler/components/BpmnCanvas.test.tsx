@@ -19,6 +19,7 @@ const stack = new FakeCommandStack();
 const listeners = new Map<string, Array<(event: unknown) => void>>();
 const constructed: Array<Record<string, unknown>> = [];
 const fakeEventBus = { fire: vi.fn() };
+let zoomControlsService: { refit: () => void } | undefined = { refit: () => {} };
 
 // bpmn-js itself needs a real canvas; only the seams BpmnCanvas touches are
 // stubbed here (command stack, zoom, event bus, import, teardown).
@@ -30,6 +31,7 @@ vi.mock('m8flow-bpmn/lib/Modeler', () => ({
     get(name: string) {
       if (name === 'commandStack') return stack;
       if (name === 'canvas') return { zoom: () => {} };
+      if (name === 'm8flowZoomControls') return zoomControlsService;
       if (name === 'eventBus') return fakeEventBus;
       return undefined;
     }
@@ -95,6 +97,17 @@ describe('BpmnCanvas undo/redo', () => {
   });
 });
 
+describe('BpmnCanvas toolbar', () => {
+  it('mounts the zoom controls in the top toolbar, beside undo/redo', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await waitFor(() => expect(constructed[constructed.length - 1]?.zoomControls).toBeDefined());
+
+    const slot = (constructed[constructed.length - 1].zoomControls as { parent: HTMLElement }).parent;
+    expect(slot).toBeInstanceOf(HTMLElement);
+    expect(slot.parentElement).toContainElement(screen.getByRole('button', { name: 'Undo' }));
+  });
+});
+
 describe('BpmnCanvas properties panel', () => {
   beforeEach(() => {
     listeners.clear();
@@ -112,6 +125,95 @@ describe('BpmnCanvas properties panel', () => {
     });
 
     expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+  });
+
+  it('hides the panel in expanded view until the user opens it, and restores it on exit', async () => {
+    render(<BpmnCanvas xml="<definitions />" />);
+    await screen.findByTitle('Hide properties panel');
+    const fire = (event: string, payload: unknown) =>
+      act(() => {
+        for (const handler of listeners.get(event) ?? []) handler(payload);
+      });
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+
+    // Clicking diagram elements does not bring it back; the toggle does.
+    fire('element.click', { element: { id: 'Task_1' } });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Show properties panel'));
+    expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Hide properties panel'));
+
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+
+    // A panel hidden before expanding stays hidden after leaving.
+    fireEvent.click(screen.getByTitle('Hide properties panel'));
+    fire('m8flow.expand.changed', { expanded: true });
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+  });
+
+  it('refits through the zoom controls on the next frame, after the panel has changed', async () => {
+    // Let frames earlier tests queued run first, so they can't reach this
+    // test's refit spy.
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    const panelAtRefit: string[] = [];
+    zoomControlsService = {
+      refit: vi.fn(() => {
+        panelAtRefit.push(screen.queryByTitle('Show properties panel') ? 'hidden' : 'shown');
+      }),
+    };
+    try {
+      render(<BpmnCanvas xml="<definitions />" />);
+      await screen.findByTitle('Hide properties panel');
+      const fire = (expanded: boolean) =>
+        act(() => {
+          for (const handler of listeners.get('m8flow.expand.changed') ?? []) handler({ expanded });
+        });
+      const runFrames = () => act(() => frames.splice(0).forEach((callback) => callback(0)));
+
+      fire(true);
+      expect(zoomControlsService.refit).not.toHaveBeenCalled();
+      runFrames();
+      fire(false);
+      runFrames();
+      // Each refit saw the panel already hidden / restored for its mode.
+      expect(panelAtRefit).toEqual(['hidden', 'shown']);
+    } finally {
+      zoomControlsService = { refit: () => {} };
+      raf.mockRestore();
+    }
+  });
+
+  it('survives expand / collapse when the modeler has no zoom controls service', async () => {
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 0;
+    });
+    zoomControlsService = undefined;
+    try {
+      render(<BpmnCanvas xml="<definitions />" />);
+      await screen.findByTitle('Hide properties panel');
+      const fire = (expanded: boolean) =>
+        act(() => {
+          for (const handler of listeners.get('m8flow.expand.changed') ?? []) handler({ expanded });
+        });
+
+      expect(() => fire(true)).not.toThrow();
+      expect(screen.getByTitle('Show properties panel')).toBeInTheDocument();
+      expect(() => fire(false)).not.toThrow();
+      expect(screen.getByTitle('Hide properties panel')).toBeInTheDocument();
+    } finally {
+      zoomControlsService = { refit: () => {} };
+      raf.mockRestore();
+    }
   });
 
   it('keeps the properties panel visible while making the modeler read-only', async () => {
