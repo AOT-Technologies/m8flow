@@ -696,3 +696,35 @@ def test_creator_cannot_delete_or_restore_own_non_private_published_template(
     )
     assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=_headers(admin_token)).status_code == 200
     assert client.post(f"/v1.0/m8flow/templates/{template_id}/restore", headers=owner).status_code == 403
+
+
+def test_tenant_admin_cannot_delete_or_restore_another_tenants_public_template(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """M8F-708: template admin writes are scoped to the template's own tenant, not just its visibility."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner_admin, owner_token = _login_user(
+        client, db_session, username="tenant-admin-708x1", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    published = _create_template(
+        client, owner_token, name="Shared Published", published=True, visibility="PUBLIC"
+    ).get_json()["id"]
+    draft = _create_template(client, owner_token, name="Shared Draft", visibility="PUBLIC").get_json()["id"]
+
+    _other_admin, other_token = _login_user(
+        client, db_session, username="tenant-admin-708x2", groups=["t2:tenant-admin"], tenant_id="t2"
+    )
+    other = _headers(other_token)
+    assert client.get(f"/v1.0/m8flow/templates/{published}", headers=other).status_code == 200
+    assert client.delete(f"/v1.0/m8flow/templates/{published}", headers=other).status_code == 403
+    assert client.delete(f"/v1.0/m8flow/templates/{draft}", headers=other).status_code == 403
+
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    assert client.delete(f"/v1.0/m8flow/templates/{published}", headers=_headers(owner_token)).status_code == 200
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+    assert client.post(f"/v1.0/m8flow/templates/{published}/restore", headers=other).status_code == 403
+
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    owner = _headers(owner_token)
+    assert client.post(f"/v1.0/m8flow/templates/{published}/restore", headers=owner).status_code == 200
+    assert client.delete(f"/v1.0/m8flow/templates/{draft}", headers=owner).status_code == 200

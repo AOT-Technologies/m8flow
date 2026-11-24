@@ -42,6 +42,14 @@ class TemplateAuthorizationService:
             return False
 
     @classmethod
+    def can_admin_template(cls, template: TemplateModel, user: UserModel | None, permission: str) -> bool:
+        """Template admin writes (delete, restore) apply only to the active tenant's templates.
+
+        A PUBLIC template from another tenant is readable, never manageable.
+        """
+        return cls._is_current_tenant_template(template) and cls.has_admin_permission(user, permission)
+
+    @classmethod
     def is_private_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
         """Private templates are managed by their creator as well as the tenant-admin (M8F-712)."""
         return (
