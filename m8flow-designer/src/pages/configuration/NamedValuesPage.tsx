@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Plus, Settings } from 'lucide-react';
 
 import { Alert } from '@/components/library/alert/Alert';
 import { ConfirmDialog } from '@/components/library/confirm-dialog/ConfirmDialog';
@@ -17,7 +17,9 @@ import {
 import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
 import { ApiError } from '@/lib/api';
 
+import { useConfigurationContext } from './ConfigurationGate';
 import { NamedValuesAccessDenied, NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
+import { NatsEmailSetupNotice, useNatsEmailStatus } from './NatsEmailSetupNotice';
 
 export default function NamedValuesPage() {
   const { t } = useTranslation();
@@ -40,6 +42,32 @@ function NamedValuesBody() {
     canUpdateNamedValues,
     canDeleteNamedValues,
   } = useNamedValuesContext();
+  // The NATS email status needs /secrets read and the tenant this page already checked.
+  const canReadSecrets = Boolean(useConfigurationContext().canReadSecrets);
+  const [reloadKey, setReloadKey] = useState(0);
+  const { status: natsEmailStatus, failed: natsEmailStatusFailed } = useNatsEmailStatus({
+    tenantId: isSuperAdmin ? tenantId : null,
+    enabled: canReadSecrets,
+    reloadKey,
+  });
+  // Configure NATS is the first-time reminder: shown until NATS email is set up (or when its
+  // status can't be read), and only to users the backend lets save configuration variables.
+  // After that the NATS_SMTP_* variables are edited like any other.
+  const canConfigureNats =
+    canReadSecrets &&
+    canCreateNamedValues &&
+    canUpdateNamedValues &&
+    (natsEmailStatusFailed || (natsEmailStatus !== null && !natsEmailStatus.configured));
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Set by the Configure NATS page after a save. Read once, then cleared from history so a
+  // refresh or back navigation does not show it again.
+  const [natsEmailSaved] = useState(
+    () => (location.state as { natsEmailSaved?: boolean } | null)?.natsEmailSaved === true,
+  );
+  useEffect(() => {
+    if (natsEmailSaved) navigate(location.pathname, { replace: true, state: null });
+  }, []);
   const canEditNamedValues = canReadNamedValueItems && canUpdateNamedValues;
   const [rows, setRows] = useState<NamedValue[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +75,6 @@ function NamedValuesBody() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<NamedValue | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,16 +188,32 @@ function NamedValuesBody() {
             {t('configuration.namedValues.subtitle')}
           </p>
         </div>
-        {canCreateNamedValues ? (
-          <Button asChild variant="pill-dark" size="pill">
-            <Link to="/configuration/named-values/new">
-              <Plus className="size-3.5" aria-hidden />
-              {t('configuration.namedValues.add')}
-            </Link>
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {canConfigureNats ? (
+            <Button asChild variant="pill-outline" size="pill">
+              <Link to="/configuration/nats" data-testid="configure-nats">
+                <Settings className="size-3.5" aria-hidden />
+                {t('configuration.natsEmail.configure')}
+              </Link>
+            </Button>
+          ) : null}
+          {canCreateNamedValues ? (
+            <Button asChild variant="pill-dark" size="pill">
+              <Link to="/configuration/named-values/new">
+                <Plus className="size-3.5" aria-hidden />
+                {t('configuration.namedValues.add')}
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
 
+      {natsEmailSaved ? (
+        <Alert tone="success" className="mb-4" data-testid="nats-email-saved">
+          {t('configuration.natsEmail.page.savedMessage')}
+        </Alert>
+      ) : null}
+      <NatsEmailSetupNotice status={natsEmailStatus} />
       {error ? <Alert tone="error" className="mb-4">{error}</Alert> : null}
       {actionError ? <Alert tone="error" className="mb-4">{actionError}</Alert> : null}
       {!error && <Card variant="bordered" className="overflow-hidden">

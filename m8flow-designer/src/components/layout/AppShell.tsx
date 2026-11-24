@@ -71,6 +71,8 @@ export function AppShell() {
         ? true
         : pathname === '/configuration'
           ? true
+          : pathname === '/configuration/nats'
+          ? canReadSecrets && canReadNamedValues
           : pathname.startsWith('/configuration/secrets')
           ? canReadSecrets
         : pathname.startsWith('/templates')

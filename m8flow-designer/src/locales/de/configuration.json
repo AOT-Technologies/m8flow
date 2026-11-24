@@ -1,5 +1,72 @@
 {
   "title": "Konfiguration",
+  "natsEmail": {
+    "title": "E-Mails für externe Formulare können noch nicht gesendet werden",
+    "body": "Der NATS-Benachrichtigungsworker versendet Links zu externen Formularen mit den NATS_SMTP_*-Konfigurationsvariablen dieses Mandanten. Legen Sie sie über „NATS konfigurieren“ an.",
+    "waiting": "Wartende E-Mails: {{count}}. Sie werden automatisch gesendet, sobald die erforderlichen Secrets festgelegt sind.",
+    "missing": "Fehlende erforderliche Variablen:",
+    "unreadable": "Diese Variablen können nicht gelesen werden (leer, oder der Verschlüsselungsschlüssel wurde geändert):",
+    "configure": "NATS konfigurieren",
+    "page": {
+      "title": "NATS-E-Mail-Einstellungen",
+      "subtitle": "SMTP-Einstellungen, mit denen der NATS-Benachrichtigungsworker Links zu externen Formularen per E-Mail versendet. Jeder Wert wird als sensible Konfigurationsvariable gespeichert (in Vault, wenn aktiviert) und kann danach nicht mehr angezeigt werden.",
+      "state": {
+        "saved": "Gespeichert",
+        "unreadable": "Nicht lesbar"
+      },
+      "keepHint": "Leer lassen, um den gespeicherten Wert beizubehalten.",
+      "keep": "Gespeicherten Wert beibehalten",
+      "onDefault": "Ein (Standard)",
+      "offDefault": "Aus (Standard)",
+      "on": "Ein",
+      "off": "Aus",
+      "save": "Einstellungen speichern",
+      "savedMessage": "NATS-E-Mail-Einstellungen gespeichert.",
+      "nothingToSave": "Geben Sie mindestens einen Wert zum Speichern ein.",
+      "readOnly": "Ihre Rolle kann diese Einstellungen ansehen, aber nicht ändern.",
+      "errors": {
+        "load": "NATS-E-Mail-Einstellungen konnten nicht geladen werden.",
+        "save": "{{key}} konnte nicht gespeichert werden: {{message}}",
+        "partial": "Bereits gespeichert: {{keys}}."
+      },
+      "validation": {
+        "required": "Geben Sie einen Wert ein.",
+        "host": "Geben Sie einen Hostnamen wie smtp.example.com ein, ohne Schema oder Port.",
+        "port": "Geben Sie einen Port zwischen 1 und 65535 ein.",
+        "email": "Geben Sie eine E-Mail-Adresse wie noreply@example.com ein."
+      },
+      "fields": {
+        "host": {
+          "label": "SMTP-Host",
+          "help": "Zum Beispiel smtp.example.com."
+        },
+        "port": {
+          "label": "Port",
+          "help": "Standard ist 587. Meist 587 mit STARTTLS oder 465 mit SSL."
+        },
+        "starttls": {
+          "label": "STARTTLS verwenden",
+          "help": "Die meisten Server auf Port 587 benötigen dies."
+        },
+        "ssl": {
+          "label": "SSL verwenden",
+          "help": "Für Server, die von Anfang an TLS erwarten, meist auf Port 465."
+        },
+        "fromEmail": {
+          "label": "Absenderadresse",
+          "help": "Der Absender der E-Mails für externe Formulare."
+        },
+        "username": {
+          "label": "Benutzername",
+          "help": "Leer lassen, wenn der Server keine Anmeldung benötigt."
+        },
+        "password": {
+          "label": "Passwort",
+          "help": "Wird genau wie eingegeben gespeichert."
+        }
+      }
+    }
+  },
   "secretKey": "Secret-Schlüssel",
   "saving": "Wird gespeichert…",
   "notAllowed": "Nicht zulässig",

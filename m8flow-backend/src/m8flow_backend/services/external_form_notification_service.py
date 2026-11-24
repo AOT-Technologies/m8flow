@@ -59,8 +59,10 @@ def _claimable(now: int):
         ),
     )
 
-# SMTP is configured per-tenant via encrypted tenant secrets, never global
-# env. These keys are read from the recipient's tenant when sending — host and
+# SMTP is configured per tenant, never in global env. Each key is read from the
+# recipient tenant's configuration variable of that name (sensitive ones live in
+# the secret provider, Vault when enabled), falling back to a plain tenant secret
+# of the same name for tenants set up before configuration variables. Host and
 # from_email are required; the rest are optional.
 #
 # The NATS notification worker uses its OWN, NATS_-prefixed secrets so they stay
@@ -286,41 +288,55 @@ class ExternalFormNotificationService:
             return None
 
     @classmethod
-    def _read_tenant_secret(cls, key: str, tenant_id: str | None = None) -> str | None:
-        """Decrypted value of a tenant secret, or None if absent/unreadable."""
+    def _smtp_values(cls, tenant_id: str | None = None) -> tuple[set[str], dict[str, str | None]]:
+        """Which NATS_SMTP_* keys the tenant has stored, and each one's usable value (None
+        when blank or unreadable). Every stored key is read exactly once.
+
+        A key stored as a configuration variable is read only from that variable (a sensitive
+        one from the secret provider, Vault when enabled). A plain tenant secret of the same
+        name counts only when no such variable exists, for tenants set up before configuration
+        variables; so an unreadable variable is reported as unreadable instead of being
+        silently replaced by an old secret."""
         from m8flow_backend.errors import ApiError
         from m8flow_backend import secrets as SecretService
         from m8flow_backend.db import current_session
+        from m8flow_backend.secrets import named_values
 
         effective_tenant_id = cls._effective_tenant_id(tenant_id)
         if effective_tenant_id is None:
-            return None
-        try:
-            secret = SecretService.get_secret_value(
-                current_session(),
-                tenant_id=effective_tenant_id,
-                key=key,
-            )
-        except ApiError:
-            return None
-        if secret is None:
-            return None
-        value = secret.strip()
-        return value or None
+            # `list_secret_keys(tenant_id=None)` spans every tenant; reporting another
+            # tenant's keys as this one's is worse than reporting none.
+            return set(), {}
+        session = current_session()
+        wanted = tuple(SMTP_SECRET_KEYS.values())
+        variables = named_values.names_present(session, tenant_id=effective_tenant_id, names=wanted)
+        legacy = (set(SecretService.list_secret_keys(session, tenant_id=effective_tenant_id)) & set(wanted)) - variables
+        values: dict[str, str | None] = {}
+        for key in variables | legacy:
+            try:
+                if key in variables:
+                    raw = named_values.value_by_name(session, tenant_id=effective_tenant_id, name=key)
+                else:
+                    raw = SecretService.get_secret_value(session, tenant_id=effective_tenant_id, key=key)
+            except ApiError:
+                raw = None
+            values[key] = (raw or "").strip() or None
+        return variables | legacy, values
 
     @classmethod
     def resolve_smtp_settings(cls, tenant_id: str | None = None) -> dict[str, Any] | None:
-        """Per-tenant SMTP config from the recipient tenant's encrypted secrets.
+        """Per-tenant SMTP config from the recipient tenant's NATS_SMTP_* settings.
 
         Uses the active tenant context unless `tenant_id` names one. Returns None when
         the tenant has not configured SMTP (host and from_email are the minimum needed
         to send) -- REQUIRED_SMTP_SECRET_KEYS must stay exactly that pair."""
-        host = cls._read_tenant_secret(SMTP_SECRET_KEYS["host"], tenant_id)
-        from_email = cls._read_tenant_secret(SMTP_SECRET_KEYS["from_email"], tenant_id)
+        _present, values = cls._smtp_values(tenant_id)
+        host = values.get(SMTP_SECRET_KEYS["host"])
+        from_email = values.get(SMTP_SECRET_KEYS["from_email"])
         if not host or not from_email:
             return None
 
-        port_raw = cls._read_tenant_secret(SMTP_SECRET_KEYS["port"], tenant_id)
+        port_raw = values.get(SMTP_SECRET_KEYS["port"])
         try:
             port = int(port_raw) if port_raw else 587
         except ValueError:
@@ -329,51 +345,41 @@ class ExternalFormNotificationService:
         return {
             "host": host,
             "port": port,
-            "username": cls._read_tenant_secret(SMTP_SECRET_KEYS["username"], tenant_id),
-            "password": cls._read_tenant_secret(SMTP_SECRET_KEYS["password"], tenant_id),
+            "username": values.get(SMTP_SECRET_KEYS["username"]),
+            "password": values.get(SMTP_SECRET_KEYS["password"]),
             "from_email": from_email,
-            "starttls": _is_truthy(cls._read_tenant_secret(SMTP_SECRET_KEYS["starttls"], tenant_id)),
-            "ssl": _is_truthy(cls._read_tenant_secret(SMTP_SECRET_KEYS["ssl"], tenant_id)),
+            "starttls": _is_truthy(values.get(SMTP_SECRET_KEYS["starttls"])),
+            "ssl": _is_truthy(values.get(SMTP_SECRET_KEYS["ssl"])),
         }
 
     @classmethod
-    def _present_smtp_secret_keys(cls, tenant_id: str | None = None) -> set[str]:
-        """Which NATS_SMTP_* keys the tenant has rows for. Presence only, no decryption,
-        so it stays a single query."""
-        from m8flow_backend.db import current_session
-        from m8flow_backend.secrets import list_secret_keys
-
-        effective_tenant_id = cls._effective_tenant_id(tenant_id)
-        if effective_tenant_id is None:
-            # `list_secret_keys(tenant_id=None)` spans every tenant; reporting another
-            # tenant's keys as this one's is worse than reporting none.
-            return set()
-        keys = set(list_secret_keys(current_session(), tenant_id=effective_tenant_id))
-        return keys & set(SMTP_SECRET_KEYS.values())
-
-    @classmethod
-    def smtp_readiness(cls, tenant_id: str | None = None) -> dict[str, Any]:
+    def smtp_readiness(
+        cls,
+        tenant_id: str | None = None,
+        snapshot: tuple[set[str], dict[str, str | None]] | None = None,
+    ) -> dict[str, Any]:
         """Whether the tenant can send, and why not when it cannot.
 
-        Separates a key that was never set from one whose row exists but does not resolve
+        Separates a key that was never set from one that is stored but does not resolve
         to a usable value (blank, or undecryptable because the backend encryption key
         changed). Both block sending but need completely different fixes, so the reason an
-        admin reads must not collapse them into "missing"."""
+        admin reads must not collapse them into "missing". `snapshot` reuses an earlier
+        `_smtp_values` read."""
+        present, values = snapshot if snapshot is not None else cls._smtp_values(tenant_id)
         missing: list[str] = []
         unreadable: list[str] = []
-        present = cls._present_smtp_secret_keys(tenant_id)
         for key in REQUIRED_SMTP_SECRET_KEYS:
-            if cls._read_tenant_secret(key, tenant_id):
+            if values.get(key):
                 continue
             (unreadable if key in present else missing).append(key)
 
         if unreadable:
             reason = (
-                "SMTP secrets exist but could not be read (blank value, or the backend"
+                "SMTP settings exist but could not be read (blank value, or the backend"
                 " encryption key changed): " + ", ".join(unreadable)
             )
         elif missing:
-            reason = "SMTP is not configured for this tenant. Missing required secrets: " + ", ".join(missing)
+            reason = "SMTP is not configured for this tenant. Missing required settings: " + ", ".join(missing)
         else:
             reason = None
         return {
@@ -386,14 +392,14 @@ class ExternalFormNotificationService:
 
     @classmethod
     def smtp_configuration_status(cls, tenant_id: str | None = None) -> dict[str, Any]:
-        """Whether the tenant can send external-form emails, and which secret keys it
-        still needs. Returns key *names* only -- never a secret value.
+        """Whether the tenant can send external-form emails, and which NATS_SMTP_* keys it
+        still needs. Returns key *names* only -- never a value.
 
         ``configured_keys`` lists keys that resolve to a usable (decryptable, non-blank)
-        value, including optional ones. Presence of a row alone is not enough."""
-        readiness = cls.smtp_readiness(tenant_id)
-        present_keys = cls._present_smtp_secret_keys(tenant_id)
-        configured_keys = sorted(key for key in present_keys if cls._read_tenant_secret(key, tenant_id))
+        value, including optional ones. Being stored alone is not enough."""
+        snapshot = cls._smtp_values(tenant_id)
+        readiness = cls.smtp_readiness(tenant_id, snapshot=snapshot)
+        configured_keys = sorted(key for key, value in snapshot[1].items() if value)
         return {
             "configured": readiness["ok"],
             "required_keys": list(REQUIRED_SMTP_SECRET_KEYS),

@@ -117,7 +117,7 @@ def _in_tenant_context(tenant_id: str, work):
 
 
 def _revive_reconfigured_tenants() -> None:
-    """Bring parked requests back once a tenant has configured its SMTP secrets.
+    """Bring parked requests back once a tenant has configured its SMTP settings.
 
     Requests parked as smtp_unconfigured are invisible to sweep_candidates by design, so
     without this pass they would stay stuck even after an admin fixes the configuration."""
@@ -193,7 +193,7 @@ def _run_sweep() -> None:
             logger.error(
                 "Sweep: tenant=%s cannot send external form emails; parked %s request(s) as"
                 " smtp_unconfigured and stopped retrying them. %s"
-                " Fix this under Setup > Configuration > Secrets to resume delivery.",
+                " Fix this under Setup > Configuration variables > Configure NATS to resume delivery.",
                 tenant_id,
                 parked,
                 readiness["reason"],

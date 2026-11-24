@@ -301,3 +301,42 @@ def test_without_nats_the_worker_still_runs_the_email_sweep(worker, app, monkeyp
     asyncio.run(worker.main())
 
     assert swept == [True]
+
+
+def test_parked_emails_resume_once_the_tenant_adds_nats_configuration_variables(worker, db_session):
+    """M8F-706: NATS email settings are configuration variables. A request parked because they
+    were missing goes back to the queue on the next sweep once they are added, with no
+    plain NATS_SMTP_* secrets involved."""
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.models.external_form_request import ExternalFormRequestModel
+    from m8flow_backend.secrets import named_values
+
+    ensure_tenant(db_session, tenant_id="t1", slug="acme", name="Acme")
+    user = ensure_user(db_session, username="fay", service="https://example.test/realms/m8flow", service_id="fay")
+    row = ExternalFormRequestModel(
+        m8f_tenant_id="t1",
+        reference_id="ref-parked",
+        process_instance_id=9,
+        task_guid="task-9",
+        recipient_user_id=1,
+        email="recipient@example.test",
+        external_form_url="https://forms.example/f9",
+        status="smtp_unconfigured",
+        attempts=0,
+    )
+    db_session.add(row)
+    db_session.commit()
+
+    worker._revive_reconfigured_tenants()
+    db_session.expire_all()
+    assert db_session.get(ExternalFormRequestModel, row.id).status == "smtp_unconfigured"
+
+    for name, value in (("NATS_SMTP_HOST", "smtp.example.test"), ("NATS_SMTP_FROM_EMAIL", "noreply@example.test")):
+        named_values.create_named_value(
+            db_session, tenant_id="t1", body={"name": name, "value": value, "is_sensitive": True}, user_id=user.id
+        )
+    db_session.commit()
+
+    worker._revive_reconfigured_tenants()
+    db_session.expire_all()
+    assert db_session.get(ExternalFormRequestModel, row.id).status == "pending"

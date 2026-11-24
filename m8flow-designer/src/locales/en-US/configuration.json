@@ -1,5 +1,72 @@
 {
   "title": "Configuration",
+  "natsEmail": {
+    "title": "External form emails can't be sent yet",
+    "body": "The NATS notification worker emails external form links using this tenant's NATS_SMTP_* configuration variables. Add them with Configure NATS.",
+    "waiting": "Emails waiting to send: {{count}}. They go out automatically once the required secrets are set.",
+    "missing": "Missing required variables:",
+    "unreadable": "These variables can't be read (blank, or the encryption key changed):",
+    "configure": "Configure NATS",
+    "page": {
+      "title": "NATS email settings",
+      "subtitle": "SMTP settings the NATS notification worker uses to email external form links. Each value is saved as a sensitive configuration variable (in Vault when enabled) and can't be viewed after saving.",
+      "state": {
+        "saved": "Saved",
+        "unreadable": "Can't be read"
+      },
+      "keepHint": "Leave blank to keep the saved value.",
+      "keep": "Keep saved value",
+      "onDefault": "On (default)",
+      "offDefault": "Off (default)",
+      "on": "On",
+      "off": "Off",
+      "save": "Save settings",
+      "savedMessage": "NATS email settings saved.",
+      "nothingToSave": "Enter at least one value to save.",
+      "readOnly": "Your role can view these settings but cannot change them.",
+      "errors": {
+        "load": "Could not load NATS email settings.",
+        "save": "Could not save {{key}}: {{message}}",
+        "partial": "Already saved: {{keys}}."
+      },
+      "validation": {
+        "required": "Enter a value.",
+        "host": "Enter a host name such as smtp.example.com, without a scheme or port.",
+        "port": "Enter a port between 1 and 65535.",
+        "email": "Enter an email address such as noreply@example.com."
+      },
+      "fields": {
+        "host": {
+          "label": "SMTP host",
+          "help": "For example smtp.example.com."
+        },
+        "port": {
+          "label": "Port",
+          "help": "Defaults to 587. Usually 587 with STARTTLS, or 465 with SSL."
+        },
+        "starttls": {
+          "label": "Use STARTTLS",
+          "help": "Most servers on port 587 need this."
+        },
+        "ssl": {
+          "label": "Use SSL",
+          "help": "For servers that expect TLS from the start, usually on port 465."
+        },
+        "fromEmail": {
+          "label": "From address",
+          "help": "The sender of external form emails."
+        },
+        "username": {
+          "label": "Username",
+          "help": "Leave blank if the server does not need a sign-in."
+        },
+        "password": {
+          "label": "Password",
+          "help": "Saved exactly as typed."
+        }
+      }
+    }
+  },
   "namedValues": {
     "title": "Configuration variables",
     "subtitle": "Tenant-scoped values used to configure processes and connectors.",
