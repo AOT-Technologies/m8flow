@@ -17,6 +17,11 @@ export const API_BASE_URL: string =
   (import.meta.env.VITE_BACKEND_BASE_URL as string | undefined) ??
   'http://localhost:6840';
 
+export const API_VERSION_HEADER = 'X-M8Flow-API-Version';
+/** Build-time API contract selection. Existing builds remain on V1 by default. */
+export const API_VERSION: string =
+  (import.meta.env.VITE_API_VERSION as string | undefined)?.trim() || '1.0';
+
 export type HomeStats = {
   active_process_instances: number | null;
   tasks_waiting_on_me: number | null;
@@ -66,6 +71,35 @@ export class ApiError extends Error {
     this.automaticStepErrorMessage = details?.automaticStepErrorMessage;
     this.processInstanceId = details?.processInstanceId;
   }
+}
+
+export class ApiVersionMismatchError extends Error {
+  readonly expectedVersion: string;
+  readonly actualVersion: string | null;
+
+  constructor(path: string, method: string, expectedVersion: string, actualVersion: string | null) {
+    const selected = actualVersion ?? 'missing response version header';
+    super(
+      `${method} ${path} expected API version ${expectedVersion}, but the backend selected ${selected}. ` +
+        'Check that the API version header is forwarded to the backend.',
+    );
+    this.name = 'ApiVersionMismatchError';
+    this.expectedVersion = expectedVersion;
+    this.actualVersion = actualVersion;
+  }
+}
+
+/** Ensure a proxy or gateway did not silently change the requested contract. */
+export function validateApiVersionResponse(
+  response: Response,
+  path: string,
+  method = 'GET',
+): void {
+  const actualVersion = response.headers?.get?.(API_VERSION_HEADER) ?? null;
+  if (actualVersion === API_VERSION || (actualVersion === null && API_VERSION === '1.0')) {
+    return;
+  }
+  throw new ApiVersionMismatchError(path, method, API_VERSION, actualVersion);
 }
 
 /** Best-effort read of the backend's `{ error_code, message }` error body so
@@ -130,9 +164,13 @@ function attemptSilentRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = fetch(`${API_BASE_URL}/v1.0/refresh`, {
       method: 'POST',
+      headers: { [API_VERSION_HEADER]: API_VERSION },
       credentials: 'include',
     })
-      .then((response) => response.ok)
+      .then((response) => {
+        validateApiVersionResponse(response, '/v1.0/refresh', 'POST');
+        return response.ok;
+      })
       .catch(toNetworkError)
       .finally(() => {
         refreshInFlight = null;
@@ -171,6 +209,10 @@ async function fetchWithAuthRetry(
 ): Promise<Response> {
   const token = getAccessToken();
   const headers = new Headers(init.headers);
+  // The configured contract version is authoritative for every request,
+  // including retries. Do not let an individual feature client accidentally
+  // omit it or silently fall back to the server's legacy default.
+  headers.set(API_VERSION_HEADER, API_VERSION);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -179,6 +221,7 @@ async function fetchWithAuthRetry(
     headers,
     credentials: 'include',
   }).catch(toNetworkError);
+  validateApiVersionResponse(response, path, init.method ?? 'GET');
   if (response.status !== 401) {
     return response;
   }

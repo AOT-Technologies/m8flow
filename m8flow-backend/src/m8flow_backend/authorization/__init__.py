@@ -17,11 +17,12 @@ from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers, request_memo
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
-# m8flow.yml's permission uris are written without this prefix (`/tasks`, not
-# `/v1.0/tasks`); every real caller passes the actual route path, prefix and
-# all. Without stripping it here, _uri_permitted's DB-backed grant check can
-# never match any real request -- see architecture review finding C5.
-_API_PATH_PREFIX = "/v1.0"
+# m8flow.yml's permission URIs are version-neutral (`/tasks`, not
+# `/v1.0/tasks`). The API version header selects a contract, never a separate
+# authorization resource: V1 and V2 requests to the same operation therefore
+# resolve to the same grant. Strip a URL version prefix at a segment boundary
+# so compatibility paths and any future version-prefixed routes share RBAC.
+_API_PATH_PREFIX_RE = re.compile(r"^/v\d+(?:\.\d+)?(?=/|$)")
 # GET here is tenant-wide instance read (M8F-534/M8F-627): instance_initiator_scope
 # tests it, and the editor role-name fallback must never stand in for it.
 _TENANT_WIDE_INSTANCE_READ_PATH = "/process-instances"
@@ -243,9 +244,8 @@ _NO_GROUP_FALLBACK_PREFIXES = (
 
 def _without_api_path_prefix(path: str) -> str:
     cleaned = path if path.startswith("/") else f"/{path}"
-    if cleaned.startswith(_API_PATH_PREFIX):
-        return cleaned[len(_API_PATH_PREFIX):] or "/"
-    return path
+    normalized = _API_PATH_PREFIX_RE.sub("", cleaned, count=1)
+    return normalized or "/"
 
 
 def _normalize_authorization_path(path: str) -> str:

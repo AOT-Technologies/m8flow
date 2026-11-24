@@ -49,6 +49,25 @@ def test_every_operation_id_resolves_to_a_callable():
     assert not unresolved, "api.yml operationIds not resolvable:\n" + "\n".join(unresolved)
 
 
+def test_every_openapi_operation_documents_the_api_version_header():
+    document = yaml.safe_load(_SPEC.read_text(encoding="utf-8"))
+    parameter_ref = "#/components/parameters/ApiVersion"
+    parameter = document["components"]["parameters"]["ApiVersion"]
+
+    assert parameter["name"] == "X-M8Flow-API-Version"
+    assert parameter["in"] == "header"
+    assert parameter["required"] is False
+    assert parameter["schema"]["default"] == "1.0"
+
+    missing = []
+    for raw_path, path_item in document["paths"].items():
+        path_parameters = path_item.get("parameters", [])
+        if not any(item.get("$ref") == parameter_ref for item in path_parameters):
+            missing.append(raw_path)
+
+    assert not missing, "API version header is undocumented for paths:\n" + "\n".join(missing)
+
+
 _TENANT_ROLE_ENUM = ["tenant-admin", "editor", "integrator", "reviewer", "submitter", "viewer"]
 
 

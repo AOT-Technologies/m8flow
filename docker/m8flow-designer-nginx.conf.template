@@ -28,6 +28,8 @@ server {
         # in the nginx image populates from the container's /etc/resolv.conf.
         resolver ${NGINX_LOCAL_RESOLVERS} valid=10s;
         set $backend "${BACKEND_BASE_URL}";
+        # Forward custom request headers, including X-M8Flow-API-Version.
+        proxy_pass_request_headers on;
         proxy_pass $backend$request_uri;
         proxy_set_header Host $http_host;
         proxy_set_header X-Real-IP $remote_addr;

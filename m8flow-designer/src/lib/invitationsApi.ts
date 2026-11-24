@@ -1,4 +1,11 @@
-import { API_BASE_URL, ApiError, toNetworkError } from './api';
+import {
+  API_BASE_URL,
+  API_VERSION,
+  API_VERSION_HEADER,
+  ApiError,
+  toNetworkError,
+  validateApiVersionResponse,
+} from './api';
 
 export type InvitationValidation = {
   email: string;
@@ -29,11 +36,13 @@ async function readServerMessage(response: Response): Promise<string | undefined
 async function publicJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
+  headers.set(API_VERSION_HEADER, API_VERSION);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers,
     credentials: 'include',
   }).catch(toNetworkError);
+  validateApiVersionResponse(response, path, init.method ?? 'GET');
   if (!response.ok) {
     throw new ApiError(
       path,

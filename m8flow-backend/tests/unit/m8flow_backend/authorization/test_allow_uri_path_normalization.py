@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import m8flow_backend.authorization as authorization
+from m8flow_backend.api_versioning import current_api_version, select_request_api_version
 
 
 @pytest.fixture
@@ -26,6 +27,36 @@ def test_allow_uri_normalizes_standard_granted_route(path, regular_user, monkeyp
 
     assert authorization.allow_uri(regular_user, "GET", path, session=object()) is True
     assert seen == ["/onboarding"]
+
+
+@pytest.mark.parametrize("granted", [False, True])
+def test_api_version_header_does_not_change_authorization_result(
+    app, regular_user, monkeypatch, granted
+):
+    seen_resources = []
+
+    def resource_permitted(_session, _user, _action, _resource_type, resource_id, **_kwargs):
+        seen_resources.append(resource_id)
+        return granted
+
+    monkeypatch.setattr(authorization, "_resource_permitted", resource_permitted)
+    results = []
+    selected_versions = []
+    for header_value in ("1.0", "2.0"):
+        with app.test_request_context(
+            "/v1.0/secrets", headers={"X-M8Flow-API-Version": header_value}
+        ):
+            select_request_api_version()
+            selected_versions.append(current_api_version().value)
+            results.append(
+                authorization.allow_uri(
+                    regular_user, "GET", "/v1.0/secrets", session=object()
+                )
+            )
+
+    assert selected_versions == ["1.0", "2.0"]
+    assert results == [granted, granted]
+    assert seen_resources == ["/secrets", "/secrets"]
 
 
 @pytest.mark.parametrize(

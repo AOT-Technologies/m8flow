@@ -61,7 +61,7 @@ describe('session refresh recovery', () => {
   });
 
   it('refreshes successfully and retries a request once', async () => {
-    const { apiGet } = await import('./api');
+    const { apiGet, API_VERSION, API_VERSION_HEADER } = await import('./api');
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(response(401))
       .mockResolvedValueOnce(response(200))
@@ -69,6 +69,9 @@ describe('session refresh recovery', () => {
     vi.stubGlobal('fetch', fetchMock);
     await expect(apiGet('/v1.0/tasks')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(new Headers(init.headers).get(API_VERSION_HEADER)).toBe(API_VERSION);
+    }
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
   });
 

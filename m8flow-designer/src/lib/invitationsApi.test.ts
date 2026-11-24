@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiError, NetworkError } from './api';
+import { API_VERSION, API_VERSION_HEADER, ApiError, NetworkError } from './api';
 import { acceptInvitation, invitationErrorMessage, validateInvitation } from './invitationsApi';
 
 const makeResponse = ({
@@ -55,6 +55,7 @@ describe('invitationsApi', () => {
     );
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     expect(new Headers(init.headers).get('Authorization')).toBeNull();
+    expect(new Headers(init.headers).get(API_VERSION_HEADER)).toBe(API_VERSION);
   });
 
   it('posts accept with token and password', async () => {
@@ -74,6 +75,8 @@ describe('invitationsApi', () => {
         body: JSON.stringify({ token: 'raw-token', password: 'password123' }),
       }),
     );
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get(API_VERSION_HEADER)).toBe(API_VERSION);
   });
 
   it('surfaces the backend message on failure', async () => {

@@ -56,6 +56,10 @@ with an env var if needed. Dev API calls use a Vite proxy on `/v1.0` (same
 origin) so credentialed Home fetches do not depend on cross-port CORS;
 login/logout still hit the absolute backend URL so Keycloak's redirect URI
 stays on `:6840`.
+The shared API client sends `X-M8Flow-API-Version` on API requests. It defaults
+to `1.0`; set `VITE_API_VERSION` for a local build or `M8FLOW_API_VERSION` in
+the repo-root `.env`/Compose build configuration. Login and logout are browser
+redirects and continue using the backend's V1-compatible authentication flow.
 
 ## E2E (Playwright)
 

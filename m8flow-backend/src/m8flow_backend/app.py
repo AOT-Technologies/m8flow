@@ -12,6 +12,11 @@ from flask import g
 from starlette.middleware.cors import CORSMiddleware
 
 from m8flow_backend.authorization import install_default_policy
+from m8flow_backend.api_versioning import (
+    API_VERSION_HEADER,
+    ApiVersionResponseMiddleware,
+    select_request_api_version,
+)
 from m8flow_backend.auth import install_auth_middleware
 from m8flow_backend.config import nats_enabled, nats_trigger_signing_salt
 from m8flow_backend.db import attach_host_timestamp_listeners, create_all, get_session_factory
@@ -125,6 +130,14 @@ def create_app() -> FlaskApp:
         create_all()
 
     session_factory = get_session_factory()
+
+    @app.before_request
+    def _select_api_version() -> None:
+        # Flask routes and Connexion operations both reach this hook, so
+        # version selection has one consistent behavior across both routers.
+        # Register before the DB session hook to reject invalid headers without
+        # opening a request-scoped session.
+        select_request_api_version()
 
     @app.before_request
     def _open_session() -> None:
@@ -244,8 +257,19 @@ def create_app() -> FlaskApp:
         allow_origins=_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "If-Match", "x-m8flow-tenant-id"],
-        expose_headers=["ETag"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "If-Match",
+            "x-m8flow-tenant-id",
+            API_VERSION_HEADER,
+        ],
+        expose_headers=["ETag", API_VERSION_HEADER],
+    )
+    connexion_app.add_middleware(
+        ApiVersionResponseMiddleware,
+        position=MiddlewarePosition.BEFORE_EXCEPTION,
     )
 
     return connexion_app

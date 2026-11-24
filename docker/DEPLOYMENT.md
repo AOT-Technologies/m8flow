@@ -60,14 +60,17 @@ docker push "${DOCKER_NAMESPACE}/m8flow-backend:${TAG}"
 
 ## 2. Designer (primary UI)
 
-The designer image bakes `VITE_BACKEND_BASE_URL` into the bundle at build time -- it is the
-origin the Keycloak login redirect is built from, so it must be the browser-reachable
-backend URL for the environment you are deploying to, not an in-network service name.
+The designer image bakes `VITE_BACKEND_BASE_URL` and `VITE_API_VERSION` into the bundle at
+build time. The backend URL is the browser-reachable origin used for Keycloak login, not
+an in-network service name. `VITE_API_VERSION` defaults to `1.0` to preserve existing clients.
+Any additional reverse proxy or API gateway in front of the backend must forward the
+`X-M8Flow-API-Version` request header; if it strips the header, the backend intentionally
+falls back to V1 for compatibility.
 
 Build:
 
 ```bash
-docker build   --platform linux/amd64   -f docker/m8flow.designer.Dockerfile   --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"   -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"   .
+docker build   --platform linux/amd64   -f docker/m8flow.designer.Dockerfile   --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"   --build-arg VITE_API_VERSION="${M8FLOW_API_VERSION:-1.0}"   -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"   .
 ```
 
 Push:

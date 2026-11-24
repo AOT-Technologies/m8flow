@@ -5,7 +5,7 @@ vi.mock('./auth', () => ({
   resumeLoginAfterLogout: vi.fn(),
 }));
 
-import { apiGet, ApiError, NetworkError } from './api';
+import { apiGet, API_VERSION, API_VERSION_HEADER, ApiError, NetworkError } from './api';
 
 function makeResponse(opts: { ok: boolean; status: number; body?: unknown }) {
   return {
@@ -38,6 +38,18 @@ describe('apiGet', () => {
     expect(a).toEqual({ n: 1 });
     expect(b).toEqual({ n: 1 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the configured API version on shared-client requests', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeResponse({ ok: true, status: 200, body: { ok: true } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiGet('/v1.0/m8flow/home-stats');
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(new Headers(init.headers).get(API_VERSION_HEADER)).toBe(API_VERSION);
   });
 
   it('does not merge concurrent GETs for different paths', async () => {

@@ -38,7 +38,7 @@ The compatibility promise covers the following:
 
 | Surface | Where it's defined |
 |---|---|
-| HTTP API under `/v1.0/` and `/v1.0/m8flow/`: paths, methods, request and response fields, and status codes | [`api.yml`](../../m8flow-backend/src/m8flow_backend/api.yml) and the [HTTP API reference](http-api.md) |
+| HTTP API paths under `/v1.0/` and `/v1.0/m8flow/`, plus the contract selected by `X-M8Flow-API-Version` | [`api.yml`](../../m8flow-backend/src/m8flow_backend/api.yml) and the [HTTP API reference](http-api.md) |
 | Configuration: documented environment variables, their defaults, and their meaning | [Configuration](configuration.md) and [`sample.env`](../../sample.env) |
 | Process models: the BPMN and DMN elements m8flow runs, its BPMN extension attributes, and the `M8FLOW_SECRET:<key>` reference syntax | [BPMN support](bpmn-support.md) |
 | Roles and permissions: the seven role names and what each allows | [Roles and permissions](roles-and-permissions.md) |
@@ -46,6 +46,11 @@ The compatibility promise covers the following:
 | MCP server: tool names and their arguments | [Set up the MCP server and the MCP Tools page](../how-to/set-up-mcp-tools.md) |
 | Auth provider interface for other identity providers | [Write an auth provider](../auth-provider/writing-a-provider.md) |
 | Stored data: an upgrade within a major version keeps your process models, instances, tasks, tenants, and secrets | [Upgrade m8flow](../how-to/upgrade.md) |
+
+The API version header currently accepts `1.0` and `2.0`, but no operation has
+different V2 behavior yet. Both values use the same contract across the current
+API; the [HTTP API reference](http-api.md) documents this status and the header
+behavior.
 
 ## Not covered
 

@@ -4,6 +4,8 @@ info:
   title: m8flow-backend-extension
 paths:
   /ping:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Health check for load balancers and monitoring
       description: Returns 200 when the process is up. Public, no authentication required.
@@ -20,6 +22,8 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
 
   /tenant-login-url:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get Keycloak login URL for a tenant selection (unauthenticated)
       description: Checks that the tenant exists locally and returns the shared-realm authorization URL for that tenant selection.
@@ -70,6 +74,8 @@ paths:
                     type: string
 
   /organization-memberships:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get the authenticated user's organization memberships with display names
       description: Returns the current user's shared-realm organization memberships and resolves each membership to the organization display name stored by M8Flow.
@@ -110,6 +116,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /session:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Describe the authenticated session in provider-neutral terms
       description: >-
@@ -180,6 +188,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /tenant-realms:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Create a tenant organization in the shared realm
       description: Creates a Keycloak organization in the configured shared realm and ensures a tenant record exists. The endpoint name is legacy, but the backend now provisions organizations instead of realms.
@@ -266,6 +276,8 @@ paths:
                     type: string
 
   /tenant-realms/{realm_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     delete:
       summary: Delete a Keycloak organization and its associated tenant
       description: Removes the organization from the shared realm and then removes the tenant record from Postgres. After the database commit, the backend removes tenant KV data using that tenant's scoped Vault token. The tenant AppRole and policy are retained for operator-controlled cleanup. If the database delete fails, Vault data is preserved. The path parameter is the tenant alias (legacy realm slug path name).
@@ -324,6 +336,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /tenants/check:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Check if tenant exists by slug or id (unauthenticated)
       description: For pre-login tenant selection. Only considers ACTIVE tenants.
@@ -353,6 +367,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /tenants/slug/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get tenant by slug
       operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_slug
@@ -388,6 +404,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /tenants:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get all tenants
       operationId: m8flow_backend.routes.tenant_controller.get_all_tenants
@@ -416,6 +434,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /tenants/{tenant_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get tenant by ID
       operationId: m8flow_backend.routes.tenant_controller.get_tenant_by_id
@@ -496,6 +516,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/members:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List tenant organization members
       description: Lists Keycloak organization members for the selected tenant and returns only tenant-local roles for that organization.
@@ -587,6 +609,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/members/{username}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     delete:
       summary: Remove tenant organization member
       description: Removes one Keycloak organization member from the selected tenant and clears local tenant-scoped assignments.
@@ -627,6 +651,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/available-users:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List existing users available to add to a tenant
       description: Lists existing Keycloak users that are not yet members of the selected tenant organization.
@@ -680,6 +706,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/groups:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List tenant Keycloak groups
       description: Lists the Keycloak organization groups for the selected tenant, including their members and mapped tenant-scoped roles.
@@ -785,6 +813,8 @@ paths:
           description: Group created but the directory did not apply its roles
 
   /tenants/{tenant_id}/groups/{group_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     put:
       summary: Rename tenant Keycloak group
       description: Renames one top-level Keycloak organization group for the selected tenant while preserving its members and granted tenant-scoped roles.
@@ -869,6 +899,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/groups/{group_name}/members/{username}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     put:
       summary: Assign tenant member to organization group
       description: Assigns one tenant member to one existing Keycloak organization group and mirrors any mapped tenant-scoped roles locally.
@@ -954,6 +986,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/groups/{group_name}/roles/{role_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     put:
       summary: Assign tenant role to organization group
       description: Assigns one tenant-scoped role to one existing Keycloak organization group and mirrors the result locally for all members.
@@ -1039,6 +1073,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/members/{username}/roles/{role_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     put:
       summary: Assign tenant role to organization member
       description: Assigns one tenant-scoped role to one Keycloak organization member and mirrors the assignment locally for immediate RBAC effects.
@@ -1124,6 +1160,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/invitations:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List tenant invitations
       description: Lists invitations for the selected tenant. Super Admin only.
@@ -1212,6 +1250,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/invitations/{invitation_id}/resend:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Resend tenant invitation
       description: Rotates the token and expiry of a pending invitation and re-sends the email. Super Admin only.
@@ -1248,6 +1288,8 @@ paths:
           description: Internal server error
 
   /tenants/{tenant_id}/invitations/{invitation_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     delete:
       summary: Revoke tenant invitation
       description: Revokes a pending invitation so its link can no longer be used. Super Admin only.
@@ -1284,6 +1326,8 @@ paths:
           description: Internal server error
 
   /invitations/validate:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Validate an invitation token
       description: Public endpoint. Validates an invitation token and returns safe metadata for the accept page.
@@ -1316,6 +1360,8 @@ paths:
           description: Internal server error
 
   /invitations/accept:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Accept an invitation
       description: Public endpoint. Sets the password, creates and activates the account, and assigns roles.
@@ -1349,6 +1395,8 @@ paths:
 
 
   /home-stats:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Home-page stat cards
       description: >-
@@ -1393,6 +1441,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /home-recent-instances:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Home-page recent process instances
       description: >-
@@ -1443,6 +1493,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /home-my-tasks:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Home-page my pending tasks
       description: >-
@@ -1490,6 +1542,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /task-review:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Task Review inbox — pending tasks list
       description: >-
@@ -1568,6 +1622,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /task-review/{work_item_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Task Review — composite detail
       description: >-
@@ -1630,6 +1686,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /task-review/{work_item_id}/submit:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Task Review — submit (claim-then-complete)
       description: >-
@@ -1697,6 +1755,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /capabilities:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Current-user UI capability hints
       description: >-
@@ -1766,6 +1826,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /process-models:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Processes page — enriched process model list
       description: >-
@@ -1873,6 +1935,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-groups:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Processes page — process groups list
       description: >-
@@ -1957,6 +2021,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-groups/{modified_process_group_identifier}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     put:
       summary: Processes page — update process group metadata
       description: >-
@@ -2071,6 +2137,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process Instances page — list
       description: >-
@@ -2155,6 +2223,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /process-instances/owners:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process Instances page — initiator options
       description: >-
@@ -2206,6 +2276,8 @@ paths:
           description: Unauthorized - user not authenticated
 
   /process-instances/{process_instance_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process Instances page — detail
       description: >-
@@ -2333,6 +2405,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/tasks/{task_guid}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — one task with its data
       description: >-
@@ -2378,6 +2452,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/events:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — Events tab
       description: >-
@@ -2446,6 +2522,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/milestones:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — Milestones tab
       description: >-
@@ -2493,6 +2571,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/completable-tasks:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — Tasks I can complete
       description: >-
@@ -2538,6 +2618,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/pending-tasks:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — Pending tasks
       description: >-
@@ -2581,6 +2663,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
   /process-instances/{process_instance_id}/completed-tasks:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process instance detail — Tasks tab completed lists
       description: >-
@@ -2626,6 +2710,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/suspend:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process instance detail — suspend
       description: >-
@@ -2681,6 +2767,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/resume:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process instance detail — resume
       description: >-
@@ -2736,6 +2824,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/terminate:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process instance detail — terminate
       description: >-
@@ -2791,6 +2881,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-instances/{process_instance_id}/retry:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Retry failed compensation
       operationId: m8flow_backend.routes.process_instances_controller.retry_process_instance
@@ -2828,6 +2920,8 @@ paths:
             or an unexpected execution error occurred (bpmn_core_error or internal_server_error).
 
   /process-models/{modified_process_model_identifier}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Processes page — process model detail
       description: >-
@@ -2998,6 +3092,7 @@ paths:
 
   /process-models/{modified_process_model_identifier}/publish:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
       - $ref: "#/components/parameters/WorkingRevision"
     post:
@@ -3018,6 +3113,7 @@ paths:
 
   /process-models/{modified_process_model_identifier}/versions:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
     get:
       summary: Read the draft and published process model history
@@ -3035,6 +3131,7 @@ paths:
 
   /process-models/{modified_process_model_identifier}/working-version:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - $ref: "#/components/parameters/VersionedProcessModelIdentifier"
       - $ref: "#/components/parameters/WorkingRevision"
     put:
@@ -3069,6 +3166,8 @@ paths:
           description: Working revision required
 
   /process-models/{modified_process_model_identifier}/start:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Processes page — start a process instance
       description: >-
@@ -3169,6 +3268,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/copy:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process-model overview — copy a process model
       description: >-
@@ -3231,6 +3332,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/tests/run:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process-model overview — run BPMN unit tests
       description: >-
@@ -3290,6 +3393,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/script-unit-tests:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process-model overview — list script unit tests
       description: Script-task unit tests stored on the primary BPMN.
@@ -3374,6 +3479,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/script-unit-tests/run:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process-model overview — run a script unit test
       description: >-
@@ -3427,6 +3534,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/files:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Process-model overview — add a file
       description: >-
@@ -3489,6 +3598,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /process-models/{modified_process_model_identifier}/files/{file_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Process Modeler — read one file's raw content
       description: >-
@@ -3656,6 +3767,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List templates
       description: Retrieves a list of templates with optional filtering by latest version, category, tag, owner, visibility, and search query
@@ -3872,6 +3985,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get template by ID
       description: Retrieves a specific template by its unique identifier
@@ -4036,6 +4151,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}/restore:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Restore deleted template
       description: Restores a soft-deleted template (tenant-admin only)
@@ -4082,6 +4199,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}/create-process-model:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Create a process model from a template
       operationId: m8flow_backend.routes.templates_controller.template_create_process_model
@@ -4115,6 +4234,8 @@ paths:
           description: Template not found
 
   /templates/import:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Import template from zip
       description: Creates a new template from an uploaded zip file. Metadata via X-Template-* headers. Zip must contain at least one .bpmn file.
@@ -4164,6 +4285,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}/bpmn:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get BPMN XML
       description: Retrieves the BPMN XML content associated with a specific template
@@ -4205,6 +4328,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Export template as zip
       description: Returns a zip file containing all template files for this version
@@ -4239,6 +4364,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /templates/{id}/files/{file_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get a template file by name
       description: Download a single file (BPMN, JSON, DMN, etc.) by filename
@@ -4356,6 +4483,8 @@ paths:
           description: Internal server error
 
   /templates/process-models/{modified_process_model_identifier}/template-info:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Get template info for a process model
       description: Returns the template provenance info if the process model was created from a template, or null if no template info exists
@@ -4380,6 +4509,8 @@ paths:
                   - $ref: "#/components/schemas/ProcessModelTemplateInfo"
 
   /nats-tokens:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List NATS API keys for the current tenant
       description: >
@@ -4463,6 +4594,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats-tokens/{key_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     delete:
       summary: Revoke a single NATS API key
       description: >
@@ -4511,6 +4644,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/overview:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: NATS server health and throughput
       description: >
@@ -4548,6 +4683,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/streams:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Streams and consumers with pending, lag and delivery figures
       description: >
@@ -4585,6 +4722,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/tenants:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Event backlog and outcome counts per tenant
       description: >
@@ -4617,6 +4756,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/events:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: NATS event history (super-admin)
       description: >
@@ -4727,6 +4868,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/events/summary:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Event counts by outcome
       description: >
@@ -4775,6 +4918,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/events/{audit_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: History for a single event
       description: >
@@ -4840,6 +4985,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /nats/streams/{stream_name}/messages:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Browse raw messages in a stream
       description: >
@@ -4900,6 +5047,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/overview:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Celery workers online, task counts and queue depth
       description: >
@@ -4936,6 +5085,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/workers:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Celery workers with pool, queues, registered tasks and totals
       description: >
@@ -4971,6 +5122,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/tasks:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Running, prefetched and scheduled Celery tasks, plus revoked ids
       description: >
@@ -5006,6 +5159,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/broker:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Celery queues, consumers and unacknowledged messages
       description: >
@@ -5046,6 +5201,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/history:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Recorded Celery tasks, newest first
       description: >
@@ -5149,6 +5306,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/history/{task_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: One recorded Celery task in full
       description: >
@@ -5196,6 +5355,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/task-types:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Outcome counts and runtimes per Celery task type
       description: >
@@ -5245,6 +5406,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/control/revoke:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Revoke or terminate a Celery task
       description: >
@@ -5291,6 +5454,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/control/rate-limit:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Set or remove a Celery task type's rate limit
       description: >
@@ -5337,6 +5502,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/control/time-limit:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Set a Celery task type's soft and hard time limits
       description: >
@@ -5383,6 +5550,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /celery/control/workers/{worker_name}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Run a pool, queue or shutdown command on one worker
       description: >
@@ -5436,6 +5605,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /events/m8flow-trigger:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Receive an external trigger event
       description: >
@@ -5523,6 +5694,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /external-forms/{reference_id}:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Fetch external form context for a secure link (public)
       description: >
@@ -5559,6 +5732,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /external-forms/{reference_id}/submit:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Submit external form data and resume the workflow (public)
       description: >
@@ -5624,6 +5799,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /external-form-notifications/smtp-status:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: Whether this tenant can send external-form emails
       description: >
@@ -5654,6 +5831,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /external-form-notifications:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       summary: List external-form notification tracking rows
       description: >
@@ -5703,6 +5882,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /external-form-notifications/{request_id}/resend:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       summary: Re-issue one external-form link
       description: >
@@ -5756,6 +5937,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /connectors-grouped:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.connectors_controller.connectors_grouped
       summary: Returns service-task operations grouped by connector with metadata
@@ -5772,6 +5955,8 @@ paths:
                   type: object
 
   /connector-templates:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_template_list
       summary: Connector schemas, one descriptor per registered connector
@@ -5789,6 +5974,7 @@ paths:
 
   /connector-templates/{connector_type}:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - name: connector_type
         in: path
         required: true
@@ -5814,6 +6000,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /connector-profiles:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.connector_profiles_controller.connector_profile_list
       summary: Connector profiles for the active tenant
@@ -5882,6 +6070,7 @@ paths:
 
   /connector-profiles/{profile_id}:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - name: profile_id
         in: path
         required: true
@@ -5968,6 +6157,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /named-values:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.named_values_controller.named_value_list
       summary: Named configuration variables for the active tenant
@@ -6015,6 +6206,7 @@ paths:
 
   /named-values/{variable_id}:
     parameters:
+      - $ref: "#/components/parameters/ApiVersion"
       - name: variable_id
         in: path
         required: true
@@ -6096,6 +6288,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /mcp-tools:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.mcp_tools_controller.list_mcp_tools_catalog
       summary: Returns the live MCP tool catalog from the m8flow-mcp server, as the caller
@@ -6139,6 +6333,8 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
   /mcp-tools/ping:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     get:
       operationId: m8flow_backend.routes.mcp_tools_controller.check_mcp_connection
       summary: Bare connectivity/auth check against the m8flow-mcp server, as the caller
@@ -6181,6 +6377,8 @@ paths:
                     type: boolean
 
   /mcp-tools/execute:
+    parameters:
+      - $ref: "#/components/parameters/ApiVersion"
     post:
       operationId: m8flow_backend.routes.mcp_tools_controller.execute_mcp_tool
       summary: Executes one MCP tool as the caller
@@ -6248,6 +6446,18 @@ paths:
 
 components:
   parameters:
+    ApiVersion:
+      name: X-M8Flow-API-Version
+      in: header
+      required: false
+      description: >-
+        Selects the API contract for this request. Supported values are 1.0 and 2.0.
+        Omitting the header selects 1.0; unsupported values return HTTP 400.
+        Currently, both versions use the same contract for all operations.
+      schema:
+        type: string
+        default: "1.0"
+      example: "1.0"
     VersionedProcessModelIdentifier:
       name: modified_process_model_identifier
       in: path

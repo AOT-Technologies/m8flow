@@ -35,6 +35,10 @@ COPY m8flow-designer /app/m8flow-designer
 # as the Vite dev server proxy.
 ARG VITE_BACKEND_BASE_URL=http://localhost:6840
 ENV VITE_BACKEND_BASE_URL=${VITE_BACKEND_BASE_URL}
+# API contract selected by the designer's shared HTTP client. Keep V1 as the
+# default for existing deployments.
+ARG VITE_API_VERSION=1.0
+ENV VITE_API_VERSION=${VITE_API_VERSION}
 # Browser-reachable MCP server URL shown on the MCP Connection page.
 ARG VITE_MCP_SERVER_URL=
 ENV VITE_MCP_SERVER_URL=${VITE_MCP_SERVER_URL}

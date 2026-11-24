@@ -700,6 +700,7 @@ services:
         # Baked into the bundle: must be the browser-reachable backend origin,
         # since it is what the Keycloak login redirect is built from.
         VITE_BACKEND_BASE_URL: "${M8FLOW_FRONTEND_BACKEND_BASE_URL:-http://localhost:6840}"
+        VITE_API_VERSION: "${M8FLOW_API_VERSION:-1.0}"
         # Baked in too; empty shows the "not configured" notice on /mcp-connection.
         VITE_MCP_SERVER_URL: "${M8FLOW_MCP_SERVER_URL:-}"
         # No longer read: System -> Celery is m8flow's own page now, not a link to Flower.

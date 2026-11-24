@@ -41,6 +41,11 @@ def require_permission(
     callable(**kwargs) for anything more complex. Pass `uri=` as a keyword so
     it can't be misread as the leading `action` positional.
 
+    API contract selection (the `X-M8Flow-API-Version` header) does not change
+    the permission resource. `allow_uri` canonicalizes version-prefixed paths
+    to the same version-neutral grant, so V1 and V2 handlers for one operation
+    remain protected by the same authorization policy.
+
     `on_deny` reproduces the three deny conventions already in use across
     controllers: "403" raises ApiError(..., 403) (the default); "404" raises
     ApiError(..., 404) to avoid leaking whether a resource exists; "empty"

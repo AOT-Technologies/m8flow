@@ -4,6 +4,31 @@ The backend serves its API under two prefixes on port 6840. This page covers
 the prefixes, authentication, tenant selection, errors, and the endpoints you
 use most.
 
+## API version selection
+
+Requests may select the API contract with the `X-M8Flow-API-Version` header.
+Supported values are `1.0` and `2.0`. If the header is omitted or empty, the
+backend selects `1.0`, preserving existing clients. An unsupported value
+returns HTTP 400 with error code `unsupported_api_version`.
+Responses include `X-M8Flow-API-Version` with the selected version. They also
+include `Vary: X-M8Flow-API-Version` so an intermediary cache does not reuse a
+response across API versions.
+
+The existing `/v1.0/...` URL paths remain valid for compatibility. The header
+selects the contract for those paths. **Currently, no endpoint has a V2-specific
+contract: selecting `2.0` returns the same request and response behavior as
+`1.0` for all current endpoints.** The header establishes the mechanism for
+introducing endpoint-specific V2 behavior later without changing existing V1
+clients.
+Authorization is independent of the selected contract: V1 and V2 requests to
+the same operation are checked against the same version-neutral permission
+resource. The version header does not grant additional access.
+
+```http
+GET /v1.0/m8flow/process-models HTTP/1.1
+X-M8Flow-API-Version: 1.0
+```
+
 ## Prefixes and the OpenAPI spec
 
 | Prefix | Defined in | Contents |

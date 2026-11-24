@@ -6,6 +6,7 @@ import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import m8flowBpmnVitePlugin from 'm8flow-bpmn/vite';
+import { resolveConfiguredApiVersion } from './src/lib/apiVersion';
 
 const m8flowBpmn = m8flowBpmnVitePlugin();
 
@@ -65,6 +66,9 @@ const backendBaseUrl =
   rootEnv.M8FLOW_FRONTEND_BACKEND_BASE_URL ??
   `http://localhost:${backendPort}`;
 const mcpServerUrl = process.env.VITE_MCP_SERVER_URL ?? rootEnv.M8FLOW_MCP_SERVER_URL ?? '';
+const apiVersion = resolveConfiguredApiVersion(
+  process.env.VITE_API_VERSION ?? rootEnv.VITE_API_VERSION ?? rootEnv.M8FLOW_API_VERSION,
+);
 const celeryFlowerUrl =
   process.env.VITE_M8FLOW_CELERY_FLOWER_URL ?? rootEnv.M8FLOW_CELERY_FLOWER_URL ?? '';
 
@@ -132,6 +136,8 @@ export default defineConfig({
         target: backendBaseUrl,
         changeOrigin: true,
         secure: false,
+        // Vite's proxy forwards incoming headers by default, including the
+        // configured X-M8Flow-API-Version request header.
       },
     },
     fs: {
@@ -144,6 +150,7 @@ export default defineConfig({
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
       process.env.VITE_API_BASE_URL ?? '',
     ),
+    'import.meta.env.VITE_API_VERSION': JSON.stringify(apiVersion),
     'import.meta.env.VITE_MCP_SERVER_URL': JSON.stringify(mcpServerUrl),
     'import.meta.env.VITE_M8FLOW_CELERY_FLOWER_URL': JSON.stringify(celeryFlowerUrl),
   },
