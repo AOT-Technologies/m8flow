@@ -68,6 +68,9 @@ export type ProcessesModelsListProps = {
   scopeLabel?: string;
   /** Options for the Group filter dropdown. */
   groups?: { id: string; label: string }[];
+  groupsLoading?: boolean;
+  groupsError?: string | null;
+  onRetryGroups?: () => void;
   /** Process initiators with stable ids and display usernames. */
   owners?: ProcessInstanceOwnerOption[];
   ownerFilter?: string;
@@ -115,6 +118,9 @@ export function ProcessesModelsList({
   groupFilter = null,
   scopeLabel,
   groups = [],
+  groupsLoading = false,
+  groupsError = null,
+  onRetryGroups,
   owners = [],
   ownerFilter = 'all',
   onOwnerFilterChange,
@@ -476,6 +482,21 @@ export function ProcessesModelsList({
             >
               {t('processes.list.clear')}
             </button>
+          ) : null}
+
+          {groupsLoading ? (
+            <span role="status" className="text-[13px] text-muted-foreground">
+              {t('processes.list.group')}: {t('common.loading')}
+            </span>
+          ) : groupsError ? (
+            <div className="flex items-center gap-2 text-sm text-destructive" role="alert">
+              <span>{t('processes.page.loadGroupsFailed')}</span>
+              {onRetryGroups ? (
+                <Button type="button" variant="outline" size="sm" onClick={onRetryGroups}>
+                  {t('common.retry')}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
 
           {/* Counts come from the already-fetched rows, so the status filter

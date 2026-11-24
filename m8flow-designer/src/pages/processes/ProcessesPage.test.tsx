@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -398,6 +398,95 @@ describe('ProcessesPage', () => {
     expect(await screen.findByRole('button', { name: 'Group: All groups' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear' })).not.toBeInTheDocument();
   });
+
+  it.each(['/processes', '/processes?group=finance'])(
+    'lets a read-only user recover from group load failures at %s',
+    async (initial) => {
+      const user = userEvent.setup();
+      let finishRetry!: (response: Response) => void;
+      const pendingRetry = new Promise<Response>((resolve) => { finishRetry = resolve; });
+      const groupRequest = vi.fn()
+        .mockResolvedValueOnce(Response.json({ message: 'Groups unavailable' }, { status: 503 }))
+        .mockReturnValueOnce(pendingRetry)
+        .mockResolvedValueOnce(Response.json([
+          {
+            id: 'finance',
+            tenant_id: 't1',
+            display_name: 'Finance',
+            description: '',
+            model_count: 1,
+            last_run_at: null,
+          },
+        ]));
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.includes('/v1.0/m8flow/process-groups')) return groupRequest(url);
+        if (url.includes('/v1.0/m8flow/process-models')) {
+          return Response.json([
+            {
+              id: 'finance/invoice-approval',
+              display_name: 'Invoice Approval',
+              group_id: 'finance',
+              group_display_name: 'Finance',
+              last_run_at: null,
+              runs_30d: 0,
+              status: 'published',
+            },
+          ]);
+        }
+        return Response.json([]);
+      }));
+
+      renderWithOutlet({
+        scopedTenantId: 't1',
+        selectedTenantId: 't1',
+        isSuperAdmin: false,
+        canReadProcesses: true,
+        canManageProcesses: false,
+        canManageProcessModels: false,
+        canCreateProcessGroups: false,
+        canUpdateProcessGroups: false,
+        canDeleteProcessGroups: false,
+      }, initial);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load process groups');
+      expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
+      expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      const groupLabel = initial.includes('?group=') ? 'Finance' : 'All groups';
+      expect(screen.getByRole('button', { name: `Group: ${groupLabel}` })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(screen.getByRole('status')).toHaveTextContent(/Group: Loading/);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+      expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
+      expect(groupRequest).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        finishRetry(Response.json({ message: 'Still unavailable' }, { status: 503 }));
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent('Failed to load process groups');
+      if (initial.includes('?group=')) {
+        expect(screen.getByRole('button', { name: 'Group: Finance' })).toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Clear' }));
+        expect(screen.getByRole('button', { name: 'Group: All groups' })).toBeInTheDocument();
+        expect(screen.getByRole('alert')).toHaveTextContent('Failed to load process groups');
+      }
+
+      await user.click(screen.getByRole('button', { name: 'Retry' }));
+      await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+      expect(groupRequest).toHaveBeenCalledTimes(3);
+      for (const [url] of groupRequest.mock.calls) {
+        expect(url).toContain('/v1.0/m8flow/process-groups?tenantId=t1');
+      }
+      await user.click(screen.getByRole('button', { name: 'Group: All groups' }));
+      await user.click(await screen.findByRole('menuitemradio', { name: 'Finance' }));
+      expect(screen.getByRole('button', { name: 'Group: Finance' })).toBeInTheDocument();
+      expect(screen.getByText('Invoice Approval')).toBeInTheDocument();
+      expect(screen.queryByTestId('processes-new-group-button')).not.toBeInTheDocument();
+    },
+  );
 
   it('hides Manage groups for All-Tenants super-admin and shows it when a tenant is selected', async () => {
     vi.stubGlobal(

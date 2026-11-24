@@ -321,6 +321,14 @@ export default function ProcessesPage() {
         ownerFilter={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
         groups={groups.map((group) => ({ id: group.id, label: group.display_name || group.id }))}
+        groupsLoading={groupsLoading}
+        groupsError={groupsError}
+        onRetryGroups={() => {
+          if (groupsLoading) return;
+          setGroupsLoading(true);
+          setGroupsError(null);
+          setGroupsRefreshKey((k) => k + 1);
+        }}
         onClearGroupFilter={() => setGroup(null)}
         onFilterByGroup={(groupId) => setGroup(groupId)}
         showTenant={allTenants}
