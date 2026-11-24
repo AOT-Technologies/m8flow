@@ -98,6 +98,7 @@
     "descriptionPlaceholder": "Para que serve este perfil, p. ex., a que ambiente se destina.",
     "valueSaved": "Existe um valor guardado. Deixe em branco para o manter.",
     "offDefault": "Desativado (predefinição)",
+    "onDefault": "Ativado (predefinição)",
     "on": "Ativado",
     "off": "Desativado",
     "stripeLive": "Chave do modo de produção. Os pagamentos efetuados com este perfil são reais.",

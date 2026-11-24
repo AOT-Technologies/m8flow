@@ -4,6 +4,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GLOBAL_TENANT_STORAGE_KEY } from '@/lib/selectedTenant';
+import { NetworkError } from '@/lib/networkErrors';
 import { chooseOption } from '@/test/chooseOption';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import { AppShell } from './AppShell';
@@ -53,7 +54,7 @@ vi.mock('@/lib/api', () => ({
   fetchOrganizationMemberships: () => mockFetchOrganizationMemberships(),
 }));
 
-async function renderShell(initialPath = '/') {
+async function renderShell(initialPath = '/', waitForReady = true) {
   const router = createMemoryRouter(
     [
       {
@@ -74,6 +75,7 @@ async function renderShell(initialPath = '/') {
           { path: 'mcp-tools', element: <div>restricted-outlet</div> },
           { path: 'messages', element: <div>restricted-outlet</div> },
           { path: 'api-keys', element: <div>restricted-outlet</div> },
+          { path: 'system/nats', element: <div>restricted-outlet</div> },
           { path: 'tenant-management', element: <div>tenant-management-outlet</div> },
           { path: 'configuration/secrets', element: <div>configuration-outlet</div> },
           {
@@ -86,11 +88,21 @@ async function renderShell(initialPath = '/') {
     { initialEntries: [initialPath] },
   );
   const rendered = render(<RouterProvider router={router} />);
-  await screen.findByRole('link', { name: 'Home' });
+  if (waitForReady) await screen.findByRole('link', { name: 'Home' });
   return rendered;
 }
 
 describe('AppShell', () => {
+  it('shows Retry for a failed permission bootstrap and restores authorized navigation', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockCheckPermissions.mockRejectedValueOnce(new NetworkError());
+    await renderShell('/', false);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unable to connect.');
+    expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('link', { name: 'Home' })).toBeInTheDocument();
+    expect(mockCheckPermissions).toHaveBeenCalledTimes(2);
+  });
   it.each(['/templates', '/task-review', '/connectors', '/mcp-connection', '/mcp-tools', '/messages', '/api-keys', '/tenant-management'])('redirects users away from unpermitted %s', async (path) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
@@ -275,6 +287,27 @@ describe('AppShell', () => {
     mockCheckPermissions.mockResolvedValue({ '/m8flow/celery/overview': { GET: false } });
     await renderShell();
     expect(screen.queryByText('System')).not.toBeInTheDocument();
+  });
+
+  it('shows System → NATS only when the backend grants NATS monitoring (M8F-700)', async () => {
+    // Tenant-admin: the backend denies NATS monitoring.
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/nats/streams': { GET: false },
+    });
+    const { unmount } = await renderShell('/system/nats');
+    expect(screen.queryByText('System')).not.toBeInTheDocument();
+    // A direct visit is bounced home.
+    expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+    unmount();
+
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/nats/streams': { GET: true },
+    });
+    await renderShell('/system/nats');
+    expect(await screen.findByRole('link', { name: 'NATS' })).toHaveAttribute('href', '/system/nats');
+    expect(screen.getByText('restricted-outlet')).toBeInTheDocument();
   });
   afterEach(() => {
     vi.clearAllMocks();

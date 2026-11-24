@@ -41,6 +41,7 @@ import { scriptContextPadModule } from './features/scriptContextPad';
 import { serviceTaskConnectorPanelModule } from './features/serviceTaskConnectorPanel';
 import { taskSizingModule } from './features/taskSizingBehavior';
 import { zoomControlsModule } from './features/zoomControls';
+import { paletteMinimizeModule } from './features/paletteMinimize';
 
 /**
  * @param {import('bpmn-js/lib/BaseViewer').BaseViewerOptions} [options]
@@ -90,6 +91,7 @@ Modeler.prototype._m8flowModules = [
   // sizing override must win in DI resolution.
   taskSizingModule,
   zoomControlsModule,
+  paletteMinimizeModule,
   canvasI18nModule,
 ];
 

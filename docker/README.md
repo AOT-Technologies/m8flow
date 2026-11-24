@@ -164,6 +164,22 @@ docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f docker/m8f
 docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
 
+Keycloak is healthy only after its login flows and realm bootstrap have completed.
+The proxy waits for that readiness, so new installations cannot expose an
+identity-first login page while organization seeding is still running. Username
+and password are collected together in both the shared and master realms.
+
+The healthcheck allows a 300-second startup grace period, followed by 12 failed
+checks at 10-second intervals before reporting unhealthy (probe duration can
+extend that window). Critical login-flow failures stop Keycloak immediately
+after its bounded retries. Cold startup time depends on CPU and database
+performance; inspect the entrypoint logs before extending these Compose settings.
+
+Normal rebuilds reuse the backend's Python dependency layer and Keycloak's Maven
+cache. Avoid `--no-cache` for routine source changes. For theme-only edits, rebuild
+just the authentication service with
+`docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build keycloak keycloak-proxy`.
+
 Access the app at **http://localhost:6853** (or the host/port you set via `M8FLOW_FRONTEND_PORT`). Keycloak admin and auth: **http://localhost:6842**.
 
 ---

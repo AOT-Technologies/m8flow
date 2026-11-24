@@ -97,6 +97,7 @@
     "descriptionPlaceholder": "What this profile is for, e.g. which environment it targets.",
     "valueSaved": "Leave blank to keep the saved value.",
     "offDefault": "Off (default)",
+    "onDefault": "On (default)",
     "on": "On",
     "off": "Off",
     "stripeLive": "Live mode key. Payments made with this profile are real.",

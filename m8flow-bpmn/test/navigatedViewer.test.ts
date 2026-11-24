@@ -3,13 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 // jsdom can't construct a real diagram-js canvas; capture the options the
 // m8flow viewer hands to bpmn-js instead.
 const received = vi.hoisted(() => [] as any[]);
+const container = vi.hoisted(() => ({ el: null as HTMLElement | null }));
 
 vi.mock('bpmn-js/lib/NavigatedViewer', () => {
   function FakeBpmnViewer(options: any) {
     received.push(options);
   }
   FakeBpmnViewer.prototype._modules = [];
-  FakeBpmnViewer.prototype.get = () => ({ getContainer: () => document.createElement('div') });
+  FakeBpmnViewer.prototype.get = () => ({
+    getContainer: () => (container.el ??= document.createElement('div')),
+  });
   return { default: FakeBpmnViewer };
 });
 
@@ -27,5 +30,10 @@ describe('NavigatedViewer m8flowRenderer options', () => {
       { neutralEndEvents: true },
     ]);
     expect(received[0].container).toBe('host');
+  });
+
+  it('marks the container as a viewer so its zoom pill sits at the top', () => {
+    new (NavigatedViewer as any)();
+    expect(container.el?.classList.contains('m8flow-bpmn--viewer')).toBe(true);
   });
 });

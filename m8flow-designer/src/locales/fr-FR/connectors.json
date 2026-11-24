@@ -98,6 +98,7 @@
     "descriptionPlaceholder": "À quoi sert ce profil, p. ex. l’environnement qu’il cible.",
     "valueSaved": "Une valeur est enregistrée. Laissez vide pour la conserver.",
     "offDefault": "Désactivé (par défaut)",
+    "onDefault": "Activé (par défaut)",
     "on": "Activé",
     "off": "Désactivé",
     "stripeLive": "Clé du mode production. Les paiements effectués avec ce profil sont réels.",

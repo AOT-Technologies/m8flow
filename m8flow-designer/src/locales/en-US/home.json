@@ -8,7 +8,15 @@
     "completedToday": "Completed today",
     "avgCompletionTime": "Avg. completion time",
     "minutesUnit": "m",
-    "totalTenants": "Total tenants"
+    "totalTenants": "Total tenants",
+    "descriptions": {
+      "activeProcessInstances": "Running, waiting, or awaiting input",
+      "errorsNeedingReview": "Instances stopped by an error",
+      "completedToday": "Instances completed since midnight (UTC)",
+      "tasksWaitingOnMe": "Open tasks assigned to you",
+      "avgCompletionTime": "Average run time of completed instances",
+      "totalTenants": "Tenants across the platform"
+    }
   },
   "myTasks": {
     "title": "My tasks",

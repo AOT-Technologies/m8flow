@@ -34,6 +34,7 @@ import {
   processModelStatusHint,
 } from '@/components/library/pill/processModelStatusToPillProps';
 import { startErrorMessage } from '@/lib/startProcessError';
+import { NetworkError } from '@/lib/networkErrors';
 import { useProcessStart } from '@/components/useProcessStart';
 import { Breadcrumbs, type BreadcrumbLinkProps } from '@/components/library/breadcrumbs/Breadcrumbs';
 import { DiagramCanvas } from './components/DiagramCanvas';
@@ -433,6 +434,7 @@ export default function ProcessModelModelerPage() {
       setSavePhase(stillDirty ? 'dirty' : 'saved');
     } catch (err) {
       if (err instanceof ApiError && err.serverMessage) setLifecycleError(err.serverMessage);
+      else if (err instanceof NetworkError) setLifecycleError(err.message);
       setSavePhase('error');
       setTimeout(() => setSavePhase('dirty'), ERROR_FLASH_MS);
     }
@@ -472,7 +474,9 @@ export default function ProcessModelModelerPage() {
   const showNotPrimary = isBpmn && !isPrimary && Boolean(primaryFileName);
 
   const allowLeaveRef = useRef(false);
-  const dirty = savePhase === 'dirty';
+  // 'saving' and 'error' still hold edits the server has not confirmed; leaving
+  // mid-save can abort the request and lose them, so guard every non-saved phase.
+  const dirty = savePhase !== 'saved';
   useBeforeUnload(
     useCallback(
       (event) => {

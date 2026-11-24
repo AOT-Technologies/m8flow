@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode, SVGProps } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 
@@ -9,16 +10,24 @@ interface StatCardProps {
   iconClassName?: string;
   value: ReactNode;
   label: string;
+  /** Destination list (with filters). Omit to render a plain, non-clickable card. */
+  to?: string;
+  /** What the card counts; shown as the native hover tooltip. */
+  description?: string;
 }
 
 /**
- * One of Home's 6 stat cards — icon badge with label on one row, big number below.
- * Generalizes the pattern m8flow-frontend's page-scoped `ActivityMetricCard`
- * (McpConnection.tsx) established, as a shared, mockup-styled component.
+ * One of Home's stat cards — icon badge with label on one row, big number below.
+ * With `to`, the whole card is a link to the matching filtered list (M8F-711).
  */
-export function StatCard({ icon: Icon, iconClassName, value, label }: StatCardProps) {
-  return (
-    <Card>
+export function StatCard({ icon: Icon, iconClassName, value, label, to, description }: StatCardProps) {
+  const card = (
+    <Card
+      className={cn(
+        'h-full transition-shadow',
+        to && 'group-hover/stat:shadow-md group-hover/stat:ring-foreground/20',
+      )}
+    >
       <CardContent className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <span
@@ -34,5 +43,18 @@ export function StatCard({ icon: Icon, iconClassName, value, label }: StatCardPr
         <span className="text-3xl font-semibold tracking-tight text-foreground">{value}</span>
       </CardContent>
     </Card>
+  );
+
+  if (!to) {
+    return <div title={description}>{card}</div>;
+  }
+  return (
+    <Link
+      to={to}
+      title={description}
+      className="group/stat block rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      {card}
+    </Link>
   );
 }

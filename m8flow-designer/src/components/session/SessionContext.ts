@@ -34,6 +34,8 @@ export type ActiveTenant = {
 /** UI capability flags (camelCase mirror of the backend `Capabilities`). */
 export type CapabilityFlags = {
   status?: 'loading' | 'ready' | 'error';
+  loadError?: string | null;
+  retryPermissions?: () => void;
   canStartProcesses: boolean;
   canReviewTasks: boolean;
   /** May open the Task Review inbox (permissions-check GET /m8flow/task-review-access).
@@ -66,7 +68,6 @@ export type CapabilityFlags = {
   canExecuteMcpTools: boolean;
   canReadMessages: boolean;
   canReadNatsMonitoring: boolean;
-  canReadNatsEvents: boolean;
   /** `permissions-check` GET on `/m8flow/celery/overview` (super-admin only). */
   canReadCeleryMonitoring: boolean;
   /** `permissions-check` POST on `/m8flow/celery/control/revoke`: Celery control actions (super-admin only). */

@@ -16,6 +16,7 @@
   },
   "status": {
     "all": "Todos",
+    "active": "Activas",
     "running": "En ejecución",
     "waiting": "En espera",
     "userInputRequired": "Requiere intervención del usuario",
@@ -57,7 +58,8 @@
       "label": "Acciones de la instancia",
       "open": "Abrir",
       "copyId": "Copiar ID de la instancia"
-    }
+    },
+    "clearCompletedToday": "Quitar el filtro Completadas hoy"
   },
   "detail": {
     "heading": "ID de instancia de proceso: {{id}}",

@@ -26,7 +26,20 @@ export type HomeStatsGridProps = {
   showTotalTenants?: boolean;
   /** Permission-check result for GET /m8flow/home-task-count. */
   showTaskCount?: boolean;
+  /** Permission-check result for the Process Instances list; links the instance cards to it. */
+  canOpenInstances?: boolean;
+  /** Permission-check result for Task Review; links "Tasks waiting on me" to the inbox. */
+  canOpenTasks?: boolean;
 };
+
+/** Filtered list each card links to (M8F-711). Tenant scope comes from the
+ * m8flow_selected_tenant cookie on the destination page, so it isn't in the URL. */
+export const STAT_CARD_LINKS = {
+  active: '/process-instances?status=active',
+  errors: '/process-instances?status=error',
+  completedToday: '/process-instances?status=complete&completed=today',
+  tasks: '/task-review',
+} as const;
 
 function formatStat(value: number | null | undefined): string {
   if (value == null) {
@@ -56,7 +69,10 @@ export function HomeStatsGrid({
   stats: statsOverride,
   showTotalTenants = false,
   showTaskCount = false,
+  canOpenInstances = false,
+  canOpenTasks = false,
 }: HomeStatsGridProps) {
+  const instanceLink = (to: string) => (canOpenInstances ? to : undefined);
   const { t } = useTranslation();
   const [stats, setStats] = useState<HomeStats | null>(statsOverride ?? null);
   const [error, setError] = useState<string | null>(null);
@@ -120,18 +136,24 @@ export function HomeStatsGrid({
         iconClassName="bg-info/10 text-info"
         value={loading ? '…' : formatStat(values.active_process_instances)}
         label={t('home.stats.activeProcessInstances')}
+        description={t('home.stats.descriptions.activeProcessInstances')}
+        to={instanceLink(STAT_CARD_LINKS.active)}
       />
       <StatCard
         icon={TriangleAlert}
         iconClassName="bg-destructive/10 text-destructive"
         value={loading ? '…' : formatStat(values.errors_needing_review)}
         label={t('home.stats.errorsNeedingReview')}
+        description={t('home.stats.descriptions.errorsNeedingReview')}
+        to={instanceLink(STAT_CARD_LINKS.errors)}
       />
       <StatCard
         icon={CircleCheck}
         iconClassName="bg-success/10 text-success"
         value={loading ? '…' : formatStat(values.completed_today)}
         label={t('home.stats.completedToday')}
+        description={t('home.stats.descriptions.completedToday')}
+        to={instanceLink(STAT_CARD_LINKS.completedToday)}
       />
       {showTaskCount && values.show_tasks_waiting_on_me ? (
         <StatCard
@@ -139,6 +161,8 @@ export function HomeStatsGrid({
           iconClassName="bg-warning/10 text-warning"
           value={loading ? '…' : formatStat(values.tasks_waiting_on_me)}
           label={t('home.stats.tasksWaitingOnMe')}
+          description={t('home.stats.descriptions.tasksWaitingOnMe')}
+          to={canOpenTasks ? STAT_CARD_LINKS.tasks : undefined}
         />
       ) : null}
       <StatCard
@@ -146,6 +170,7 @@ export function HomeStatsGrid({
         iconClassName="bg-muted text-muted-foreground"
         value={loading ? '…' : formatAvgMinutes(values.avg_completion_minutes, t('home.stats.minutesUnit'))}
         label={t('home.stats.avgCompletionTime')}
+        description={t('home.stats.descriptions.avgCompletionTime')}
       />
       {showTotalTenants ? (
         <StatCard
@@ -153,6 +178,7 @@ export function HomeStatsGrid({
           iconClassName="bg-info/10 text-info"
           value={loading ? '…' : formatStat(values.total_tenants)}
           label={t('home.stats.totalTenants')}
+          description={t('home.stats.descriptions.totalTenants')}
         />
       ) : null}
     </div>

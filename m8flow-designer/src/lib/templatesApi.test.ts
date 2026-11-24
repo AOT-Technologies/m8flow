@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { API_BASE_URL, ApiError } from './api';
+import { API_BASE_URL, ApiError, NetworkError } from './api';
 import {
   contentTypeForTemplateFileName,
   templatePath,
@@ -11,6 +11,11 @@ import {
 } from './templatesApi';
 
 describe('templateErrorMessage', () => {
+  it('shows the friendly connection message for normalized network errors', () => {
+    expect(templateErrorMessage(new NetworkError(), 'fallback')).toBe(
+      'Unable to connect. Please check your internet connection.',
+    );
+  });
   const fallback = 'Failed to import template';
 
   it("returns the backend's message from an ApiError", () => {

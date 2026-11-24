@@ -13,9 +13,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 ENV PATH="/opt/maven/bin:$PATH"
 
 WORKDIR /build
-COPY keycloak-extensions/realm-info-mapper /build/realm-info-mapper
+COPY keycloak-extensions/realm-info-mapper/pom.xml /build/realm-info-mapper/pom.xml
+COPY keycloak-extensions/realm-info-mapper/src /build/realm-info-mapper/src
 
-RUN mvn -f /build/realm-info-mapper/pom.xml clean package -q -DskipTests
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -f /build/realm-info-mapper/pom.xml package -q -DskipTests
 
 # jq's official image is built as a static binary, so it can be copied into
 # Keycloak's UBI Micro runtime without adding a package manager or shared libs.
@@ -58,12 +60,17 @@ RUN chown -R keycloak:keycloak /opt/keycloak/data/import
 COPY docker/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-init-realms.sh
 COPY docker/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-entrypoint.sh
 COPY docker/keycloak-client-secret.sh /opt/keycloak/bin/keycloak-client-secret.sh
+COPY docker/keycloak-login-flow.sh /opt/keycloak/bin/keycloak-login-flow.sh
 RUN chown keycloak:keycloak /opt/keycloak/providers/realm-info-mapper.jar \
   && chmod 0755 /usr/local/bin/jq \
   && chown -R keycloak:keycloak /opt/keycloak/data/import \
   && chown -R keycloak:keycloak /opt/keycloak/themes/m8flow \
   && chmod +x /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-client-secret.sh \
   && chown keycloak:keycloak /opt/keycloak/bin/keycloak-init-realms.sh /opt/keycloak/bin/keycloak-entrypoint.sh /opt/keycloak/bin/keycloak-client-secret.sh
+# Run the source-owned policy regressions in every image build without shipping
+# their mocked commands or fixtures in the runtime image.
+RUN --mount=type=bind,source=docker/tests/test-keycloak-login-flow.sh,target=/tmp/test-keycloak-login-flow.sh \
+    bash /tmp/test-keycloak-login-flow.sh /opt/keycloak/bin/keycloak-login-flow.sh
 USER keycloak
 
 ENTRYPOINT ["/opt/keycloak/bin/keycloak-entrypoint.sh"]

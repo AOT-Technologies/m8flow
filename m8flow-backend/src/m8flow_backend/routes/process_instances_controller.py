@@ -94,6 +94,9 @@ def list_process_instances():
     scope = request.args.get("scope") or None
     if scope is not None and scope not in workflow.INSTANCE_SCOPES:
         raise ApiError("invalid_scope", f"scope must be one of {', '.join(workflow.INSTANCE_SCOPES)}", 400)
+    completed = request.args.get("completed") or None
+    if completed is not None and completed != "today":
+        raise ApiError("invalid_completed", "completed must be 'today'", 400)
     sort = request.args.get("sort") or None
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -118,6 +121,7 @@ def list_process_instances():
         viewer_id=user.id if scope or instance_initiator_scope(user, session=session) else None,
         scope=scope,
         user_id=user.id,
+        completed_today=completed == "today",
     )
     if tenant_id is None:
         _attach_tenant_names(session, rows)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import re
+from functools import lru_cache
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -12,7 +14,7 @@ from m8flow_core.models.principal import PrincipalModel
 from m8flow_core.models.user import UserModel
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
-from m8flow_backend.auth.canonicalize import current_tenant_identifiers
+from m8flow_backend.auth.canonicalize import current_tenant_identifiers, request_memo
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 # m8flow.yml's permission uris are written without this prefix (`/tasks`, not
@@ -582,6 +584,73 @@ def _active_tenant_groups(user: UserModel) -> list:
     return [group for group in groups if counts(getattr(group, "identifier", "") or "")]
 
 
+class _Grant(NamedTuple):
+    """One permission assignment and its target, detached from the ORM so a
+    mid-request commit (which expires ORM rows) cannot trigger per-row reloads."""
+
+    permission: str
+    grant_type: str
+    target_id: int | None
+    command: str | None
+    resource_type: str | None
+    resource_id: str | None
+    uri: str | None
+
+
+def _user_grants(session: Session, user: UserModel) -> tuple[_Grant, ...]:
+    """The user's and their active-tenant groups' grants, loaded once per request.
+
+    Keyed by session, user and active group ids: a tenant switch or a group sync
+    changes the key, and any flush drops the memo (``request_memo``).
+    """
+    groups = _active_tenant_groups(user)
+    memo = request_memo("grants", session)
+    key = None
+    if memo is not None:
+        key = (id(session), user.id, tuple(sorted(group.id for group in groups)))
+        if key in memo:
+            return memo[key]
+    principal_ids = [user.principal.id] if user.principal is not None else []
+    group_ids = [group.id for group in groups]
+    if group_ids:
+        group_principals = session.scalars(
+            select(PrincipalModel).where(PrincipalModel.group_id.in_(group_ids))
+        ).all()
+        principal_ids.extend(p.id for p in group_principals)
+    grants: tuple[_Grant, ...] = ()
+    if principal_ids:
+        assignments = (
+            session.scalars(
+                select(PermissionAssignmentModel)
+                .options(joinedload(PermissionAssignmentModel.permission_target))
+                .where(PermissionAssignmentModel.principal_id.in_(principal_ids))
+            )
+            .unique()
+            .all()
+        )
+        grants = tuple(
+            _Grant(
+                permission=assignment.permission,
+                grant_type=assignment.grant_type,
+                target_id=getattr(target, "id", None),
+                command=getattr(target, "command", None),
+                resource_type=_target_type(target.resource_type),
+                resource_id=target.resource_id,
+                uri=getattr(target, "uri", None),
+            )
+            for assignment in assignments
+            if (target := assignment.permission_target) is not None
+        )
+    if memo is not None:
+        memo[key] = grants
+    return grants
+
+
+def _target_type(value: object) -> str | None:
+    value = getattr(value, "value", value)
+    return str(value).strip() if value is not None else None
+
+
 def _resource_permitted(
     session: Session,
     user: UserModel,
@@ -591,39 +660,17 @@ def _resource_permitted(
     command: str | None = None,
     allow_legacy_commandless: bool = False,
 ) -> bool:
-    principal_ids = [user.principal.id] if user.principal is not None else []
-    group_ids = [group.id for group in _active_tenant_groups(user)]
-    if group_ids:
-        group_principals = session.scalars(
-            select(PrincipalModel).where(PrincipalModel.group_id.in_(group_ids))
-        ).all()
-        principal_ids.extend(p.id for p in group_principals)
-    if not principal_ids:
-        return False
-    assignments = (
-        session.scalars(
-            select(PermissionAssignmentModel)
-            .options(joinedload(PermissionAssignmentModel.permission_target))
-            .where(PermissionAssignmentModel.principal_id.in_(principal_ids))
-        )
-        .unique()
-        .all()
-    )
     permitted = False
-    for assignment in assignments:
-        target = assignment.permission_target
-        if target is None:
-            continue
+    for target in _user_grants(session, user):
         if command is not None and target.command != command and not (
             allow_legacy_commandless and target.command is None
         ):
             continue
         requested_type = str(getattr(resource_type, "value", resource_type) or "").strip()
-        target_type = getattr(target.resource_type, "value", target.resource_type)
-        target_type = str(target_type).strip() if target_type is not None else None
+        target_type = target.resource_type
         target_resource_id = target.resource_id
-        legacy_uri = getattr(target, "uri", None)
-        target_command = getattr(target, "command", None)
+        legacy_uri = target.uri
+        target_command = target.command
         legacy_tenant_target = (
             target_type is None
             and requested_type == "tenant"
@@ -637,7 +684,7 @@ def _resource_permitted(
         if target_type is None and not legacy_tenant_target:
             LOGGER.warning(
                 "Skipping ambiguous permission target id=%s with null resource_type",
-                getattr(target, "id", None),
+                target.target_id,
             )
         if not (target_type == requested_type or legacy_tenant_target):
             continue
@@ -659,9 +706,9 @@ def _resource_permitted(
             str(resource_id), target_resource_id or "", legacy_prefix=legacy_tenant_route
         ):
             continue
-        if assignment.permission not in {action, "all"}:
+        if target.permission not in {action, "all"}:
             continue
-        if assignment.grant_type == "deny":
+        if target.grant_type == "deny":
             return False
         permitted = True
     return permitted
@@ -683,6 +730,13 @@ def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -
             normalized_pattern = uri_pattern.rstrip("/")
             return path == uri_pattern or path.startswith(f"{normalized_pattern}/")
         return path == uri_pattern
+    return _compiled_pattern(uri_pattern).fullmatch(path) is not None
+
+
+@lru_cache(maxsize=1024)
+def _compiled_pattern(uri_pattern: str) -> re.Pattern[str]:
+    """Regex for a wildcard/placeholder target URI. Targets are a small, fixed set
+    (the YAML grants), so compile each once per process rather than per check."""
     regex_parts: list[str] = []
     i = 0
     while i < len(uri_pattern):
@@ -706,7 +760,7 @@ def _path_matches(path: str, uri_pattern: str, *, legacy_prefix: bool = False) -
             continue
         regex_parts.append(re.escape(char))
         i += 1
-    return re.fullmatch("".join(regex_parts), path) is not None
+    return re.compile("".join(regex_parts))
 
 
 def _group_identifier_fallback(user: UserModel, path: str, action: str | None = None) -> bool:

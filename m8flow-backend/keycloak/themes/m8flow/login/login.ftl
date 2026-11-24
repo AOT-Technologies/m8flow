@@ -22,13 +22,9 @@
         </p>
         <div id="kc-form">
           <div id="kc-form-wrapper">
-            <#if usernameHidden??>
-                <div
-                    id="m8f-hidden-username-login"
-                    data-login-restart-url="${url.loginRestartFlowUrl}"
-                    hidden
-                ></div>
-            </#if>
+            <#-- usernameHidden here is a genuine re-authentication of a known user
+                 (template.ftl shows the username and a restart link), so the password
+                 form is shown at once; only login-username.ftl auto-restarts. -->
             <#if realm.password>
                 <form id="kc-form-login" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
                     <#if !usernameHidden??>
@@ -131,8 +127,8 @@
             </#if>
             </div>
         </div>
+        <script><#include "resources/js/restartHiddenUsernameLogin.js" parse=false></script>
         <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
-        <script type="module" src="${url.resourcesPath}/js/restartHiddenUsernameLogin.js"></script>
         <script type="module" src="${url.resourcesPath}/js/masterRealmLogin.js"></script>
     <#elseif section = "socialProviders" >
         <#assign isM8flowRealmLogin = realm.name == 'm8flow'>

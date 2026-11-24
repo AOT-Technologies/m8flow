@@ -1,10 +1,9 @@
 """Scoping and gating tests for the NATS monitoring controller, called directly.
 
-These stub the route-level YAML gate open (``allow_uri`` -> True) so they exercise the
-controller's own logic: super-admin-only broker state, event-history tenant scoping (kept
-correct even though the YAML grant is super-admin only today), payload-inspection gating
-and parameter handling. The real super-admin-only YAML enforcement is covered end to end
-in test_nats_monitoring_permissions.py.
+These stub the route-level YAML gate (``allow_uri``) so they exercise the controller's own
+logic: the gate as the only authority (M8F-700, no role check of its own), event-history
+tenant scoping, payload-inspection gating and parameter handling. The real super-admin-only
+YAML enforcement is covered end to end in test_nats_monitoring_permissions.py.
 """
 
 from __future__ import annotations
@@ -75,19 +74,13 @@ def stub_services(monkeypatch):
     return calls
 
 
-def _as(app, query: str = "", *, user=object(), super_admin: bool = False):
+def _as(app, query: str = "", *, user=object()):
     """Request context for a caller with the given identity."""
     ctx = app.test_request_context(f"/?{query}")
     ctx.push()
     if user is not None:
         g.user = user
-    g._test_super_admin = super_admin
     return ctx
-
-
-@pytest.fixture(autouse=True)
-def super_admin_from_g(monkeypatch):
-    monkeypatch.setattr(controller, "is_super_admin_request", lambda: bool(getattr(g, "_test_super_admin", False)))
 
 
 def _status(response) -> int:
@@ -121,7 +114,7 @@ class TestUnauthenticated:
 @pytest.mark.parametrize("enabled", [True, False])
 def test_event_list_reports_whether_payload_inspection_is_enabled(app, monkeypatch, enabled):
     monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: enabled)
-    ctx = _as(app, super_admin=False)
+    ctx = _as(app)
     try:
         response = controller.list_events()
         assert _status(response) == 200
@@ -130,15 +123,13 @@ def test_event_list_reports_whether_payload_inspection_is_enabled(app, monkeypat
         ctx.pop()
 
 
-class TestBrokerStateIsSuperAdminOnly:
-    """/varz and /jsz are reported per account, not per tenant, so there is no honest
-    way to show them to a tenant-admin."""
+class TestTheGrantIsTheOnlyAuthority:
+    """The route gate decides; the controller adds no role check of its own (M8F-700)."""
 
-    @pytest.mark.parametrize(
-        "name,call", BROKER_ENDPOINTS, ids=[n for n, _ in BROKER_ENDPOINTS]
-    )
-    def test_403_for_an_authenticated_non_super_admin(self, app, name, call):
-        ctx = _as(app, super_admin=False)
+    @pytest.mark.parametrize("name,call", ALL_ENDPOINTS, ids=[n for n, _ in ALL_ENDPOINTS])
+    def test_403_when_the_gate_denies(self, app, monkeypatch, name, call):
+        monkeypatch.setattr("m8flow_backend.authorization.decorators.allow_uri", lambda *_a, **_k: False)
+        ctx = _as(app)
         try:
             assert _status(call()) == 403
         finally:
@@ -149,8 +140,8 @@ class TestBrokerStateIsSuperAdminOnly:
         [e for e in BROKER_ENDPOINTS if e[0] != "stream_messages"],
         ids=["overview", "streams", "tenants"],
     )
-    def test_200_for_a_super_admin(self, app, name, call):
-        ctx = _as(app, super_admin=True)
+    def test_200_when_the_gate_allows(self, app, name, call):
+        ctx = _as(app)
         try:
             assert _status(call()) == 200
         finally:
@@ -158,19 +149,9 @@ class TestBrokerStateIsSuperAdminOnly:
 
 
 class TestEventHistoryTenantScoping:
-    def test_a_non_super_admin_is_pinned_to_the_active_tenant(self, app, stub_services):
-        ctx = _as(app, super_admin=False)
-        try:
-            controller.list_events()
-        finally:
-            ctx.pop()
-
-        assert stub_services["list_events"]["tenant_id"] == TENANT
-        assert stub_services["list_events"]["all_tenants"] is False
-
-    def test_a_non_super_admin_cannot_opt_into_all_tenants(self, app, stub_services):
-        """The dangerous one: allTenants must be ignored, not honoured."""
-        ctx = _as(app, "allTenants=true", super_admin=False)
+    def test_defaults_to_the_active_tenant(self, app, stub_services):
+        """Cross-tenant is never implicit."""
+        ctx = _as(app)
         try:
             controller.list_events()
         finally:
@@ -179,28 +160,8 @@ class TestEventHistoryTenantScoping:
         assert stub_services["list_events"]["all_tenants"] is False
         assert stub_services["list_events"]["tenant_id"] == TENANT
 
-    def test_a_non_super_admin_cannot_name_another_tenant(self, app, stub_services):
-        ctx = _as(app, f"tenantId={OTHER_TENANT}", super_admin=False)
-        try:
-            controller.list_events()
-        finally:
-            ctx.pop()
-
-        assert stub_services["list_events"]["tenant_id"] == TENANT
-
-    def test_a_super_admin_defaults_to_their_active_tenant(self, app, stub_services):
-        """Cross-tenant is never implicit, even for a super-admin."""
-        ctx = _as(app, super_admin=True)
-        try:
-            controller.list_events()
-        finally:
-            ctx.pop()
-
-        assert stub_services["list_events"]["all_tenants"] is False
-        assert stub_services["list_events"]["tenant_id"] == TENANT
-
-    def test_a_super_admin_can_ask_for_all_tenants(self, app, stub_services):
-        ctx = _as(app, "allTenants=true", super_admin=True)
+    def test_all_tenants_on_request(self, app, stub_services):
+        ctx = _as(app, "allTenants=true")
         try:
             controller.list_events()
         finally:
@@ -208,8 +169,8 @@ class TestEventHistoryTenantScoping:
 
         assert stub_services["list_events"]["all_tenants"] is True
 
-    def test_a_super_admin_can_inspect_a_named_tenant(self, app, stub_services):
-        ctx = _as(app, f"tenantId={OTHER_TENANT}", super_admin=True)
+    def test_one_named_tenant_on_request(self, app, stub_services):
+        ctx = _as(app, f"tenantId={OTHER_TENANT}")
         try:
             controller.list_events()
         finally:
@@ -219,29 +180,29 @@ class TestEventHistoryTenantScoping:
         assert stub_services["list_events"]["all_tenants"] is False
 
     def test_summary_uses_the_same_scoping(self, app, stub_services):
-        ctx = _as(app, "allTenants=true", super_admin=False)
+        ctx = _as(app, "allTenants=true")
         try:
             controller.events_summary()
         finally:
             ctx.pop()
 
-        assert stub_services["summary"]["all_tenants"] is False
-        assert stub_services["summary"]["tenant_id"] == TENANT
+        assert stub_services["summary"]["all_tenants"] is True
+        assert stub_services["summary"]["tenant_id"] is None
 
     def test_get_event_uses_the_same_scoping(self, app, stub_services):
-        ctx = _as(app, "allTenants=true", super_admin=False)
+        ctx = _as(app, "allTenants=true")
         try:
             controller.get_event(1)
         finally:
             ctx.pop()
 
-        assert stub_services["get_event"]["all_tenants"] is False
-        assert stub_services["get_event"]["tenant_id"] == TENANT
+        assert stub_services["get_event"]["all_tenants"] is True
+        assert stub_services["get_event"]["tenant_id"] is None
 
     def test_no_active_tenant_is_passed_through_as_none(self, app, stub_services, monkeypatch):
         """The query service turns this into a 400; the controller must not invent a tenant."""
         monkeypatch.setattr(controller, "current_tenant_id_or_none", lambda: None)
-        ctx = _as(app, super_admin=False)
+        ctx = _as(app)
         try:
             controller.list_events()
         finally:
@@ -253,17 +214,17 @@ class TestEventHistoryTenantScoping:
 
 class TestPayloadInspectionGating:
     def test_stream_messages_403s_when_inspection_is_disabled(self, app):
-        ctx = _as(app, super_admin=True)
+        ctx = _as(app)
         try:
             assert _status(controller.stream_messages("M8FLOW_EVENTS")) == 403
         finally:
             ctx.pop()
 
-    def test_stream_messages_works_for_super_admin_when_enabled(
+    def test_stream_messages_works_when_enabled(
         self, app, monkeypatch, stub_services
     ):
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, super_admin=True)
+        ctx = _as(app)
         try:
             assert _status(controller.stream_messages("M8FLOW_EVENTS")) == 200
         finally:
@@ -272,20 +233,16 @@ class TestPayloadInspectionGating:
         assert stub_services["get_messages"]["stream_name"] == "M8FLOW_EVENTS"
 
     def test_include_payload_403s_when_inspection_is_disabled(self, app):
-        ctx = _as(app, "includePayload=true", super_admin=True)
+        ctx = _as(app, "includePayload=true")
         try:
             assert _status(controller.get_event(1)) == 403
         finally:
             ctx.pop()
 
-    def test_include_payload_works_for_a_non_super_admin_when_enabled(
-        self, app, monkeypatch, stub_services
-    ):
-        """With the YAML gate stubbed open, a non-super-admin's payload read stays safe:
-        the row was already tenant-filtered by `_audit_scope()` before the payload fetch.
-        (Today the YAML grant is super-admin only, so this is defence in depth.)"""
+    def test_include_payload_works_when_enabled(self, app, monkeypatch, stub_services):
+        """The payload read follows the row, which `_audit_scope()` already scoped."""
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, "includePayload=true", super_admin=False)
+        ctx = _as(app, "includePayload=true")
         try:
             assert _status(controller.get_event(1)) == 200
         finally:
@@ -295,7 +252,7 @@ class TestPayloadInspectionGating:
         assert stub_services["get_messages"]["limit"] == 1
 
     def test_event_without_include_payload_never_touches_nats(self, app, stub_services):
-        ctx = _as(app, super_admin=True)
+        ctx = _as(app)
         try:
             assert _status(controller.get_event(1)) == 200
         finally:
@@ -308,7 +265,7 @@ class TestPayloadInspectionGating:
     ):
         """The row stores a pointer; the payload is fetched from NATS, never from the DB."""
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, "includePayload=true", super_admin=True)
+        ctx = _as(app, "includePayload=true")
         try:
             assert _status(controller.get_event(1)) == 200
         finally:
@@ -340,7 +297,7 @@ class TestPayloadInspectionGating:
 
         monkeypatch.setattr(controller, "NatsEventAuditQueryService", Scoped)
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, "includePayload=true", super_admin=False)
+        ctx = _as(app, "includePayload=true")
         try:
             assert _status(controller.get_event(2)) == 404
         finally:
@@ -363,7 +320,7 @@ class TestPayloadInspectionGating:
 
         monkeypatch.setattr(controller, "NatsEventAuditQueryService", Missing)
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, "includePayload=true", super_admin=False)
+        ctx = _as(app, "includePayload=true")
         try:
             assert _status(controller.get_event(999)) == 404
         finally:
@@ -372,7 +329,7 @@ class TestPayloadInspectionGating:
 
 class TestParameterHandling:
     def test_non_integer_page_is_a_400(self, app):
-        ctx = _as(app, "page=banana", super_admin=False)
+        ctx = _as(app, "page=banana")
         try:
             assert _status(controller.list_events()) == 400
         finally:
@@ -383,7 +340,6 @@ class TestParameterHandling:
             app,
             "outcome=rejected_auth&processIdentifier=g%2Fp&username=alice&worker=consumer"
             "&failuresOnly=true&since=100&until=200&page=3&perPage=10",
-            super_admin=False,
         )
         try:
             controller.list_events()
@@ -405,7 +361,7 @@ class TestParameterHandling:
         self, app, monkeypatch, stub_services
     ):
         monkeypatch.setattr(controller, "nats_message_inspection_enabled", lambda: True)
-        ctx = _as(app, "limit=100000&startSeq=5", super_admin=True)
+        ctx = _as(app, "limit=100000&startSeq=5")
         try:
             controller.stream_messages("M8FLOW_EVENTS")
         finally:
@@ -427,7 +383,7 @@ class TestBrokerErrorsPropagate:
                 )
 
         monkeypatch.setattr(controller, "NatsMonitoringService", Down)
-        ctx = _as(app, super_admin=True)
+        ctx = _as(app)
         try:
             assert _status(controller.overview()) == 503
         finally:
@@ -458,7 +414,7 @@ class TestPayloadStreamIsNotCallerControlled:
     def test_a_caller_supplied_stream_name_is_ignored(self, app, monkeypatch, stub_services):
         """The regression guard: this is the cross-tenant read the parameter allowed."""
         self._row("consumer", monkeypatch)
-        ctx = _as(app, "includePayload=true&streamName=M8FLOW_NOTIFICATIONS", super_admin=False)
+        ctx = _as(app, "includePayload=true&streamName=M8FLOW_NOTIFICATIONS")
         try:
             assert _status(controller.get_event(1)) == 200
         finally:
@@ -471,7 +427,7 @@ class TestPayloadStreamIsNotCallerControlled:
 
     def test_the_events_stream_is_used_for_a_consumer_row(self, app, monkeypatch, stub_services):
         self._row("consumer", monkeypatch)
-        ctx = _as(app, "includePayload=true", super_admin=True)
+        ctx = _as(app, "includePayload=true")
         try:
             controller.get_event(1)
         finally:
@@ -485,7 +441,7 @@ class TestPayloadStreamIsNotCallerControlled:
         """Deriving from the worker must actually distinguish the streams, or the fix
         would quietly read the wrong one for notification events."""
         self._row("notification_worker", monkeypatch)
-        ctx = _as(app, "includePayload=true", super_admin=True)
+        ctx = _as(app, "includePayload=true")
         try:
             controller.get_event(1)
         finally:
@@ -496,7 +452,7 @@ class TestPayloadStreamIsNotCallerControlled:
     def test_the_sequence_still_comes_from_the_row(self, app, monkeypatch, stub_services):
         """Guard the other half of the pointer while we are here."""
         self._row("consumer", monkeypatch, seq=7)
-        ctx = _as(app, "includePayload=true&startSeq=999", super_admin=False)
+        ctx = _as(app, "includePayload=true&startSeq=999")
         try:
             controller.get_event(1)
         finally:
@@ -508,7 +464,7 @@ class TestPayloadStreamIsNotCallerControlled:
         """Deployments may rename their streams; the resolver must not hardcode defaults."""
         monkeypatch.setattr(query_service_module, "nats_events_stream_name", lambda: "RENAMED_EVENTS")
         self._row("consumer", monkeypatch)
-        ctx = _as(app, "includePayload=true", super_admin=True)
+        ctx = _as(app, "includePayload=true")
         try:
             controller.get_event(1)
         finally:

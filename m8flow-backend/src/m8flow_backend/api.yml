@@ -2095,7 +2095,18 @@ paths:
           in: query
           schema:
             type: string
-          description: Exact status filter (e.g. running, complete, error, waiting).
+          description: >-
+            Exact status filter (e.g. running, complete, error, waiting), or
+            "active" for every live status (not_started, running,
+            user_input_required, waiting) -- the Home "Active" card's set.
+        - name: completed
+          in: query
+          schema:
+            type: string
+            enum: [today]
+          description: >-
+            "today" keeps instances completed since the server's UTC midnight
+            (the Home "Completed today" card's set).
         - name: search
           in: query
           schema:

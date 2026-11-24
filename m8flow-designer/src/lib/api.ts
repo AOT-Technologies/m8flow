@@ -1,3 +1,5 @@
+import { toNetworkError } from './networkErrors';
+export { NetworkError, toNetworkError } from './networkErrors';
 import {
   getAccessToken,
   type OrganizationMembership,
@@ -131,7 +133,7 @@ function attemptSilentRefresh(): Promise<boolean> {
       credentials: 'include',
     })
       .then((response) => response.ok)
-      .catch(() => false)
+      .catch(toNetworkError)
       .finally(() => {
         refreshInFlight = null;
       });
@@ -176,7 +178,7 @@ async function fetchWithAuthRetry(
     ...init,
     headers,
     credentials: 'include',
-  });
+  }).catch(toNetworkError);
   if (response.status !== 401) {
     return response;
   }
