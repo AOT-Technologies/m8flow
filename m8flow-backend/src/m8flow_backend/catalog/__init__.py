@@ -142,6 +142,11 @@ def save(
         process_model_identifier=path,
         bpmn_xml=xml,
     )
+    # Serialize the core import and the subsequent timer-job reconciliation
+    # with both other catalog writes and the scheduler poller. Otherwise two
+    # concurrent saves of a published model can each import a definition and
+    # briefly expose both sets of timer-start jobs to the poller.
+    versions.lock_tenant(session, tenant_id)
     definition = workflow.import_definition(
         session,
         tenant_id=tenant_id,

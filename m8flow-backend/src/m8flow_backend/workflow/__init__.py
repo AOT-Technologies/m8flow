@@ -373,10 +373,17 @@ def reconcile_process_model_timer_starts(
     Core owns BPMN parsing, timer evaluation, and scheduler execution. The host
     owns the catalog lifecycle, so it removes jobs for draft/paused models and
     retains jobs only for the current imported definition while published.
-    When called during publication, re-import the current primary BPMN through
-    core to create/sync its timer jobs before retiring historical definitions.
+    When called during publication without an active definition, sync the
+    current primary BPMN through core before retiring historical definitions.
+    Reuse an unchanged definition when it already owns an active timer job.
     """
     from m8flow_backend import catalog
+    from m8flow_backend.catalog import versions
+
+    # Use the same transaction-scoped tenant lock as catalog mutations and
+    # PostgreSQL scheduler polling. A second publish reconciliation must see
+    # the first one's committed timer job before deciding to import BPMN.
+    versions.lock_tenant(session, tenant_id)
 
     if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED and active_definition_id is None:
         files = catalog.list_model_files(
@@ -417,20 +424,60 @@ def reconcile_process_model_timer_starts(
             bpmn_text = source_bpmn_xml.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ApiError("invalid_file_content", "BPMN file is not valid UTF-8", 400) from exc
-        definition = import_definition(
-            session,
+        source_dmn_xml = catalog.model_dmn_xml(
             tenant_id=tenant_id,
-            user_id=user_id,
-            bpmn_identifier=process_model_identifier,
-            source_bpmn_xml=bpmn_text,
-            source_dmn_xml=catalog.model_dmn_xml(
-                tenant_id=tenant_id,
-                process_model_identifier=process_model_identifier,
-                bpmn_xml=bpmn_text,
-            ),
-            bpmn_name=primary_bpmn,
+            process_model_identifier=process_model_identifier,
+            bpmn_xml=bpmn_text,
         )
-        active_definition_id = definition.id
+        # A repeated publish/reconcile for an unchanged recurring timer must
+        # not import another process definition and reset its next-fire time.
+        # Draft/paused definitions have had their timer jobs removed, so they
+        # are deliberately re-imported when publishing or resuming.
+        candidates = list(
+            session.scalars(
+                select(BpmnProcessDefinitionModel)
+                .where(
+                    BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+                    BpmnProcessDefinitionModel.properties_json[
+                        PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+                    ].as_string()
+                    == process_model_identifier,
+                )
+                .order_by(BpmnProcessDefinitionModel.id.desc())
+            ).all()
+        )
+        matching_definition = next(
+            (
+                row
+                for row in candidates
+                if _same_definition_sources(row, bpmn_text, source_dmn_xml)
+            ),
+            None,
+        )
+        if matching_definition is not None:
+            has_active_timer_job = session.scalar(
+                select(SchedulerJobModel.id)
+                .where(
+                    SchedulerJobModel.m8f_tenant_id == tenant_id,
+                    SchedulerJobModel.bpmn_process_definition_id == matching_definition.id,
+                    SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
+                )
+                .limit(1)
+            ) is not None
+            if has_active_timer_job:
+                active_definition_id = matching_definition.id
+
+        if active_definition_id is None:
+            definition = import_definition(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                bpmn_identifier=process_model_identifier,
+                source_bpmn_xml=bpmn_text,
+                source_dmn_xml=source_dmn_xml,
+                bpmn_name=primary_bpmn,
+            )
+            active_definition_id = definition.id
 
     definition_ids = list(
         session.scalars(

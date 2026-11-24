@@ -957,6 +957,39 @@ def test_compensation_upgrade_rejects_incompatible_existing_table(
     engine.dispose()
 
 
+def test_compensation_upgrade_requires_composite_process_instance_key(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-process-instance-key.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    composite_unique_indexes = [
+        index
+        for index in sa.inspect(engine).get_indexes("process_instance")
+        if index.get("unique")
+        and index.get("column_names") == ["m8f_tenant_id", "id"]
+    ]
+    assert composite_unique_indexes, "fixture should include the core composite unique index"
+    with engine.begin() as connection:
+        # The squashed baseline may have created these tables from current ORM
+        # metadata; this test exercises the incremental revision itself.
+        for table_name in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
+        connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+        for index in composite_unique_indexes:
+            connection.execute(sa.text(f'DROP INDEX "{index["name"]}"'))
+
+    with pytest.raises(RuntimeError, match="unique index on \\(m8f_tenant_id, id\\)"):
+        command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert not set(_JOURNAL_TABLES) & set(inspector.get_table_names())
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == previous_revision
+    engine.dispose()
+
+
 def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
     database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)

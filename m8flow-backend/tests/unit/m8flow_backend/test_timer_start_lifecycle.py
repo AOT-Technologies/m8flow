@@ -188,6 +188,41 @@ def test_timer_start_lifecycle_publishes_recurring_independent_instances_and_pau
     jobs = _timer_jobs(db_session, tenant_id, model_id)
     assert [job.job_type for job in jobs] == ["timer_start"]
 
+    # Repeating the same publish reconciliation must reuse the active
+    # definition and preserve its scheduled fire time instead of importing a
+    # second definition and resetting the recurring timer.
+    active_job_id = jobs[0].id
+    active_run_at = jobs[0].run_at
+    definition_count = db_session.scalar(
+        sa.select(sa.func.count(BpmnProcessDefinitionModel.id)).where(
+            BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+            BpmnProcessDefinitionModel.properties_json[
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+            ].as_string()
+            == model_id,
+        )
+    )
+    workflow.reconcile_process_model_timer_starts(
+        db_session,
+        tenant_id=tenant_id,
+        process_model_identifier=model_id,
+        status=identity["status"],
+        user_id=user.id,
+    )
+    jobs = _timer_jobs(db_session, tenant_id, model_id)
+    assert len(jobs) == 1
+    assert jobs[0].id == active_job_id
+    assert jobs[0].run_at == active_run_at
+    assert db_session.scalar(
+        sa.select(sa.func.count(BpmnProcessDefinitionModel.id)).where(
+            BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+            BpmnProcessDefinitionModel.properties_json[
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+            ].as_string()
+            == model_id,
+        )
+    ) == definition_count
+
     now = datetime.now(timezone.utc)
     jobs[0].run_at = now - timedelta(seconds=1)
     db_session.commit()

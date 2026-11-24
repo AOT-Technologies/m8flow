@@ -66,6 +66,39 @@ def _tenant_index(table: str) -> str:
     return f"ix_{revision}_{table}_m8f_tenant_id"
 
 
+def _validate_process_instance_tenant_key(bind: sa.Connection) -> None:
+    """Fail before creating journal tables if the composite FK target is absent."""
+    inspector = sa.inspect(bind)
+    table = "process_instance"
+    columns = ("m8f_tenant_id", "id")
+    if not inspector.has_table(table):
+        raise RuntimeError(
+            "Cannot create the compensation journal: required table "
+            "'process_instance' is missing. Upgrade the core schema first."
+        )
+
+    primary_key = tuple(inspector.get_pk_constraint(table).get("constrained_columns") or ())
+    unique_constraints = {
+        tuple(constraint.get("column_names") or ())
+        for constraint in inspector.get_unique_constraints(table)
+    }
+    unique_indexes = {
+        tuple(index.get("column_names") or ())
+        for index in inspector.get_indexes(table)
+        if index.get("unique")
+        and index.get("column_names")
+        and not any(key.endswith("_where") for key in index.get("dialect_options", {}))
+    }
+    if not any(key == columns for key in (primary_key, *unique_constraints, *unique_indexes)):
+        raise RuntimeError(
+            "Cannot create the compensation journal: 'process_instance' must have a "
+            "primary key, unique constraint, or non-partial unique index on "
+            "(m8f_tenant_id, id) for the tenant-scoped foreign key. "
+            "Restore the core schema's 'm8f_process_instance_tenant_id_key' unique index "
+            "and rerun the migration."
+        )
+
+
 def _owns_table(bind: sa.Connection, table: str, creation_marker: str) -> bool:
     # Fresh inspector per check: Inspector caches reflection, so never reuse one across DDL.
     inspector = sa.inspect(bind)
@@ -295,6 +328,7 @@ def _journal_definitions() -> dict[str, list[SchemaItem]]:
 
 def upgrade() -> None:
     bind = op.get_bind()
+    _validate_process_instance_tenant_key(bind)
     definitions = _journal_definitions()
     inspector = sa.inspect(bind)
     for name, items in definitions.items():
