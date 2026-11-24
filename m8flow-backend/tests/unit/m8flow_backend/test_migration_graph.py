@@ -13,7 +13,9 @@ _UPSTREAM_MERGE = "c81d2e3f4a56"
 _NATS_REVOKE = "c7e9a1b3d5f7"
 _RUN_STATS_INDEX = "e9c4b2a71f53"
 _ERROR_CREATED_AT = "d8e9f0a1b2c3"
-_HEAD = "a3f4e5d6c7b8"
+_PREVIOUS_HEAD = "a3f4e5d6c7b8"
+_HEAD = "b6c7d8e9f0a1"
+_TERMINAL_REVISIONS = {_PREVIOUS_HEAD, _HEAD}
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -43,6 +45,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     ]
     assert len(all_revisions) == len(set(all_revisions))
     assert "d1e2f3a4b5c6" in all_revisions
+    assert _PREVIOUS_HEAD in all_revisions
 
     # These are the two heads that existed when the NATS and external-form
     # migrations were deployed. Both must reach the single current head.
@@ -62,7 +65,8 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     # Both feature branches must be reachable from the common host history.
     assert _required_revisions(script, "f7a8b9c0d1e2") == {
         "fa8b9c0d1e2f", "fbcad9e02138", "e2f3a4b5c6d7", "e1f2a3b4c5d6",
-        "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT, _HEAD,
+        "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT,
+        *_TERMINAL_REVISIONS,
     }
     assert _required_revisions(script, "fa8b9c0d1e2f") == {
         "d1e2f3a4b5c6",
@@ -78,20 +82,24 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
         _NATS_REVOKE,
         _RUN_STATS_INDEX,
         _ERROR_CREATED_AT,
-        _HEAD,
+        *_TERMINAL_REVISIONS,
     }
 
     # Keep the upgrade paths for databases already stamped on either branch.
     assert _required_revisions(script, "fbcad9e02138") == {
-        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT, _HEAD,
+        "e2f3a4b5c6d7", "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT,
+        *_TERMINAL_REVISIONS,
     }
     assert _required_revisions(script, "e2f3a4b5c6d7") == {
         "d2f4a6b8c0e1", "e3f5a7c9d1b2", "f7a8b9c0d1e2", "fa8b9c0d1e2f", "fbcad9e02138",
-        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT, _HEAD,
+        "e1f2a3b4c5d6", "b603fd822b22", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX,
+        _ERROR_CREATED_AT, *_TERMINAL_REVISIONS,
     }
     assert _required_revisions(script, "b603fd822b22") == {
-        "e2f3a4b5c6d7", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT, _HEAD,
+        "e2f3a4b5c6d7", "9f2c6d4b8e71", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT,
+        *_TERMINAL_REVISIONS,
     }
     assert _required_revisions(script, "9f2c6d4b8e71") == {
-        "e1f2a3b4c5d6", "b603fd822b22", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT, _HEAD,
+        "e1f2a3b4c5d6", "b603fd822b22", _UPSTREAM_MERGE, _NATS_REVOKE, _RUN_STATS_INDEX, _ERROR_CREATED_AT,
+        *_TERMINAL_REVISIONS,
     }
