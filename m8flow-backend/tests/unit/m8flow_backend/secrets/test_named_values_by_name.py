@@ -119,3 +119,17 @@ def test_a_row_backfilled_from_a_legacy_secret_reads_that_secret(db_session, use
     db_session.commit()
 
     assert named_values.value_by_name(db_session, tenant_id=TENANT, name="NATS_SMTP_HOST") == "legacy.example.test"
+
+
+def test_a_name_differing_only_by_case_is_rejected_so_lookups_stay_unambiguous(db_session, user):
+    from m8flow_backend.errors import ApiError
+
+    _create(db_session, user, "NATS_SMTP_HOST", "smtp.example.test", sensitive=True)
+
+    with pytest.raises(ApiError) as raised:
+        _create(db_session, user, "nats_smtp_host", "other.example.test", sensitive=True)
+
+    assert raised.value.status_code == 409
+    db_session.rollback()
+    assert db_session.query(NamedValueModel).filter_by(m8f_tenant_id=TENANT).count() == 1
+    assert named_values.value_by_name(db_session, tenant_id=TENANT, name="nats_smtp_host") == "smtp.example.test"

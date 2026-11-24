@@ -1,4 +1,4 @@
-import { render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mockFetchNatsEmailStatus = vi.fn();
@@ -40,6 +40,25 @@ describe('useNatsEmailStatus', () => {
 
     expect(mockFetchNatsEmailStatus).toHaveBeenCalledTimes(2);
     expect(result.current.status).toEqual(STATUS);
+  });
+
+  it('ignores an older response that arrives after a newer request started', async () => {
+    let resolveOld: (value: unknown) => void = () => {};
+    let resolveNew: (value: unknown) => void = () => {};
+    mockFetchNatsEmailStatus
+      .mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)))
+      .mockReturnValueOnce(new Promise((resolve) => (resolveNew = resolve)));
+    const { result, rerender } = renderHook(
+      ({ reloadKey }) => useNatsEmailStatus({ tenantId: 't1', enabled: true, reloadKey }),
+      { initialProps: { reloadKey: 0 } },
+    );
+    rerender({ reloadKey: 1 });
+
+    const newer = { ...STATUS, configured: true };
+    await act(async () => resolveNew(newer));
+    await act(async () => resolveOld(STATUS));
+
+    expect(result.current.status).toEqual(newer);
   });
 
   it('starts over for a different tenant', async () => {

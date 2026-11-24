@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "Ulkoisten lomakkeiden sähköposteja ei voi vielä lähettää",
     "body": "NATS-ilmoitustyöprosessi lähettää ulkoisten lomakkeiden linkit tämän vuokralaisen NATS_SMTP_*-määritysmuuttujilla. Lisää ne kohdassa ”Määritä NATS”.",
-    "waiting": "Lähetystä odottavat sähköpostit: {{count}}. Ne lähetetään automaattisesti, kun pakolliset salaisuudet on asetettu.",
+    "waiting": "Lähetystä odottavat sähköpostit: {{count}}. Ne lähetetään automaattisesti, kun pakolliset muuttujat on asetettu.",
     "missing": "Puuttuvat pakolliset muuttujat:",
     "unreadable": "Näitä muuttujia ei voi lukea (tyhjä arvo, tai salausavain on vaihtunut):",
     "configure": "Määritä NATS",

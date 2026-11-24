@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "External form emails can't be sent yet",
     "body": "The NATS notification worker emails external form links using this tenant's NATS_SMTP_* configuration variables. Add them with Configure NATS.",
-    "waiting": "Emails waiting to send: {{count}}. They go out automatically once the required secrets are set.",
+    "waiting": "Emails waiting to send: {{count}}. They go out automatically once the required variables are set.",
     "missing": "Missing required variables:",
     "unreadable": "These variables can't be read (blank, or the encryption key changed):",
     "configure": "Configure NATS",

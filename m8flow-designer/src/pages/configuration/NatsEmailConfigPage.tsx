@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { Alert } from '@/components/library/alert/Alert';
-import { useCapabilities } from '@/components/session/hooks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -19,7 +18,8 @@ import {
 import { fetchNatsEmailStatus, secretsErrorMessage, type NatsEmailSecretKey, type NatsEmailStatus } from '@/lib/secretsApi';
 
 import { ConfigurationBackButton } from './ConfigurationBackButton';
-import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
+import { ConfigurationGate } from './ConfigurationGate';
+import { NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
 
 type FieldKind = 'host' | 'port' | 'email' | 'text' | 'password' | 'boolean';
 type FieldId = 'host' | 'port' | 'starttls' | 'ssl' | 'fromEmail' | 'username' | 'password';
@@ -43,16 +43,23 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+$/;
 export default function NatsEmailConfigPage() {
   const { t } = useTranslation();
   return (
+    // Reading the status needs /secrets (ConfigurationGate); the settings themselves are
+    // configuration variables, so NamedValuesGate also requires a confirmed tenant: a
+    // super-admin's selection checked against the tenant list, or the selected-tenant cookie.
     <ConfigurationGate title={t('configuration.natsEmail.page.title')} requireTenant>
-      <NatsEmailConfigBody />
+      <NamedValuesGate title={t('configuration.natsEmail.page.title')}>
+        <NatsEmailConfigBody />
+      </NamedValuesGate>
     </ConfigurationGate>
   );
 }
 
 function NatsEmailConfigBody() {
   const { t } = useTranslation();
-  const { scopedTenantId } = useConfigurationContext();
-  const { canCreateNamedValues, canUpdateNamedValues } = useCapabilities();
+  const { tenantId, isSuperAdmin, canCreateNamedValues, canUpdateNamedValues } = useNamedValuesContext();
+  // Same tenant rule as the Configuration variables page: a super-admin passes the checked
+  // tenant explicitly; everyone else is scoped by the backend's selected-tenant cookie.
+  const scopedTenantId = isSuperAdmin ? tenantId : null;
   // Each field is saved as a sensitive configuration variable: created on first save,
   // updated after that, so editing needs both.
   const canEdit = canCreateNamedValues && canUpdateNamedValues;

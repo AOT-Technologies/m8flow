@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "E-Mails für externe Formulare können noch nicht gesendet werden",
     "body": "Der NATS-Benachrichtigungsworker versendet Links zu externen Formularen mit den NATS_SMTP_*-Konfigurationsvariablen dieses Mandanten. Legen Sie sie über „NATS konfigurieren“ an.",
-    "waiting": "Wartende E-Mails: {{count}}. Sie werden automatisch gesendet, sobald die erforderlichen Secrets festgelegt sind.",
+    "waiting": "Wartende E-Mails: {{count}}. Sie werden automatisch gesendet, sobald die erforderlichen Variablen festgelegt sind.",
     "missing": "Fehlende erforderliche Variablen:",
     "unreadable": "Diese Variablen können nicht gelesen werden (leer, oder der Verschlüsselungsschlüssel wurde geändert):",
     "configure": "NATS konfigurieren",

@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "Os e-mails de formulários externos ainda não podem ser enviados",
     "body": "O worker de notificações do NATS envia os links de formulários externos usando as variáveis de configuração NATS_SMTP_* deste tenant. Adicione-as em \"Configurar NATS\".",
-    "waiting": "E-mails aguardando envio: {{count}}. Eles serão enviados automaticamente assim que os segredos obrigatórios forem definidos.",
+    "waiting": "E-mails aguardando envio: {{count}}. Eles serão enviados automaticamente assim que as variáveis obrigatórias forem definidas.",
     "missing": "Variáveis obrigatórias ausentes:",
     "unreadable": "Não é possível ler estas variáveis (em branco, ou a chave de criptografia mudou):",
     "configure": "Configurar NATS",

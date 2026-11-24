@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "暂时无法发送外部表单邮件",
     "body": "NATS 通知 worker 使用此租户的 NATS_SMTP_* 配置变量发送外部表单链接。请通过“配置 NATS”添加。",
-    "waiting": "等待发送的邮件：{{count}} 封。设置必需的机密后将自动发送。",
+    "waiting": "等待发送的邮件：{{count}} 封。设置必需的变量后将自动发送。",
     "missing": "缺少必需的变量：",
     "unreadable": "无法读取以下变量（值为空，或加密密钥已更改）：",
     "configure": "配置 NATS",

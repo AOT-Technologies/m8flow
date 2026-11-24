@@ -3,7 +3,7 @@
   "natsEmail": {
     "title": "E-maily externích formulářů zatím nelze odesílat",
     "body": "Pracovní proces oznámení NATS odesílá odkazy na externí formuláře pomocí konfiguračních proměnných NATS_SMTP_* tohoto tenanta. Přidejte je přes „Konfigurovat NATS“.",
-    "waiting": "E-maily čekající na odeslání: {{count}}. Odešlou se automaticky, jakmile nastavíte povinné tajné kódy.",
+    "waiting": "E-maily čekající na odeslání: {{count}}. Odešlou se automaticky, jakmile nastavíte povinné proměnné.",
     "missing": "Chybějící povinné proměnné:",
     "unreadable": "Tyto proměnné nelze přečíst (prázdná hodnota, nebo se změnil šifrovací klíč):",
     "configure": "Konfigurovat NATS",

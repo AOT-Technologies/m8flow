@@ -10,6 +10,7 @@ const mockUseCapabilities = vi.fn();
 vi.mock('@/components/session/hooks', () => ({
   useActiveTenant: () => mockUseActiveTenant(),
   useCapabilities: () => mockUseCapabilities(),
+  useTenantRegistry: () => ({ tenants: [{ id: 't1', name: 'Tenant 1' }] }),
 }));
 
 const mockFetchNatsEmailStatus = vi.fn();
@@ -61,11 +62,14 @@ const STATUS = {
   waitingCount: 2,
 };
 
+// A regular user whose tenant the backend has confirmed (selected-tenant cookie).
 const MANAGE: SessionFixtureContext = {
   scopedTenantId: null,
+  activeTenantId: 't1',
   selectedTenantId: 't1',
   isSuperAdmin: false,
   canReadSecrets: true,
+  canReadNamedValues: true,
   canCreateNamedValues: true,
   canUpdateNamedValues: true,
 };
@@ -231,5 +235,33 @@ describe('NatsEmailConfigPage', () => {
     expect(
       await screen.findByText('Could not save NATS_SMTP_FROM_EMAIL: vault down Already saved: NATS_SMTP_HOST.'),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    ['a super-admin under All Tenants', { ...MANAGE, isSuperAdmin: true, activeTenantId: null, selectedTenantId: null }],
+    ['a super-admin whose stored tenant no longer exists', { ...MANAGE, isSuperAdmin: true, scopedTenantId: 'gone' }],
+    ['a user without a confirmed tenant', { ...MANAGE, activeTenantId: null }],
+  ])('asks for a tenant and calls no API for %s', async (_label, context) => {
+    renderPage(context);
+
+    expect(await screen.findByText('Choose a tenant')).toBeInTheDocument();
+    expect(mockFetchNatsEmailStatus).not.toHaveBeenCalled();
+    expect(mockFetchNamedValues).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('nats-email-save')).not.toBeInTheDocument();
+  });
+
+  it('sends a super-admin\'s checked tenant with every request', async () => {
+    mockFetchNatsEmailStatus.mockResolvedValue({ ...STATUS, unreadableKeys: [], configuredKeys: [] });
+    mockCreateNamedValue.mockResolvedValue({});
+    renderPage({ ...MANAGE, isSuperAdmin: true, scopedTenantId: 't1' });
+
+    fireEvent.change(await screen.findByTestId('nats-email-host'), { target: { value: 'smtp.example.com' } });
+    fireEvent.change(screen.getByTestId('nats-email-fromEmail'), { target: { value: 'noreply@example.com' } });
+    fireEvent.click(screen.getByTestId('nats-email-save'));
+
+    expect(await screen.findByTestId('named-values-page')).toBeInTheDocument();
+    expect(mockFetchNatsEmailStatus).toHaveBeenCalledWith('t1');
+    expect(mockFetchNamedValues).toHaveBeenCalledWith('t1');
+    expect(mockCreateNamedValue).toHaveBeenCalledWith({ name: 'NATS_SMTP_HOST', value: 'smtp.example.com', is_sensitive: true }, 't1');
   });
 });
