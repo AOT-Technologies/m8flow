@@ -143,19 +143,7 @@ def _create_all_tables() -> None:
     # variable revision below the current-main head owns these additions, so
     # do not create them here from today's ORM metadata or that later revision
     # would see a partially-applied schema and refuse to run.
-    later_tables = {
-        "m8flow_named_value",
-        "m8flow_connector_variable",
-        "compensation_scope",
-        "compensation_run",
-        "compensation_record",
-        "signal_registry_state",
-        "signal_publication",
-        "signal_subscription",
-        "signal_delivery",
-        "message_subscription",
-        "message_delivery_receipt",
-    }
+    later_tables = {"m8flow_named_value", "m8flow_connector_variable"}
     later_connector_columns = {"provider_key", "schema_version"}
     for table in current_metadata.tables.values():
         if table.name in later_tables:

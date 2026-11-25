@@ -7,6 +7,7 @@ import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy.orm import Session
 
 from m8flow_backend.catalog import default_bpmn_xml, versions
@@ -89,7 +90,7 @@ def test_catalog_migration_rolls_back_and_retries_with_postgres_rls(admin_engine
 
         command.upgrade(cfg, "head")
         with Session(engine) as session, session.begin():
-            assert session.scalar(stamp) == "merge_message_error_timestamp"
+            assert session.scalar(stamp) == ScriptDirectory.from_config(cfg).get_current_head()
             assert session.scalars(sa.select(ProcessModelState)).all() == []
             assert session.scalars(sa.select(ProcessModelRelease)).all() == []
             for tenant_id in tenants:

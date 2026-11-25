@@ -50,6 +50,7 @@ export function AddProcessModelFileDialog({
   const [kind, setKind] = useState<FileKind>('bpmn');
   const [fileName, setFileName] = useState('');
   const [uploadText, setUploadText] = useState<string | null>(null);
+  const [readingUpload, setReadingUpload] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +59,7 @@ export function AddProcessModelFileDialog({
     setKind('bpmn');
     setFileName('');
     setUploadText(null);
+    setReadingUpload(false);
     setError(null);
   }, [open]);
 
@@ -101,7 +103,11 @@ export function AddProcessModelFileDialog({
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
             {t('common.cancel')}
           </Button>
-          <Button type="submit" form="add-pm-file-form" disabled={submitting || !fileName.trim()}>
+          <Button
+            type="submit"
+            form="add-pm-file-form"
+            disabled={submitting || readingUpload || !fileName.trim()}
+          >
             {submitting ? t('processModelDetail.addFile.adding') : t('processModelDetail.files.addFile')}
           </Button>
         </>
@@ -118,6 +124,7 @@ export function AddProcessModelFileDialog({
             onValueChange={(v) => {
               setKind(v as FileKind);
               setUploadText(null);
+              setReadingUpload(false);
               setError(null);
             }}
           >
@@ -157,12 +164,22 @@ export function AddProcessModelFileDialog({
                 const file = e.target.files?.[0];
                 if (!file) {
                   setUploadText(null);
+                  setReadingUpload(false);
                   return;
                 }
                 if (!fileName.trim()) setFileName(file.name);
+                setUploadText(null);
+                setReadingUpload(true);
+                setError(null);
                 const reader = new FileReader();
                 reader.onload = () => {
                   setUploadText(typeof reader.result === 'string' ? reader.result : '');
+                  setReadingUpload(false);
+                };
+                reader.onerror = () => {
+                  setUploadText(null);
+                  setReadingUpload(false);
+                  setError(t('processModelDetail.addFile.failed'));
                 };
                 reader.readAsText(file);
               }}

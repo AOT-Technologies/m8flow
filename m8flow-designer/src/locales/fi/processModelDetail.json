@@ -149,5 +149,12 @@
     "expectedOutputJson": "Odotettu tulos-JSON",
     "invalidJson": "Kentän {{label}} on oltava kelvollinen JSON",
     "notJsonObject": "Kentän {{label}} on oltava JSON-objekti"
+  },
+  "timerSchedules": {
+    "title": "Ajastetut aloitukset",
+    "activeCount_one": "{{count}} aktiivinen ajastus",
+    "activeCount_other": "{{count}} aktiivista ajastusta",
+    "noneActive": "Talla mallilla ei ole aktiivisia ajastettuja aloituksia.",
+    "nextRun": "Seuraava suoritus {{number}}:"
   }
 }

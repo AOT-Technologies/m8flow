@@ -23,7 +23,11 @@
     "resume": "Resume",
     "resuming": "Resuming…",
     "startProcess": "Start process",
-    "starting": "Starting…"
+    "starting": "Starting…",
+    "timerStartsActive_one": "Timer starts: {{count}} active · next {{date}}",
+    "timerStartsActive_other": "Timer starts: {{count}} active · next {{date}}",
+    "timerStartsNoneActive": "Timer starts: none active",
+    "timerStartsNextRun": "Next timer-start occurrence at {{date}}"
   },
   "saveStatus": {
     "saved": "Saved",

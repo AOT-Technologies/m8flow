@@ -21,8 +21,6 @@ export function AppShell() {
   const {
     canReadSecrets,
     canReadNamedValues,
-    canReadNamedValueItems,
-    canCreateNamedValues,
     canReadConnectors,
     canSubmitTaskReviews,
     canReadTaskReview,
@@ -68,14 +66,11 @@ export function AppShell() {
       ? canReadConnectors
     : pathname.startsWith('/api-keys')
       ? canReadNatsApiKeys
-      : pathname === '/configuration/named-values/new'
-        ? canCreateNamedValues
-        : pathname.startsWith('/configuration/named-values/')
-          ? canReadNamedValueItems
-          : pathname === '/configuration/named-values'
-            ? canReadNamedValues
+      // Named-value pages own their denial state, including direct links.
+      : pathname === '/configuration/named-values' || pathname.startsWith('/configuration/named-values/')
+        ? true
         : pathname === '/configuration'
-          ? canReadNamedValues
+          ? true
           : pathname.startsWith('/configuration/secrets')
           ? canReadSecrets
         : pathname.startsWith('/templates')

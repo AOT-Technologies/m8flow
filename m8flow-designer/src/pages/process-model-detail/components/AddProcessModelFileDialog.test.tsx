@@ -67,4 +67,55 @@ describe('AddProcessModelFileDialog', () => {
     });
     expect(onCreate).not.toHaveBeenCalled();
   });
+
+  it('waits for the selected upload to finish reading before creating it', async () => {
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <AddProcessModelFileDialog
+        open
+        onClose={vi.fn()}
+        existingNames={[]}
+        onCreate={onCreate}
+        onCreated={vi.fn()}
+      />,
+    );
+    await chooseOption(screen.getByRole('combobox', { name: 'File type' }), 'Upload');
+    fireEvent.change(screen.getByLabelText('File name'), { target: { value: 'invalid.bpmn' } });
+    fireEvent.change(screen.getByLabelText('Upload file'), {
+      target: { files: [new File(['<bpmn:definitions'], 'invalid.bpmn', { type: 'application/xml' })] },
+    });
+
+    const addButton = screen.getByRole('button', { name: 'Add file' });
+    await waitFor(() => expect(addButton).toBeEnabled());
+    fireEvent.click(addButton);
+    await waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith({ file_name: 'invalid.bpmn', content: '<bpmn:definitions' });
+    });
+  });
+
+  it('keeps rejected uploads open and displays the backend validation error', async () => {
+    const onCreate = vi.fn().mockRejectedValue(new Error('Unsupported BPMN construct'));
+    render(
+      <AddProcessModelFileDialog
+        open
+        onClose={vi.fn()}
+        existingNames={[]}
+        onCreate={onCreate}
+        onCreated={vi.fn()}
+      />,
+    );
+    await chooseOption(screen.getByRole('combobox', { name: 'File type' }), 'Upload');
+    fireEvent.change(screen.getByLabelText('File name'), { target: { value: 'invalid.bpmn' } });
+    fireEvent.change(screen.getByLabelText('Upload file'), {
+      target: { files: [new File(['<bpmn:definitions'], 'invalid.bpmn', { type: 'application/xml' })] },
+    });
+    const addButton = screen.getByRole('button', { name: 'Add file' });
+    await waitFor(() => expect(addButton).toBeEnabled());
+
+    fireEvent.click(addButton);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unsupported BPMN construct');
+    expect(screen.getByRole('dialog', { name: 'Add file' })).toBeInTheDocument();
+    expect(onCreate).toHaveBeenCalledWith({ file_name: 'invalid.bpmn', content: '<bpmn:definitions' });
+  });
 });

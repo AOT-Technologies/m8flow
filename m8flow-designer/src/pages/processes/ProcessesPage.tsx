@@ -66,7 +66,7 @@ export default function ProcessesPage() {
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
   const [allowedModelActions, setAllowedModelActions] = useState<{
-    models: ProcessModelListItem[]; tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
+    tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
   }>();
   useEffect(() => {
     if (needsTenantForWrite) return;
@@ -82,12 +82,14 @@ export default function ProcessesPage() {
       const allowed = (action: 'publish' | 'start') => new Set(versioned.filter((model) =>
         permissions[processModelActionPath(encodeProcessModelId(model.id), action)]?.POST === true,
       ).map((model) => model.id));
-      setAllowedModelActions({ models, tenantId: scopedTenantId, publish: allowed('publish'), start: allowed('start') });
+      setAllowedModelActions({ tenantId: scopedTenantId, publish: allowed('publish'), start: allowed('start') });
     }).catch(() => { if (active) setAllowedModelActions(undefined); });
     return () => { active = false; };
   }, [models, needsTenantForWrite, scopedTenantId]);
-  const currentActions = allowedModelActions?.models === models && allowedModelActions.tenantId === scopedTenantId
-    ? allowedModelActions : undefined;
+  // Grants are per model and tenant, not per status, so keep the last answer
+  // while a refetched list is re-checked; otherwise Publish and Start vanish
+  // after every status change until the check returns.
+  const currentActions = allowedModelActions?.tenantId === scopedTenantId ? allowedModelActions : undefined;
   const [owners, setOwners] = useState<ProcessInstanceOwnerOption[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);

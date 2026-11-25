@@ -166,6 +166,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const zoomSlotRef = useRef<HTMLDivElement>(null);
   const readOnlyRef = useRef(readOnly);
   const commandStackOriginalsRef = useRef<{
     execute: (...args: any[]) => unknown;
@@ -178,6 +179,13 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   const [modeler, setModeler] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
+  // Expanded view (zoom pill) hides the panel until the user opens it with
+  // the panel toggle; leaving expanded view restores what they had.
+  const expandedRef = useRef(false);
+  const panelBeforeExpandRef = useRef(true);
+  useEffect(() => {
+    if (!expandedRef.current) panelBeforeExpandRef.current = panelOpen;
+  }, [panelOpen]);
   // Mirrors the command stack's own canUndo/canRedo so the buttons below can
   // disable themselves; refreshed from the same commandStack.changed
   // subscription that drives dirty-tracking.
@@ -255,12 +263,15 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   // importXML() against destroy(), crashing bpmn-js's own import pipeline.
   // See the recipe doc above for the full explanation.
   useEffect(() => {
-    if (!canvasRef.current || !panelRef.current) return undefined;
+    if (!canvasRef.current || !panelRef.current || !zoomSlotRef.current) return undefined;
 
     const instance = new (Modeler as any)({
       container: canvasRef.current,
       keyboard: { bindTo: document },
       propertiesPanel: { parent: panelRef.current },
+      // Top-right toolbar, not the package's bottom-left default, where the
+      // zoom / expand controls went unnoticed.
+      zoomControls: { parent: zoomSlotRef.current },
       additionalModules: [diagramTranslateModule],
     });
     const stopFollowingLanguage = followDiagramLanguage(() => instance.get('eventBus').fire('i18n.changed'));
@@ -316,6 +327,16 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // jump to their panel textarea via propertiesPanel.showEntry — make sure
     // a panel the user hid is visible to receive it.
     instance.on('propertiesPanel.showEntry', () => setPanelOpen(true));
+
+    instance.on('m8flow.expand.changed', ({ expanded }: { expanded: boolean }) => {
+      expandedRef.current = expanded;
+      setPanelOpen(expanded ? false : panelBeforeExpandRef.current);
+      // The package zoomed before the panel changed width; refit for the
+      // mode (fill in expanded view, fit otherwise) once React has hidden /
+      // restored it.
+      // Guarded: a Modeler built without the zoom controls has no refit.
+      requestAnimationFrame(() => instance.get('m8flowZoomControls', false)?.refit?.());
+    });
 
     // Answer the properties panel's "Launch Editor" buttons inline (docked
     // panel below the canvas) rather than as a popup. The buttons only
@@ -627,7 +648,9 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
   }, [modeler, xml, onDirtyChange]);
 
   return (
-    <div className={`relative flex size-full${readOnly ? ' m8flow-bpmn--read-only' : ''}`}>
+    // data-m8flow-expand-root: the zoom pill's expand button takes the
+    // properties panel and undo/redo along with the canvas.
+    <div data-m8flow-expand-root className={`relative flex size-full${readOnly ? ' m8flow-bpmn--read-only' : ''}`}>
       {error ? (
         <p className="absolute inset-x-0 top-0 z-10 p-4 text-sm text-destructive" role="alert">
           {error}
@@ -635,45 +658,48 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
       ) : null}
       <div className="m8flow-bpmn relative min-w-0 flex-1">
         <div ref={canvasRef} className="size-full" />
-        {/* Sits to the right of the package's own zoom pill, which is fixed at
-            bottom:20px / left:20px and 104px wide (zoom-controls.css in
-            m8flow-bpmn). A drift there is cosmetic only. */}
-        {!readOnly ? (
-          <div className="absolute bottom-5 left-[132px] z-10 flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
-            <button
-              type="button"
-              title={t('modeler.canvas.undo')}
-              aria-label={t('modeler.canvas.undo')}
-              disabled={!history.canUndo}
-              onClick={() => modeler?.get('commandStack').undo()}
-              className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
-            >
-              <Undo2 className="size-[15px]" strokeWidth={2} aria-hidden />
-            </button>
-            <button
-              type="button"
-              title={t('modeler.canvas.redo')}
-              aria-label={t('modeler.canvas.redo')}
-              disabled={!history.canRedo}
-              onClick={() => modeler?.get('commandStack').redo()}
-              className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
-            >
-              <Redo2 className="size-[15px]" strokeWidth={2} aria-hidden />
-            </button>
-          </div>
-        ) : null}
-        <button
-          type="button"
-          title={panelOpen ? t('modeler.canvas.hidePanel') : t('modeler.canvas.showPanel')}
-          onClick={() => setPanelOpen((open) => !open)}
-          className="absolute top-5 right-5 z-10 flex size-9 items-center justify-center rounded-[10px] border border-border bg-card shadow-sm"
-        >
-          {panelOpen ? (
-            <PanelRightClose className="size-[15px] text-muted-foreground" strokeWidth={2} />
-          ) : (
-            <PanelRightOpen className="size-[15px] text-muted-foreground" strokeWidth={2} />
-          )}
-        </button>
+        {/* Top-right toolbar: zoom / expand pill (mounted by m8flow-bpmn into
+            zoomSlotRef), undo / redo, properties-panel toggle. React renders
+            no children into the slot, so it leaves the pill alone. */}
+        <div className="absolute top-5 right-5 z-10 flex items-center gap-2">
+          <div ref={zoomSlotRef} />
+          {!readOnly ? (
+            <div className="flex items-center gap-0.5 rounded-full border border-border bg-card p-1 shadow-sm">
+              <button
+                type="button"
+                title={t('modeler.canvas.undo')}
+                aria-label={t('modeler.canvas.undo')}
+                disabled={!history.canUndo}
+                onClick={() => modeler?.get('commandStack').undo()}
+                className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Undo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+              </button>
+              <button
+                type="button"
+                title={t('modeler.canvas.redo')}
+                aria-label={t('modeler.canvas.redo')}
+                disabled={!history.canRedo}
+                onClick={() => modeler?.get('commandStack').redo()}
+                className="flex size-[30px] items-center justify-center rounded-full text-muted-foreground hover:bg-border disabled:pointer-events-none disabled:opacity-40"
+              >
+                <Redo2 className="size-[15px]" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            title={panelOpen ? t('modeler.canvas.hidePanel') : t('modeler.canvas.showPanel')}
+            onClick={() => setPanelOpen((open) => !open)}
+            className="flex size-9 items-center justify-center rounded-[10px] border border-border bg-card shadow-sm"
+          >
+            {panelOpen ? (
+              <PanelRightClose className="size-[15px] text-muted-foreground" strokeWidth={2} />
+            ) : (
+              <PanelRightOpen className="size-[15px] text-muted-foreground" strokeWidth={2} />
+            )}
+          </button>
+        </div>
         {editorSession ? (
           <Suspense fallback={null}>
             <EditorDialog session={editorSession} onClose={() => setEditorSession(null)} />

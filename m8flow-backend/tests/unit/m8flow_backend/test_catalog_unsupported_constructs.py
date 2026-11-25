@@ -1,8 +1,11 @@
+import importlib.metadata
+
 import pytest
 
 from m8flow_core import api
 from m8flow_core.errors import ValidationError
 
+from m8flow_backend import catalog
 from m8flow_backend.catalog import _reject_unsupported_constructs
 from m8flow_backend.errors import ApiError
 
@@ -84,8 +87,9 @@ def test_regular_subprocess_is_not_rejected(value):
     _reject_unsupported_constructs(xml)
 
 
+@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-m8f-640", "core-1.0.0b3"])
 @pytest.mark.parametrize(
-    ("value", "should_reject"),
+    ("value", "parallel"),
     [
         ("true", False),
         ("1", False),
@@ -96,21 +100,33 @@ def test_regular_subprocess_is_not_rejected(value):
     ],
     ids=["true", "xml-boolean-1", "false", "xml-boolean-0", "empty", "default-parallel"],
 )
-def test_multi_instance_sequential_boolean_uses_xml_boolean_values(value, should_reject):
+def test_multi_instance_completion_condition_needs_core_support_when_parallel(
+    value, parallel, core_supports, monkeypatch
+):
+    """Core evaluates the condition after each iteration of either loop kind (M8F-640),
+    but a core without that release can't stop a parallel loop early."""
+    monkeypatch.setattr(catalog, "_core_runs_parallel_completion_conditions", lambda: core_supports)
     attribute = "" if value is None else f' isSequential="{value}"'
     xml = (
         '<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">'
         "<bpmn:process id='process'><bpmn:task id='task'>"
         f"<bpmn:multiInstanceLoopCharacteristics{attribute}>"
-        "<bpmn:completionCondition>1</bpmn:completionCondition>"
+        "<bpmn:loopCardinality>2</bpmn:loopCardinality>"
+        "<bpmn:completionCondition>nrOfCompletedInstances &gt;= 1</bpmn:completionCondition>"
         "</bpmn:multiInstanceLoopCharacteristics></bpmn:task></bpmn:process></bpmn:definitions>"
     )
 
-    if should_reject:
-        with pytest.raises(ApiError, match="Completion conditions on parallel multi-instance"):
+    if parallel and not core_supports:
+        with pytest.raises(ApiError, match="installed core does not support completion conditions on parallel"):
             _reject_unsupported_constructs(xml)
     else:
         _reject_unsupported_constructs(xml)
+
+
+def test_pinned_core_1_0_0b3_has_no_parallel_completion_conditions():
+    """The pinned 1.0.0b3 predates M8F-640, so the catalog must keep rejecting them on it."""
+    supported = catalog._core_runs_parallel_completion_conditions()
+    assert supported is (importlib.metadata.version("m8flow-core") != "1.0.0b3")
 
 
 @pytest.mark.parametrize(

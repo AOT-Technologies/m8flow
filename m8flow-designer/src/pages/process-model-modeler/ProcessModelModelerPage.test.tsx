@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionFixtureContext } from '@/components/session/testSupport';
 import { activeTenantFromContext, capabilitiesFromContext } from '@/components/session/testSupport';
+import type { ProcessModelDetail } from '@/lib/api';
 
 const mockUseActiveTenant = vi.fn();
 const mockUseCapabilities = vi.fn();
@@ -80,7 +81,7 @@ vi.mock('./components/DiagramCanvas', () => ({
 import ProcessModelModelerPage from './ProcessModelModelerPage';
 
 const FILE_XML = '<bpmn:definitions />';
-const DETAIL = {
+const DETAIL: ProcessModelDetail = {
   id: 'finance/invoice-approval',
   tenant_id: 'tenant-a',
   display_name: 'Invoice Approval',
@@ -89,8 +90,10 @@ const DETAIL = {
   group_display_name: 'Finance',
   last_run_at: null,
   running_now: 0,
+  status: 'published',
   runs_30d: 0,
   recent_instances: [],
+  timer_start_schedules: [],
   files: [
     {
       name: 'invoice-approval.bpmn',
@@ -282,6 +285,20 @@ describe('ProcessModelModelerPage file chrome', () => {
     expect(screen.getByRole('button', { name: 'New file' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Set as primary' })).not.toBeInTheDocument();
+  });
+
+  it('passes active timer-start schedule details to the modeler toolbar', async () => {
+    stubFetch({
+      ...DETAIL,
+      status: 'published',
+      timer_start_schedules: [{ next_run_at: '2026-11-18T16:30:00Z' }],
+    });
+    renderModeler(EDITOR_CONTEXT);
+
+    expect(await screen.findByText('canvas-ready')).toBeInTheDocument();
+    expect(await screen.findByTestId('modeler-timer-schedule-status')).toHaveTextContent(
+      'Timer starts: 1 active',
+    );
   });
 
   it('opens a secondary BPMN file that owns the called process id', async () => {

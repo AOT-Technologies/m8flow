@@ -23,7 +23,11 @@
     "resume": "Fortsetzen",
     "resuming": "Wird fortgesetzt…",
     "startProcess": "Prozess starten",
-    "starting": "Wird gestartet…"
+    "starting": "Wird gestartet…",
+    "timerStartsActive_one": "Timerstarts: {{count}} aktiv; als nachstes {{date}}",
+    "timerStartsActive_other": "Timerstarts: {{count}} aktiv; als nachstes {{date}}",
+    "timerStartsNoneActive": "Keine aktiven Timerstarts",
+    "timerStartsNextRun": "Nachster Timerstart: {{date}}"
   },
   "saveStatus": {
     "saved": "Gespeichert",

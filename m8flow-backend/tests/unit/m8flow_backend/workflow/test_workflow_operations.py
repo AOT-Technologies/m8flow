@@ -1793,11 +1793,14 @@ def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monke
     db_session.commit()
     due = scheduled.run_at.replace(tzinfo=UTC) + timedelta(seconds=1)
     assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
-    # The released core durably schedules the occurrence before executing it.
-    assert db_session.query(SchedulerJobModel).filter_by(
-        m8f_tenant_id=tenant.id, job_type="timer_start_occurrence",
-    ).count() == 1
-    assert workflow.run_due(db_session, tenant_id=tenant.id, now=due) == 1
+    # Core 1.1 persists a separate immediately-due occurrence job. The first
+    # poll materializes that occurrence; the next poll starts the instance.
+    assert workflow.run_due(
+        db_session,
+        tenant_id=tenant.id,
+        now=due + timedelta(seconds=1),
+        worker_id="versioned-timer-test",
+    ) == 1
     instance = db_session.query(ProcessInstanceModel).filter_by(
         m8f_tenant_id=tenant.id, process_model_identifier=model.model_id,
     ).one()
@@ -2200,24 +2203,31 @@ def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, 
     assert saved_file.read_text(encoding="utf-8") == xml
 
 
-def test_catalog_rejects_parallel_multi_instance_completion_condition(db_session, tmp_path, monkeypatch):
+@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-m8f-640", "core-1.0.0b3"])
+def test_catalog_saves_parallel_multi_instance_completion_condition_only_on_a_supporting_core(
+    db_session, tmp_path, monkeypatch, core_supports
+):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    monkeypatch.setattr(catalog, "_core_runs_parallel_completion_conditions", lambda: core_supports)
     tenant, user = _seed_actor(db_session)
     xml = BPMN.with_name("simple-multi-instance.bpmn").read_text(encoding="utf-8")
     xml = xml.replace(
         "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>",
         "<bpmn:loopDataOutputRef>par_out</bpmn:loopDataOutputRef>"
-        "<bpmn:completionCondition>it2 == 1</bpmn:completionCondition>",
+        "<bpmn:completionCondition>nrOfCompletedInstances &gt;= 2</bpmn:completionCondition>",
         1,
     )
-    from m8flow_backend.errors import ApiError
 
-    with pytest.raises(ApiError) as error:
-        catalog.save(db_session, path="bad/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    saved = tmp_path / tenant.id / "p" / "parallel-condition" / "parallel-condition.bpmn"
+    if not core_supports:
+        with pytest.raises(ApiError, match="installed core does not support completion conditions on parallel"):
+            catalog.save(db_session, path="p/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+        assert not saved.exists()
+        return
 
-    assert error.value.status_code == 400
-    assert error.value.error_code == "unsupported_bpmn"
-    assert "parallel multi-instance" in str(error.value)
+    catalog.save(db_session, path="p/parallel-condition", xml=xml, tenant_id=tenant.id, user_id=user.id)
+
+    assert "nrOfCompletedInstances &gt;= 2" in saved.read_text(encoding="utf-8")
 
 
 def test_catalog_rejects_negative_multi_instance_cardinality(db_session, tmp_path, monkeypatch):
@@ -2394,6 +2404,14 @@ def test_start_uses_process_model_display_name(db_session, tmp_path, monkeypatch
     assert tasks and {t.process_model_display_name for t in tasks} == {"Invoice Approval"}
     rows, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id)
     assert rows[0]["process_model_display_name"] == "Invoice Approval"
+
+
+def test_timer_start_identity_has_human_readable_started_by_label():
+    from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+    assert workflow._started_by_display_name(TIMER_SYSTEM_USERNAME) == "M8flow scheduler"
+    assert workflow._started_by_display_name("reviewer") == "reviewer"
+    assert workflow._started_by_display_name(None) == ""
 
 
 def test_read_repairs_instances_stored_with_model_id_as_display_name(db_session, tmp_path, monkeypatch):
@@ -2598,6 +2616,12 @@ def test_delete_instance_uses_database_journal_foreign_keys(db_session, tmp_path
     connection = db_session.connection()
     connection.exec_driver_sql("PRAGMA foreign_keys = ON")
     assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
+
+    # Core 1.1 includes the journal tables in Base.metadata, so the test fixture
+    # already created them. Replace those empty tables with the deliberately
+    # cyclic/non-cyclic schema this deletion-order test exercises.
+    for table_name in ("compensation_record", "compensation_run", "compensation_scope"):
+        connection.exec_driver_sql(f'DROP TABLE IF EXISTS "{table_name}"')
 
     # Keep the journal tables outside the core metadata, like a migration-only schema.
     metadata = sa.MetaData()
@@ -3257,3 +3281,125 @@ def test_designer_list_active_and_completed_today_filters_match_home_counts(db_s
 
     errors, _ = workflow.list_instances_for_designer(db_session, tenant_id=tenant.id, status="error")
     assert [row["id"] for row in errors] == [ids["error"]]
+
+
+_MI_REVIEW_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core"
+  id="Defs_mi_review" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_mi_review" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="prep"><bpmn:script>items = ['a', 'b', 'c']</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="review">
+      <bpmn:extensionElements>
+        <spiffworkflow:instructionsForEndUser>Review {{ it }}</spiffworkflow:instructionsForEndUser>
+      </bpmn:extensionElements>
+      <bpmn:multiInstanceLoopCharacteristics>
+        <bpmn:loopDataInputRef>items</bpmn:loopDataInputRef>
+        <bpmn:loopDataOutputRef>out</bpmn:loopDataOutputRef>
+        <bpmn:inputDataItem id="it" name="it" />
+        <bpmn:outputDataItem id="res" name="res" />
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:userTask>
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="prep" />
+    <bpmn:sequenceFlow id="f2" sourceRef="prep" targetRef="review" />
+    <bpmn:sequenceFlow id="f3" sourceRef="review" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_multi_instance_review_forms_show_their_own_item(db_session, tmp_path, monkeypatch):
+    """M8F-640: an iteration's input item and counters exist only on its task,
+    so its form values and instructions must come from the task's own scope."""
+    pytest.importorskip(
+        "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with M8F-640"
+    )
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import human_task
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/m8f640", xml=_MI_REVIEW_BPMN, tenant_id=tenant.id, user_id=user.id)
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/m8f640")
+    reviews = sorted(
+        workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id), key=lambda task: task.id
+    )
+
+    def values(task):
+        work_item = db_session.get(WorkItemModel, task.id)
+        return human_task.form_schema_for_task(db_session, tenant_id=tenant.id, work_item=work_item)["values"]
+
+    assert [(values(task)["it"], values(task)["loopCounter"]) for task in reviews] == [("a", 0), ("b", 1), ("c", 2)]
+    second = db_session.get(WorkItemModel, reviews[1].id)
+    assert human_task.instructions_for_task(db_session, tenant_id=tenant.id, work_item=second) == "Review b"
+
+    # The designer posts every prefilled value back; that must not leak into
+    # the other reviews.
+    first = values(reviews[0])
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=reviews[0].id, user_id=user.id)
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=reviews[0].id,
+        user_id=user.id,
+        task_payload={**first, "res": "A"},
+    )
+
+    assert [values(task)["it"] for task in reviews[1:]] == ["b", "c"]
+    assert values(reviews[1])["nrOfCompletedInstances"] == 1
+
+
+_REWORK_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+  id="Defs_rework" targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_rework" isExecutable="true">
+    <bpmn:startEvent id="start" />
+    <bpmn:scriptTask id="prep"><bpmn:script>rounds = 0</bpmn:script></bpmn:scriptTask>
+    <bpmn:scriptTask id="bump"><bpmn:script>rounds = rounds + 1</bpmn:script></bpmn:scriptTask>
+    <bpmn:userTask id="ask" />
+    <bpmn:exclusiveGateway id="again" default="f_done" />
+    <bpmn:endEvent id="end" />
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="prep" />
+    <bpmn:sequenceFlow id="f2" sourceRef="prep" targetRef="bump" />
+    <bpmn:sequenceFlow id="f3" sourceRef="bump" targetRef="ask" />
+    <bpmn:sequenceFlow id="f4" sourceRef="ask" targetRef="again" />
+    <bpmn:sequenceFlow id="f_redo" sourceRef="again" targetRef="bump">
+      <bpmn:conditionExpression>outcome == 'redo'</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_done" sourceRef="again" targetRef="end" />
+  </bpmn:process>
+</bpmn:definitions>"""
+
+
+def test_form_values_follow_a_script_change_after_an_earlier_submission(db_session, tmp_path, monkeypatch):
+    """M8F-640: the first form posts ``rounds`` back as process metadata; when a
+    script raises it later, the next form must show the new value."""
+    from m8flow_core.models.work_item import WorkItemModel
+
+    from m8flow_backend import human_task
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    catalog.save(db_session, path="p/rework", xml=_REWORK_BPMN, tenant_id=tenant.id, user_id=user.id)
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/rework")
+
+    def ask_values():
+        (task,) = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
+        work_item = db_session.get(WorkItemModel, task.id)
+        return task, human_task.form_schema_for_task(db_session, tenant_id=tenant.id, work_item=work_item)["values"]
+
+    task, values = ask_values()
+    assert values["rounds"] == 1
+    workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+    workflow.complete(
+        db_session,
+        tenant_id=tenant.id,
+        work_item_id=task.id,
+        user_id=user.id,
+        task_payload={**values, "outcome": "redo"},
+    )
+
+    _task, values = ask_values()
+    assert values["rounds"] == 2

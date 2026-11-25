@@ -16,7 +16,7 @@ branch_labels = None
 depends_on = None
 
 BASELINE = "k2l3m4n5o6p7"
-CORE_HEAD = "message_correlation"
+CORE_HEAD = BASELINE
 VERSION = sa.table("m8flow_core_alembic_version", sa.column("version_num"))
 TABLES = (
     "signal_registry_state", "signal_publication", "signal_subscription", "signal_delivery",
@@ -114,10 +114,31 @@ def _journal_instance_key(table: str) -> str:
     return f"m8f_{table}_tenant_instance_fk"
 
 
+def _validate_journal_instance_keys(inspector: sa.Inspector, table: str) -> None:
+    tenant = frozenset({("m8f_tenant_id", "m8flow_tenant.id")})
+    instance = frozenset({("process_instance_id", "process_instance.id")})
+    composite = frozenset({
+        ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
+        ("process_instance_id", "process_instance.id"),
+    })
+    actual = frozenset(
+        frozenset(
+            (column, f"{key['referred_table']}.{target}")
+            for column, target in zip(key["constrained_columns"], key["referred_columns"], strict=True)
+        )
+        for key in inspector.get_foreign_keys(table)
+        if key.get("referred_schema") in (None, inspector.default_schema_name)
+    )
+    if actual not in {frozenset({tenant, instance}), frozenset({tenant, composite}),
+                      frozenset({tenant, instance, composite})}:
+        raise RuntimeError(f"Cannot adopt {table}: expected foreign keys for tenant and instance")
+
+
 def _upgrade_journal_instance_keys() -> None:
     tenant_instance = ["m8f_tenant_id", "process_instance_id"]
     inspector = sa.inspect(op.get_bind())
     for table in JOURNAL_TABLES:
+        _validate_journal_instance_keys(inspector, table)
         if any(
             key["constrained_columns"] == tenant_instance
             and key["referred_table"] == "process_instance"
@@ -138,19 +159,27 @@ def upgrade() -> None:
     if not all(name in Base.metadata.tables for name in TABLES):
         raise RuntimeError("Install the m8flow-core build with message correlation before upgrading.")
     markers = bind.execute(sa.select(VERSION.c.version_num)).scalars().all()
-    if len(markers) != 1 or core_revision(markers[0]) not in (BASELINE, CORE_HEAD):
+    if len(markers) != 1 or core_revision(markers[0]) not in (BASELINE, "message_correlation"):
         raise RuntimeError(f"Unexpected m8flow-core migration marker: {markers!r}")
 
     inspector = sa.inspect(bind)
     for table, name in PARENT_INDEXES.items():
-        if not any(index["name"] == name for index in inspector.get_indexes(table)):
+        keys = [key["column_names"] for key in inspector.get_unique_constraints(table)]
+        keys.append(inspector.get_pk_constraint(table)["constrained_columns"])
+        keys.extend(
+            index["column_names"] for index in inspector.get_indexes(table)
+            if index["unique"] and not any(
+                key.endswith("_where") and value is not None
+                for key, value in (index.get("dialect_options") or {}).items()
+            )
+        )
+        if ["m8f_tenant_id", "id"] not in keys:
             op.create_index(name, table, ["m8f_tenant_id", "id"], unique=True)
     _upgrade_journal_instance_keys()
     # Adopt core-installed tables without claiming ownership of them.
     _create_owned_tables(bind, Base.metadata)
-    # This is the normalization boundary for the compatible markers accepted
-    # by c4d5e6f7a8b9/d6e7f8a9b0c1. Advance only after the schema is installed;
-    # stamping the earlier handoff revisions would claim tables not yet present.
+    # The dedicated host marker remains at the historical handoff baseline.
+    # Standalone core Alembic owns its separate message-correlation marker.
     if core_revision(markers[0]) != markers[0]:
         require_message_schema(bind)
     bind.execute(VERSION.update().where(VERSION.c.version_num == markers[0]).values(version_num=CORE_HEAD))
@@ -167,5 +196,5 @@ def downgrade() -> None:
     # The shared indexes also support core's native compensation journal foreign keys.
     bind = op.get_bind()
     for value in bind.scalars(sa.select(VERSION.c.version_num)).all():
-        if core_revision(value) == CORE_HEAD:
+        if core_revision(value) == "message_correlation":
             bind.execute(VERSION.update().where(VERSION.c.version_num == value).values(version_num=BASELINE))

@@ -598,3 +598,27 @@ def test_instructions_fall_back_to_raw_text_when_rendering_fails(monkeypatch):
 def test_instructions_sandbox_blocks_unsafe_attribute_access(monkeypatch):
     raw = "{{ ''.__class__.__mro__ }}"
     assert _instructions(monkeypatch, raw, {}) == raw
+
+
+def test_prior_values_merge_process_data_under_non_empty_task_scope(monkeypatch):
+    # A task row holding only part of the scope must not hide earlier steps'
+    # process variables. Precedence: process data < live scope < task row.
+    workflow = human_task.workflow
+    monkeypatch.setattr(workflow, "_task_data", lambda *_a, **_k: {"amount": 900, "note": "row"})
+    monkeypatch.setattr(
+        workflow,
+        "_process_data",
+        lambda *_a, **_k: {"amount": 100, "vendor": "Acme", "status": "stale", "note": "old"},
+    )
+    monkeypatch.setattr(
+        workflow,
+        "_task_data_from_workflow_state",
+        lambda _instance, _guid: {"item": "b", "status": "fresh", "note": "scope", "data_objects": {}},
+    )
+    session = SimpleNamespace(get=lambda *_a: SimpleNamespace(m8f_tenant_id=TENANT))
+    work_item = SimpleNamespace(task_guid="guid-1", process_instance_id=1)
+
+    values = human_task._prior_submission_values(session, tenant_id=TENANT, work_item=work_item)
+
+    # status clashes only between process data and scope; note clashes in all three.
+    assert values == {"amount": 900, "vendor": "Acme", "item": "b", "status": "fresh", "note": "row"}

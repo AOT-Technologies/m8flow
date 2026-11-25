@@ -149,5 +149,12 @@
     "expectedOutputJson": "Erwartetes Ausgabe-JSON",
     "invalidJson": "{{label}} muss gültiges JSON sein",
     "notJsonObject": "{{label}} muss ein JSON-Objekt sein"
+  },
+  "timerSchedules": {
+    "title": "Timerstart-Zeitplane",
+    "activeCount_one": "{{count}} aktiver Zeitplan",
+    "activeCount_other": "{{count}} aktive Zeitplane",
+    "noneActive": "Fur dieses Modell gibt es keine aktiven Timerstart-Zeitplane.",
+    "nextRun": "Nachster Lauf {{number}}:"
   }
 }

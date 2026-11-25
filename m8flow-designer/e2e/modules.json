@@ -50,6 +50,7 @@
       "priority": "P0",
       "specs": [
         "e2e/login.spec.ts",
+        "e2e/login-resilience.spec.ts",
         "e2e/identity-auth-parity.spec.ts"
       ],
       "paths": [
@@ -75,6 +76,7 @@
         "docker/m8flow.keycloak.Dockerfile",
         "docker/nginx-keycloak-proxy.conf",
         "m8flow-designer/e2e/login.spec.ts",
+        "m8flow-designer/e2e/login-resilience.spec.ts",
         "m8flow-designer/e2e/identity-auth-parity.spec.ts"
       ]
     },
@@ -141,6 +143,7 @@
         "e2e/modeler-call-activity.spec.ts",
         "e2e/modeler-data-store.spec.ts",
         "e2e/modeler-messages.spec.ts",
+        "e2e/modeler-timer-start.spec.ts",
         "e2e/modeler-service-task.spec.ts",
         "e2e/modeler-user-task-form.spec.ts",
         "e2e/run-service-task.spec.ts",

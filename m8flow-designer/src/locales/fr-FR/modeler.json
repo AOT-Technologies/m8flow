@@ -23,7 +23,12 @@
     "resume": "Reprendre",
     "resuming": "Reprise…",
     "startProcess": "Démarrer le processus",
-    "starting": "Démarrage…"
+    "starting": "Démarrage…",
+    "timerStartsActive_one": "Declenchements par minuteur : {{count}} actif ; prochain {{date}}",
+    "timerStartsActive_many": "Declenchements par minuteur : {{count}} actifs ; prochain {{date}}",
+    "timerStartsActive_other": "Declenchements par minuteur : {{count}} actifs ; prochain {{date}}",
+    "timerStartsNoneActive": "Aucun declenchement par minuteur actif",
+    "timerStartsNextRun": "Prochaine occurrence du minuteur : {{date}}"
   },
   "saveStatus": {
     "saved": "Enregistré",

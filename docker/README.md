@@ -57,6 +57,20 @@ The optional local Vault server and demo bootstrap are development-only. The bac
 | **m8flow-backend** | m8flow.backend.Dockerfile | Flask/uvicorn API (SpiffWorkflow + m8flow extensions). Runs migrations on startup. | `${M8FLOW_BACKEND_PORT:-6840}` -> `${M8FLOW_BACKEND_PORT:-6840}` | DB: `m8flow-db`. Keycloak: `keycloak-proxy:6842`. Redis/Celery, MinIO URLs set for Docker. BPMN/templates dirs: volumes `process_models_cache`, `templates_cache` at `/app/data/process_models`, `/app/data/templates`. Entrypoint chowns those dirs then runs app as user `app` (UID 1000). Default build target: `dev`; prod override uses target `prod`. |
 | **m8flow-designer** | m8flow.designer.Dockerfile | Nginx serving the built Vite/React designer app, the primary UI. | `${M8FLOW_FRONTEND_PORT:-6853}` -> 8080 | `VITE_BACKEND_BASE_URL` is baked in at build time (the Keycloak login redirect origin). At runtime `BACKEND_BASE_URL` is the in-network target for the same-origin `/v1.0` proxy. Listens on 8080. |
 
+### Timer starts and scheduler ownership
+
+Published BPMN models with timer start events are scheduled automatically by
+`m8flow-core`; no manual process start is required. Draft and paused models do
+not keep pending timer-start jobs. Publishing synchronizes the schedule from
+the model's current primary BPMN, while pausing or moving a model back to draft
+removes pending start and occurrence jobs. The Compose stack runs one
+`m8flow-celery-beat` poller. In other deployments, run one effective Beat
+poller against the shared database and set
+`M8FLOW_BACKEND_RUN_BACKGROUND_SCHEDULER_IN_CREATE_APP=false` on API and worker
+processes so no second scheduler loop competes with Beat. Core persists timer
+occurrences separately from process execution, so a slow or failed instance
+does not delay later occurrences.
+
 ---
 
 ## Dockerfiles (summary)
@@ -149,6 +163,22 @@ docker compose --env-file .env -f docker/m8flow-docker-compose.yml -f docker/m8f
 # Stop and remove volumes
 docker compose --env-file .env -f docker/m8flow-docker-compose.yml down -v
 ```
+
+Keycloak is healthy only after its login flows and realm bootstrap have completed.
+The proxy waits for that readiness, so new installations cannot expose an
+identity-first login page while organization seeding is still running. Username
+and password are collected together in both the shared and master realms.
+
+The healthcheck allows a 300-second startup grace period, followed by 12 failed
+checks at 10-second intervals before reporting unhealthy (probe duration can
+extend that window). Critical login-flow failures stop Keycloak immediately
+after its bounded retries. Cold startup time depends on CPU and database
+performance; inspect the entrypoint logs before extending these Compose settings.
+
+Normal rebuilds reuse the backend's Python dependency layer and Keycloak's Maven
+cache. Avoid `--no-cache` for routine source changes. For theme-only edits, rebuild
+just the authentication service with
+`docker compose --env-file .env -f docker/m8flow-docker-compose.yml up -d --build keycloak keycloak-proxy`.
 
 Access the app at **http://localhost:6853** (or the host/port you set via `M8FLOW_FRONTEND_PORT`). Keycloak admin and auth: **http://localhost:6842**.
 

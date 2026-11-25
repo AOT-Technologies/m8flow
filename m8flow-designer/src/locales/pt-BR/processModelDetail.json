@@ -150,5 +150,13 @@
     "expectedOutputJson": "JSON de saída esperado",
     "invalidJson": "{{label}} deve ser um JSON válido",
     "notJsonObject": "{{label}} deve ser um objeto JSON"
+  },
+  "timerSchedules": {
+    "title": "Agendamentos de inicio por temporizador",
+    "activeCount_one": "{{count}} agendamento ativo",
+    "activeCount_many": "{{count}} agendamentos ativos",
+    "activeCount_other": "{{count}} agendamentos ativos",
+    "noneActive": "Nao ha agendamentos de inicio por temporizador ativos para este modelo.",
+    "nextRun": "Proxima execucao {{number}}:"
   }
 }

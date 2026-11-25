@@ -17,17 +17,12 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-from m8flow_backend.migration_compatibility import compatible_core_revision, core_revision
-
 revision = "c4d5e6f7a8b9"
 down_revision = "b7e1c2d3f4a5"
 branch_labels = None
 depends_on = None
 
 REQUIRED_CORE_MIGRATION = "k2l3m4n5o6p7"
-# Host migration replay can encounter the additive message schema already installed.
-# core_message_schema normalizes these markers after installing that schema.
-COMPATIBLE_CORE_REVISIONS = (REQUIRED_CORE_MIGRATION, "message_correlation")
 CORE_VERSION_TABLE = "m8flow_core_alembic_version"
 LEGACY_CORE_VERSION_TABLE = "alembic_version"
 _TENANT_RLS_PREDICATE = "(m8f_tenant_id = current_setting('app.current_tenant', true))"
@@ -838,7 +833,7 @@ def _core_marker_revisions() -> list[str] | None:
             _bind().execute(sa.select(core_version.c.version_num)).scalars().all()
         )
         if revisions:
-            return [compatible_core_revision(_bind(), value) for value in revisions]
+            return revisions
 
     if not _has_table(LEGACY_CORE_VERSION_TABLE):
         return [] if _has_table(CORE_VERSION_TABLE) else None
@@ -847,16 +842,15 @@ def _core_marker_revisions() -> list[str] | None:
     legacy_revisions = list(
         _bind().execute(sa.select(legacy_version.c.version_num)).scalars().all()
     )
-    normalized = [core_revision(value) for value in legacy_revisions]
-    if not set(normalized).intersection(COMPATIBLE_CORE_REVISIONS):
+    if REQUIRED_CORE_MIGRATION not in legacy_revisions:
         return []
-    if len(legacy_revisions) != 1:
+    if legacy_revisions != [REQUIRED_CORE_MIGRATION]:
         raise RuntimeError(
             "Legacy alembic_version contains mixed host/core revisions; "
             f"move the core marker to {CORE_VERSION_TABLE} before upgrading: "
             f"found {legacy_revisions!r}"
         )
-    return [compatible_core_revision(_bind(), value) for value in legacy_revisions]
+    return [REQUIRED_CORE_MIGRATION]
 
 
 def _require_core_breaking_head() -> bool:
@@ -870,12 +864,9 @@ def _require_core_breaking_head() -> bool:
     revisions = _core_marker_revisions()
     if not revisions:
         return False
-    # version_num is the primary key: duplicate equal rows cannot exist in a
-    # supported schema. Multiple distinct markers indicate an incomplete or
-    # corrupt upgrade and must fail closed rather than choosing a branch.
-    if len(revisions) != 1 or revisions[0] not in COMPATIBLE_CORE_REVISIONS:
+    if revisions != [REQUIRED_CORE_MIGRATION]:
         raise RuntimeError(
-            "m8flow-bpmn-core must be at a compatible revision for "
+            "m8flow-bpmn-core must be at exactly "
             f"{REQUIRED_CORE_MIGRATION}; found {revisions!r}"
         )
     return True
@@ -920,8 +911,12 @@ def _record_core_breaking_head() -> None:
             sa.PrimaryKeyConstraint("version_num"),
         )
     core_version = _table(CORE_VERSION_TABLE, "version_num")
-    recorded = _bind().scalars(sa.select(core_version.c.version_num)).all()
-    if not any(compatible_core_revision(_bind(), value) in COMPATIBLE_CORE_REVISIONS for value in recorded):
+    exists = _bind().execute(
+        sa.select(core_version.c.version_num)
+        .where(core_version.c.version_num == REQUIRED_CORE_MIGRATION)
+        .limit(1)
+    ).scalar()
+    if exists is None:
         _bind().execute(
             sa.insert(core_version).values(version_num=REQUIRED_CORE_MIGRATION)
         )

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import re
+from uuid import uuid4
 
 import sqlalchemy as sa
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 
 _REVISION = re.compile(r"m8f_[0-9]+_(?P<purpose>[a-z_]+)")
 _OWNERSHIP = re.compile(r"m8flow_m8f_[0-9]+_message_ownership")
@@ -19,6 +22,61 @@ MESSAGE_TABLES = (
     "message_subscription", "message_delivery_receipt",
 )
 OWNERSHIP_TABLE = "m8flow_message_schema_ownership"
+
+
+def prepare_compensation_replay(connection: sa.Connection, migration_context, scripts) -> None:
+    """Present the immutable journal revision with its historical FK shape.
+
+    Only the upgrade step that actually replays that revision calls this.
+    The later runtime revision restores the tenant-qualified references in
+    the same outer transaction; failures roll back both schema and stamps.
+    """
+    historical = scripts.get_revision("fa8b9c0d1e2f").module
+    message = scripts.get_revision("core_message_schema").module
+    inspector = sa.inspect(connection)
+    plans = []
+    for name, items in historical._journal_definitions().items():
+        if not inspector.has_table(name):
+            continue
+        keys = inspector.get_foreign_keys(name)
+        composite = [key for key in keys if key["referred_table"] == "process_instance"
+                     and set(key["constrained_columns"]) == {"m8f_tenant_id", "process_instance_id"}]
+        if not composite:
+            continue
+        message._validate_journal_instance_keys(inspector, name)
+        legacy = any(key["referred_table"] == "process_instance"
+                     and key["constrained_columns"] == ["process_instance_id"] for key in keys)
+        expected = sa.Table(name, sa.MetaData(), *items)
+        if not legacy:
+            for constraint in tuple(expected.foreign_key_constraints):
+                if constraint.column_keys == ["process_instance_id"]:
+                    expected.constraints.remove(constraint)
+                    for element in constraint.elements:
+                        expected.foreign_keys.discard(element)
+                        element.parent.foreign_keys.discard(element)
+        for key in composite:
+            expected.append_constraint(sa.ForeignKeyConstraint(
+                key["constrained_columns"], [f"process_instance.{column}" for column in key["referred_columns"]],
+            ))
+        historical._validate_existing_table(inspector, expected)
+        plans.append((name, composite, legacy))
+    if not plans:
+        return
+    # SQLite must start its write transaction before a batch table rebuild.
+    connection.execute(sa.text("UPDATE alembic_version_m8flow SET version_num = version_num WHERE 1 = 0"))
+    operations = Operations(migration_context)
+    for name, composite, legacy in plans:
+        naming = {"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"}
+        with operations.batch_alter_table(name, naming_convention=naming) as batch:
+            for key in composite:
+                batch.drop_constraint(
+                    key["name"] or f"fk_{name}_{key['constrained_columns'][0]}_process_instance",
+                    type_="foreignkey",
+                )
+            if not legacy:
+                batch.create_foreign_key(
+                    f"fk_{name}_process_instance_id_process_instance", "process_instance", ["process_instance_id"], ["id"],
+                )
 
 
 def core_revision(value: str) -> str:
@@ -44,15 +102,22 @@ def host_revision(value: str) -> str:
 
 
 def require_message_schema(connection: sa.Connection) -> None:
-    """Require columns, primary keys, and tenant relationships before adoption."""
+    """Verify the message contract before changing historical bookkeeping."""
     from m8flow_core.models import Base
 
     inspector = sa.inspect(connection)
+    implementation = MigrationContext.configure(connection).impl
     for name in MESSAGE_TABLES:
         expected = Base.metadata.tables[name]
         if not inspector.has_table(name):
             raise RuntimeError(f"Incompatible historical message schema: missing table {name}")
-        columns = {column["name"] for column in inspector.get_columns(name)}
+        columns = {column["name"]: column for column in inspector.get_columns(name)}
+        for column in expected.columns:
+            actual = columns.get(column.name)
+            if actual is None or actual["nullable"] != column.nullable or implementation.compare_type(
+                sa.Column(column.name, actual["type"]), column,
+            ):
+                raise RuntimeError(f"Incompatible historical message schema: {name}.{column.name}")
         primary_key = set(inspector.get_pk_constraint(name)["constrained_columns"])
         keys = {
             (tuple(key["constrained_columns"]), key["referred_table"], tuple(key["referred_columns"]))
@@ -63,9 +128,25 @@ def require_message_schema(connection: sa.Connection) -> None:
             (tuple(key.column_keys), key.referred_table.name, tuple(element.column.name for element in key.elements))
             for key in expected.foreign_key_constraints
         }
-        if not (set(expected.columns.keys()) <= columns
+        if not (set(expected.columns.keys()) <= columns.keys()
                 and primary_key == set(expected.primary_key.columns.keys()) and expected_keys <= keys):
             raise RuntimeError(f"Incompatible historical message schema: {name}")
+        checks = [key for key in expected.constraints if isinstance(key, sa.CheckConstraint)]
+        if checks:
+            # Reflect through the same dialect so PostgreSQL's rewritten casts
+            # and IN expressions can be compared without weakening the checks.
+            probe = sa.Table(
+                f"message_schema_probe_{uuid4().hex}", sa.MetaData(),
+                *(sa.Column(column.name, column.type) for column in expected.columns),
+                *(sa.CheckConstraint(str(key.sqltext)) for key in checks), prefixes=["TEMPORARY"],
+            )
+            probe.create(connection)
+            try:
+                required = {key["sqltext"] for key in sa.inspect(connection).get_check_constraints(probe.name)}
+            finally:
+                probe.drop(connection)
+            if not required <= {key["sqltext"] for key in inspector.get_check_constraints(name)}:
+                raise RuntimeError(f"Incompatible historical message schema: {name} check constraints")
 
 
 def compatible_core_revision(connection: sa.Connection, value: str) -> str:

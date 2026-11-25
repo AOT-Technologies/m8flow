@@ -971,7 +971,7 @@ requires-dist = [
     { name = "joserfc", specifier = ">=1.7.6,<2.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lxml", specifier = ">=5.3.1" },
-    { name = "m8flow-core", specifier = "==1.1.0b1" },
+    { name = "m8flow-core", specifier = "==1.1.0b2" },
     { name = "m8flow-telemetry", extras = ["flask", "asgi"], directory = "../m8flow-telemetry" },
     { name = "mcp", specifier = ">=1.9.0,<2.0.0" },
     { name = "nats-py", specifier = ">=2.6.0" },
@@ -993,7 +993,7 @@ dev = [
 
 [[package]]
 name = "m8flow-core"
-version = "1.1.0b1"
+version = "1.1.0b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -1004,9 +1004,9 @@ dependencies = [
     { name = "spiffworkflow" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/a8/4d1be99d6b5fd23e033d9ea8a84dea01032e8aade2610391f9fbe013efb8/m8flow_core-1.1.0b1.tar.gz", hash = "sha256:8cd09d34e8dc8ae97d54d8dfab27eb0dff0b1889faedbfa7dfc4b9dc6af17d47", size = 499641, upload-time = "2026-11-19T20:28:37.314Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/88/cce9197dc4a94baa4aa5f6456c184908ef4d6173d30dc6fe2c29ee9d91aa/m8flow_core-1.1.0b2.tar.gz", hash = "sha256:82f37f42dc17ca50fb709785852026c569dd82e034aa9810d930af24657ff9e0", size = 503038, upload-time = "2026-11-24T16:44:11.463Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ff/44/635cad9b6d6575889595cae5d191fb4f841395e013ec5ea200f69ad5beb0/m8flow_core-1.1.0b1-py3-none-any.whl", hash = "sha256:e60ac76db4aaae1576d9a9302a4fb6e5da523eebfb39dafee58454e4b0f22fe5", size = 167059, upload-time = "2026-11-19T20:28:35.732Z" },
+    { url = "https://files.pythonhosted.org/packages/34/de/70b87c5603af12ca573d3a975c2973ee07c8202cc21cbe791765db6a64f7/m8flow_core-1.1.0b2-py3-none-any.whl", hash = "sha256:90106c8a18d710717fc55f6143de7e9dcb93a5e224b85d29b5dca3ca3bdd7151", size = 167258, upload-time = "2026-11-24T16:44:09.904Z" },
 ]
 
 [[package]]

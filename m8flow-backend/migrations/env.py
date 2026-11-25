@@ -14,6 +14,7 @@ from m8flow_backend.migration_compatibility import (
     core_revision,
     host_revision,
     legacy_ownership_table,
+    prepare_compensation_replay,
     require_message_schema,
 )
 
@@ -68,10 +69,32 @@ def _reconcile_legacy_core_message_marker(connection: Connection) -> None:
     """Normalize an installed core schema even when the host is already at head."""
     name = "m8flow_core_alembic_version"
     if not sa.inspect(connection).has_table(name):
+        # A standalone core installation may predate the dedicated host table.
+        # Copy its verified handoff without changing the generic version table.
+        if sa.inspect(connection).has_table("alembic_version"):
+            legacy = sa.table("alembic_version", sa.column("version_num"))
+            recorded = list(connection.scalars(sa.select(legacy.c.version_num)))
+            recognized = [
+                value for value in recorded
+                if (value == "message_correlation" or value.lower().endswith("_message_correlation"))
+                and core_revision(value) == "message_correlation"
+            ]
+            if recognized:
+                if len(recorded) != 1:
+                    raise RuntimeError("Legacy alembic_version contains mixed host/core revisions")
+                require_message_schema(connection)
+                table = sa.Table(name, sa.MetaData(), sa.Column("version_num", sa.String(32), primary_key=True))
+                table.create(connection)
+                connection.execute(table.insert().values(version_num="k2l3m4n5o6p7"))
         return
     version = sa.table(name, sa.column("version_num"))
     recorded = list(connection.scalars(sa.select(version.c.version_num)))
-    aliases = {value: core_revision(value) for value in recorded}
+    # This table records the host/core handoff, not the standalone core chain.
+    # Keep the baseline required by historical host migrations on replay.
+    aliases = {
+        value: "k2l3m4n5o6p7" if core_revision(value) == "message_correlation" else value
+        for value in recorded
+    }
     if all(value == current for value, current in aliases.items()):
         return
     if len(recorded) != 1:
@@ -137,13 +160,24 @@ def run_migrations_online():
         # back with the surrounding Alembic transaction. MySQL/MariaDB may
         # implicitly commit DDL, so the breaking-migration runbook requires a
         # verified backup and restore-based recovery for those dialects.
-        context.configure(
+        options = dict(
             connection=connection,
             target_metadata=target_metadata,
             version_table="alembic_version_m8flow",
             compare_type=True,
             transactional_ddl=connection.dialect.name in TRANSACTIONAL_DDL_DIALECTS,
         )
+        context.configure(**options)
+        migration_fn = context.get_context().opts["fn"]
+        scripts = ScriptDirectory.from_config(config)
+
+        def compatible_steps(revisions, migration_context):
+            for step in migration_fn(revisions, migration_context):
+                if step.is_upgrade and step.revision.revision == "fa8b9c0d1e2f":
+                    prepare_compensation_replay(connection, migration_context, scripts)
+                yield step
+
+        context.configure(**options, fn=compatible_steps)
         with context.begin_transaction():
             _reconcile_legacy_message_revisions(connection)
             _reconcile_legacy_core_message_marker(connection)

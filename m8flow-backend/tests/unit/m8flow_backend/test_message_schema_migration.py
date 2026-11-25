@@ -84,14 +84,15 @@ def test_message_downgrade_keeps_tables_without_provenance_or_with_external_refe
     "layout", ["legacy", "composite", "both", "reordered", "split", "missing-tenant", "extra", "wrong-target"],
 )
 def test_compensation_adoption_accepts_only_complete_fk_layouts(db_engine, layout):
-    revision = _revision("fa8b9c0d1e2f")
+    revision = _revision("core_message_schema")
+    historical = _revision("fa8b9c0d1e2f")
     metadata = sa.MetaData()
     sa.Table("m8flow_tenant", metadata, sa.Column("id", sa.String(255), primary_key=True))
     sa.Table(
         "process_instance", metadata, sa.Column("id", sa.Integer, primary_key=True),
         sa.Column("m8f_tenant_id", sa.String(255)),
     )
-    items = revision._journal_definitions()["compensation_scope"]
+    items = historical._journal_definitions()["compensation_scope"]
     table = sa.Table("compensation_scope", metadata, *items)
     for constraint in tuple(table.foreign_key_constraints):
         table.constraints.remove(constraint)
@@ -113,12 +114,11 @@ def test_compensation_adoption_accepts_only_complete_fk_layouts(db_engine, layou
         table.append_constraint(sa.ForeignKeyConstraint(["process_instance_id"], ["process_instance.id"]))
     if layout == "extra":
         table.append_constraint(sa.ForeignKeyConstraint(["scope_id"], ["m8flow_tenant.id"]))
-    expected = sa.Table("compensation_scope", sa.MetaData(), *revision._journal_definitions()["compensation_scope"])
     with db_engine.begin() as connection:
         connection.exec_driver_sql("DROP TABLE compensation_scope")
         table.create(connection)
         if layout in {"legacy", "composite", "both", "reordered"}:
-            revision._validate_existing_table(sa.inspect(connection), expected)
+            revision._validate_journal_instance_keys(sa.inspect(connection), "compensation_scope")
         else:
             with pytest.raises(RuntimeError, match="expected foreign keys"):
-                revision._validate_existing_table(sa.inspect(connection), expected)
+                revision._validate_journal_instance_keys(sa.inspect(connection), "compensation_scope")

@@ -821,6 +821,12 @@ def test_super_admin_lists_groups_across_tenants(client, db_session, tmp_path, m
 
 
 def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, monkeypatch):
+    from m8flow_core.models.bpmn_process_definition import (
+        BpmnProcessDefinitionModel,
+        PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
+    )
+    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
         client, db_session, username="admin-detail", groups=["t1:tenant-admin"], tenant_id="t1"
@@ -842,6 +848,71 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
         start=now - 30,
         status="running",
     )
+    ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    schedule_times = [
+        datetime(2026, 2, 3, 4, 5, tzinfo=UTC),
+        datetime(2026, 2, 3, 5, 5, tzinfo=UTC),
+    ]
+    schedule_definitions = []
+    for tenant_id, suffix in (("t1", "first"), ("t1", "second"), ("t2", "other-tenant")):
+        definition = BpmnProcessDefinitionModel(
+            process_xml_digest=f"timer-{tenant_id}-{suffix}",
+            bpmn_identifier="finance/invoice-approval",
+            properties_json={
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY: "finance/invoice-approval",
+            },
+            m8f_tenant_id=tenant_id,
+        )
+        db_session.add(definition)
+        schedule_definitions.append((tenant_id, suffix, definition))
+    db_session.flush()
+    for index, (tenant_id, suffix, definition) in enumerate(schedule_definitions):
+        run_at = schedule_times[index] if tenant_id == "t1" else datetime(2026, 2, 3, 3, 5, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key=f"timer-start-{tenant_id}-{suffix}",
+                job_type="timer_start",
+                bpmn_process_definition_id=definition.id,
+                run_at=run_at,
+                payload_json={},
+                created_at=run_at,
+                updated_at=run_at,
+                m8f_tenant_id=tenant_id,
+            )
+        )
+    # Newer core releases distinguish a one-shot timer occurrence from the
+    # recurring schedule. Only create that fixture when this core version
+    # supports the job type; b3 validates job types against its enum.
+    occurrence_type = getattr(SchedulerJobType, "timer_start_occurrence", None)
+    if occurrence_type is not None:
+        occurrence_run_at = datetime(2026, 2, 3, 2, 5, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key="timer-occurrence-t1",
+                job_type=occurrence_type.value,
+                bpmn_process_definition_id=schedule_definitions[0][2].id,
+                run_at=occurrence_run_at,
+                payload_json={},
+                created_at=occurrence_run_at,
+                updated_at=occurrence_run_at,
+                m8f_tenant_id="t1",
+            )
+        )
+        # The same model identifier in another tenant deliberately has both
+        # kinds of timer row. Neither may leak into the t1 detail response.
+        other_occurrence_run_at = datetime(2026, 2, 3, 2, 15, tzinfo=UTC)
+        db_session.add(
+            SchedulerJobModel(
+                job_key="timer-occurrence-t2",
+                job_type=occurrence_type.value,
+                bpmn_process_definition_id=schedule_definitions[2][2].id,
+                run_at=other_occurrence_run_at,
+                payload_json={},
+                created_at=other_occurrence_run_at,
+                updated_at=other_occurrence_run_at,
+                m8f_tenant_id="t2",
+            )
+        )
     db_session.commit()
 
     response = client.get(
@@ -858,6 +929,17 @@ def test_tenant_admin_gets_process_model_detail(client, db_session, tmp_path, mo
     assert body["last_run_at"] == datetime.fromtimestamp(now - 30, UTC).isoformat()
     assert body["running_now"] == 1
     assert body["runs_30d"] == 2
+    assert body["timer_start_schedules"] == [
+        {"next_run_at": "2026-02-03T04:05:00+00:00"},
+        {"next_run_at": "2026-02-03T05:05:00+00:00"},
+    ]
+    assert all(
+        row["next_run_at"] not in {
+            "2026-02-03T03:05:00+00:00",
+            "2026-02-03T02:15:00+00:00",
+        }
+        for row in body["timer_start_schedules"]
+    )
     assert len(body["recent_instances"]) == 2
     assert body["recent_instances"][0]["status"] == "running"
     assert body["recent_instances"][0]["started_by"] == "admin-detail"
@@ -2906,6 +2988,41 @@ def test_create_file_upload_content(client, db_session, tmp_path, monkeypatch):
     assert response.status_code == 201, response.get_json()
     saved = _get_model_file(client, {"Authorization": f"Bearer {token}"}, "finance:invoice-approval", "readme.txt")
     assert saved.text == "hello"
+
+
+@pytest.mark.parametrize(
+    ("content", "error_code"),
+    [
+        ("<?xml version='1.0'?><bpmn:definitions>", "invalid_process_model"),
+        ("""<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="p"><bpmn:startEvent id="start"><bpmn:messageEventDefinition /></bpmn:startEvent></bpmn:process>
+        </bpmn:definitions>""", "unsupported_bpmn"),
+        ("""<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL">
+          <bpmn:process id="p"><bpmn:startEvent id="start"><bpmn:compensateEventDefinition /></bpmn:startEvent></bpmn:process>
+        </bpmn:definitions>""", "unsupported_bpmn"),
+    ],
+    ids=["malformed-xml", "unsupported-event", "unsupported-compensation-start"],
+)
+def test_create_file_rejects_invalid_bpmn_upload(
+    client, db_session, tmp_path, monkeypatch, content, error_code
+):
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _user, token = _login_user(
+        client, db_session, username="file-invalid-bpmn", groups=["t1:editor"], tenant_id="t1"
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post(
+        "/v1.0/m8flow/process-models/finance:invoice-approval/files",
+        headers=headers,
+        json={"file_name": "invalid-upload.bpmn", "content": content},
+    )
+
+    assert response.status_code == 400, response.get_json()
+    assert response.get_json()["error_code"] == error_code
+    saved = _get_model_file(
+        client, headers, "finance:invoice-approval", "invalid-upload.bpmn"
+    )
+    assert saved.status_code == 404
 
 
 def test_delete_file_path_traversal_is_rejected(client, db_session, tmp_path, monkeypatch):

@@ -475,7 +475,16 @@ test.describe('Process flow: ways to create and run a process', { tag: ['@workfl
       await expect(page.getByRole('option', { name: 'Upload', exact: true })).toHaveCount(0);
       await dialog.getByLabel('File name').fill(fileName);
       await dialog.getByLabel('Upload file').setInputFiles({ name: fileName, mimeType: 'application/xml', buffer: Buffer.from(content) });
+      // The dialog keeps Add disabled until FileReader has populated the upload
+      // content. Waiting for it here ensures this checks backend rejection, not
+      // a submit racing the browser's asynchronous file read.
+      await expect(dialog.getByRole('button', { name: 'Add file', exact: true })).toBeEnabled();
+      const uploadResponse = page.waitForResponse((response) =>
+        response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/files'),
+      );
       await dialog.getByRole('button', { name: 'Add file', exact: true }).click();
+      const response = await uploadResponse;
+      expect(response.status(), `${fileName} must be rejected by the backend`).toBe(400);
       const alert = dialog.getByRole('alert');
       await expect(alert).toBeVisible();
       messages.push(`${fileName}: ${(await alert.innerText()).trim()}`);

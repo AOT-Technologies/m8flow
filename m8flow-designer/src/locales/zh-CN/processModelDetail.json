@@ -149,5 +149,12 @@
     "expectedOutputJson": "预期输出 JSON",
     "invalidJson": "{{label}}必须是有效的 JSON",
     "notJsonObject": "{{label}}必须是 JSON 对象"
+  },
+  "timerSchedules": {
+    "title": "Timer start schedules",
+    "activeCount_one": "{{count}} active schedule",
+    "activeCount_other": "{{count}} active schedules",
+    "noneActive": "There are no active timer start schedules for this model.",
+    "nextRun": "Next run {{number}}:"
   }
 }

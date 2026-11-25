@@ -10,6 +10,10 @@ after you upgrade.
 
 ## [Unreleased]
 
+### Changed
+
+* Fresh Keycloak realm imports now include a `reviewer` group and a sample reviewer account assigned to it. Existing realms and shared-realm organization memberships are not migrated automatically; see [Identity provider prerequisites](docs/auth-provider/prerequisites.md#realms) before provisioning or upgrading realm-per-tenant deployments. The bundled realm accounts are for development/demo use and must not retain their sample credentials in exposed environments.
+
 ## [2.0.0] - 2026-11-11
 
 ### Added

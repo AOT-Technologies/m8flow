@@ -126,14 +126,14 @@ describe('applyTaskStateMarkers', () => {
 describe('task state legend', () => {
   function mountLegend(translate: (template: string) => string = (template) => template) {
     const container = document.createElement('div');
-    const handlers = new Map<string, () => void>();
+    const handlers = new Map<string, (event?: unknown) => void>();
     const Legend = taskStateLegendModule.m8flowTaskStateLegend[1] as any;
     new Legend(
       { getContainer: () => container },
-      { on: (event: string, handler: () => void) => handlers.set(event, handler) },
+      { on: (event: string, handler: (event?: unknown) => void) => handlers.set(event, handler) },
       translate,
     );
-    return { container, fire: (event: string) => handlers.get(event)?.() };
+    return { container, fire: (event: string, payload?: unknown) => handlers.get(event)?.(payload) };
   }
 
   it('shows a swatch per state plus not-reached and path-taken rows', () => {
@@ -166,6 +166,66 @@ describe('task state legend', () => {
     expect(title()).toBe('Task state');
     expect(firstRow()).toBe('Completed');
     expect(container.querySelectorAll('.m8flow-bpmn-legend')).toHaveLength(1);
+  });
+
+  it('starts open and minimizes / reopens from the title button', () => {
+    let dictionary: Record<string, string> = {};
+    const { container, fire } = mountLegend((template) => dictionary[template] ?? template);
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(false);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().title).toBe('Minimize');
+
+    toggle().click();
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(true);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(toggle().title).toBe('Expand');
+
+    // A language switch keeps it minimized.
+    dictionary = { Expand: 'Erweitern' };
+    fire('i18n.changed');
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(true);
+    expect(toggle().title).toBe('Erweitern');
+
+    toggle().click();
+    expect(legend.classList.contains('m8flow-bpmn-legend--collapsed')).toBe(false);
+  });
+
+  it('minimizes in expanded view and restores the previous state on exit', () => {
+    const { container, fire } = mountLegend();
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const isCollapsed = () => legend.classList.contains('m8flow-bpmn-legend--collapsed');
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    fire('m8flow.expand.changed', { expanded: true });
+    expect(isCollapsed()).toBe(true);
+    toggle().click();
+    expect(isCollapsed()).toBe(false);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(false);
+
+    // Minimized before expanding stays minimized after leaving.
+    toggle().click();
+    fire('m8flow.expand.changed', { expanded: true });
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(true);
+  });
+
+  it('on leaving expanded view restores the state from before expanding, not changes made while expanded', () => {
+    const { container, fire } = mountLegend();
+    const legend = container.querySelector('.m8flow-bpmn-legend') as HTMLElement;
+    const isCollapsed = () => legend.classList.contains('m8flow-bpmn-legend--collapsed');
+    const toggle = () => container.querySelector('.m8flow-bpmn-legend-title') as HTMLButtonElement;
+
+    // Open before expanding; reopened then minimized again while expanded.
+    fire('m8flow.expand.changed', { expanded: true });
+    toggle().click();
+    toggle().click();
+    expect(isCollapsed()).toBe(true);
+    fire('m8flow.expand.changed', { expanded: false });
+    expect(isCollapsed()).toBe(false);
   });
 
   it('renders translated labels as text, not markup', () => {

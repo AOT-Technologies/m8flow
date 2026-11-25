@@ -153,33 +153,23 @@ def _validate_existing_table(inspector: sa.Inspector, expected: sa.Table) -> Non
     if standalone_unique:
         problems.append(f"unexpected standalone unique indexes: {', '.join(sorted(standalone_unique))}")
 
-    # Each entry is one complete FK constraint, containing its column mappings.
-    # Preserve composite grouping while ignoring equivalent column ordering.
-    expected_fks = frozenset(
-        frozenset((element.parent.name, element.target_fullname) for element in constraint.elements)
+    expected_fks = {
+        tuple((element.parent.name, element.target_fullname) for element in constraint.elements)
         for constraint in expected.foreign_key_constraints
-    )
+    }
     actual_fks = set()
     for constraint in inspector.get_foreign_keys(table):
         schema = constraint.get("referred_schema")
         target = constraint["referred_table"]
         if schema and schema != inspector.default_schema_name:
             target = f"{schema}.{target}"
-        actual_fks.add(frozenset(
+        actual_fks.add(tuple(
             (column, f"{target}.{referred_column}")
             for column, referred_column in zip(
                 constraint["constrained_columns"], constraint["referred_columns"], strict=True
             )
         ))
-    instance_key = frozenset({("process_instance_id", "process_instance.id")})
-    tenant_instance_key = frozenset({
-        ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
-        ("process_instance_id", "process_instance.id"),
-    })
-    composite_only = (expected_fks - {instance_key}) | {tenant_instance_key}
-    legacy_and_composite = expected_fks | {tenant_instance_key}
-    allowed_layouts = {expected_fks, composite_only, legacy_and_composite}
-    if frozenset(actual_fks) not in allowed_layouts:
+    if actual_fks != expected_fks:
         required = sorted(f"{column} references {target}" for key in expected_fks for column, target in key)
         problems.append(f"expected foreign keys: {', '.join(required)}")
 

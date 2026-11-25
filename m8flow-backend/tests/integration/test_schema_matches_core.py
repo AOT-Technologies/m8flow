@@ -19,7 +19,7 @@ KNOWN_DIFFERENCES = {
     ("remove_index", "permission_target", ("resource_type", "resource_id", "<expr>")),
     # The host enforces one task completion event per tenant, instance, and task GUID.
     ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
-    # Host M8F-703 migration indexes the tenant-scoped process run statistics.
+    # Host migration adds the tenant-scoped process run statistics index.
     ("remove_index", "process_instance", ("m8f_tenant_id", "process_model_identifier", "started_at")),
     # Host and core name the same unique process GUID constraint differently.
     ("remove_constraint", "bpmn_process", ("guid",)),
@@ -71,18 +71,9 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
             name: marker for name, marker in conn.execute(sa.select(ownership)) if name in core_tables
         }
 
-    # The host journal retains its legacy FK, tenant index, and ownership
-    # check alongside core's tenant-qualified FK. The two index names describe
-    # the same key. The PK already enforces the ownership check's predicate.
+    # Upstream forward migrations converge journal foreign keys to the core
+    # contract, so no journal-specific schema differences are expected.
     known_differences = KNOWN_DIFFERENCES.copy()
-    for journal in ("compensation_scope", "compensation_run", "compensation_record"):
-        if journal in core_tables:
-            known_differences.update({
-                ("remove_fk", journal, ("process_instance_id",)),
-                ("remove_index", journal, ("m8f_tenant_id",)),
-                ("add_index", journal, ("m8f_tenant_id",)),
-                ("remove_constraint", journal, ()),
-            })
 
     found = set()
     found_creation_markers = set()

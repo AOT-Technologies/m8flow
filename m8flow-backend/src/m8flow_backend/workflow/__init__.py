@@ -17,14 +17,19 @@ from types import SimpleNamespace
 from typing import Any
 
 from lxml import etree
-from sqlalchemy import and_, case, column, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
+from sqlalchemy import and_, case, column, delete, exists, false as sa_false, func, inspect as sa_inspect, or_, select, table, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from m8flow_core import api
 from m8flow_core.errors import BpmnCoreError, InvalidStateError, ServiceTaskExecutionError
+from m8flow_core.models.bpmn_process_definition import (
+    BpmnProcessDefinitionModel,
+    PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY,
+)
 from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
 from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
+from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
 from m8flow_core.models.work_item import WorkItemModel
 from m8flow_core.models.work_item_user import WorkItemUserModel
 from m8flow_backend.errors import ApiError, map_bpmn_error
@@ -371,6 +376,173 @@ def import_definition(
         raise map_bpmn_error(exc) from exc
 
 
+# ``timer_start_occurrence`` is present in the core development version used by
+# the timer-start integration, but not in the currently pinned b3 release.
+# Keep this cleanup query compatible with both: the host may encounter these
+# occurrence rows after upgrading core, and importing the host must still work
+# against the pinned release.
+_TIMER_START_OCCURRENCE_JOB_TYPE = getattr(
+    SchedulerJobType, "timer_start_occurrence", None
+)
+_TIMER_START_JOB_TYPES = (
+    SchedulerJobType.timer_start.value,
+    _TIMER_START_OCCURRENCE_JOB_TYPE.value
+    if _TIMER_START_OCCURRENCE_JOB_TYPE is not None
+    else "timer_start_occurrence",
+)
+
+
+def reconcile_process_model_timer_starts(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    status: str,
+    user_id: int,
+    active_definition_id: int | None = None,
+    tenant_lock_held: bool = False,
+) -> None:
+    """Keep core timer-start jobs aligned with the catalog's deployed state.
+
+    Core owns BPMN parsing, timer evaluation, and scheduler execution. The host
+    owns the catalog lifecycle, so it removes jobs for draft/paused models and
+    retains jobs only for the current imported definition while published.
+    When called during publication without an active definition, sync the
+    current primary BPMN through core before retiring historical definitions.
+    Reuse an unchanged definition when it already owns an active timer job.
+    Callers that acquire the tenant lock before importing a definition must
+    pass ``tenant_lock_held=True``; otherwise this function acquires it. The
+    import and reconciliation must remain in the same locked transaction.
+    """
+    from m8flow_backend import catalog
+    from m8flow_backend.catalog import versions
+
+    # Use the same transaction-scoped tenant lock as catalog mutations and
+    # PostgreSQL scheduler polling. A second publish reconciliation must see
+    # the first one's committed timer job before deciding to import BPMN.
+    if not tenant_lock_held:
+        versions.lock_tenant(session, tenant_id)
+
+    if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED and active_definition_id is None:
+        files = catalog.list_model_files(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+        )
+        primary_bpmn = next(
+            (
+                row["name"]
+                for row in files
+                if row.get("primary") and str(row.get("name", "")).lower().endswith(".bpmn")
+            ),
+            None,
+        )
+        if primary_bpmn is None:
+            primary_bpmn = next(
+                (
+                    row["name"]
+                    for row in files
+                    if str(row.get("name", "")).lower().endswith(".bpmn")
+                ),
+                None,
+            )
+        if primary_bpmn is None:
+            raise ApiError(
+                "process_model_primary_file_not_set",
+                "The published process model has no BPMN file.",
+                400,
+            )
+        source_bpmn_xml = catalog.read_model_file(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            file_name=primary_bpmn,
+        )
+        if source_bpmn_xml is None:
+            raise ApiError("not_found", "Process model BPMN file not found", 404)
+        try:
+            bpmn_text = source_bpmn_xml.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise ApiError("invalid_file_content", "BPMN file is not valid UTF-8", 400) from exc
+        source_dmn_xml = catalog.model_dmn_xml(
+            tenant_id=tenant_id,
+            process_model_identifier=process_model_identifier,
+            bpmn_xml=bpmn_text,
+        )
+        # A repeated publish/reconcile for an unchanged recurring timer must
+        # not import another process definition and reset its next-fire time.
+        # Draft/paused definitions have had their timer jobs removed, so they
+        # are deliberately re-imported when publishing or resuming.
+        candidates = list(
+            session.scalars(
+                select(BpmnProcessDefinitionModel)
+                .where(
+                    BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+                    BpmnProcessDefinitionModel.properties_json[
+                        PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+                    ].as_string()
+                    == process_model_identifier,
+                )
+                .order_by(BpmnProcessDefinitionModel.id.desc())
+            ).all()
+        )
+        matching_definition = next(
+            (
+                row
+                for row in candidates
+                if _same_definition_sources(row, bpmn_text, source_dmn_xml)
+            ),
+            None,
+        )
+        if matching_definition is not None:
+            has_active_timer_job = session.scalar(
+                select(SchedulerJobModel.id)
+                .where(
+                    SchedulerJobModel.m8f_tenant_id == tenant_id,
+                    SchedulerJobModel.bpmn_process_definition_id == matching_definition.id,
+                    SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
+                )
+                .limit(1)
+            ) is not None
+            if has_active_timer_job:
+                active_definition_id = matching_definition.id
+
+        if active_definition_id is None:
+            definition = import_definition(
+                session,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                bpmn_identifier=process_model_identifier,
+                source_bpmn_xml=bpmn_text,
+                source_dmn_xml=source_dmn_xml,
+                bpmn_name=primary_bpmn,
+            )
+            active_definition_id = definition.id
+
+    definition_ids = list(
+        session.scalars(
+            select(BpmnProcessDefinitionModel.id).where(
+                BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
+                BpmnProcessDefinitionModel.properties_json[
+                    PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+                ].as_string()
+                == process_model_identifier,
+            )
+        ).all()
+    )
+    if not definition_ids:
+        return
+
+    jobs_to_remove = delete(SchedulerJobModel).where(
+        SchedulerJobModel.m8f_tenant_id == tenant_id,
+        SchedulerJobModel.bpmn_process_definition_id.in_(definition_ids),
+        SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
+    )
+    if status == catalog.PROCESS_MODEL_STATUS_PUBLISHED:
+        if active_definition_id is None:
+            return
+        jobs_to_remove = jobs_to_remove.where(
+            SchedulerJobModel.bpmn_process_definition_id != active_definition_id
+        )
+    session.execute(jobs_to_remove)
 def _model_definitions(session: Session, *, tenant_id: str, model_id: str):
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
 
@@ -379,11 +551,11 @@ def _model_definitions(session: Session, *, tenant_id: str, model_id: str):
 
 
 def _timer_start_jobs(session: Session, *, tenant_id: str, definition_ids: set[int]):
-    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
 
     return list(session.scalars(select(SchedulerJobModel).where(
         SchedulerJobModel.m8f_tenant_id == tenant_id,
-        SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+        SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
         SchedulerJobModel.bpmn_process_definition_id.in_(definition_ids),
     ))) if definition_ids else []
 
@@ -2360,6 +2532,38 @@ def process_model_detail_stats(
     }
 
 
+def list_process_model_timer_start_schedules(
+    session: Session, *, tenant_id: str, process_model_identifier: str
+) -> list[dict[str, str | None]]:
+    """Return the next due time for each active timer-start schedule.
+
+    Timer-start schedule rows are core-owned recurring scheduler jobs. Filter
+    both sides of the join by tenant: a matching process-model identifier in a
+    different tenant must never disclose its schedule metadata.
+    """
+    stmt = (
+        select(SchedulerJobModel.run_at)
+        .join(
+            BpmnProcessDefinitionModel,
+            (BpmnProcessDefinitionModel.id == SchedulerJobModel.bpmn_process_definition_id)
+            & (BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id),
+        )
+        .where(
+            SchedulerJobModel.m8f_tenant_id == tenant_id,
+            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            BpmnProcessDefinitionModel.properties_json[
+                PROCESS_MODEL_IDENTIFIER_PROPERTY_KEY
+            ].as_string()
+            == process_model_identifier,
+        )
+        .order_by(SchedulerJobModel.run_at, SchedulerJobModel.id)
+    )
+    return [
+        {"next_run_at": _iso_datetime(run_at)}
+        for run_at in session.scalars(stmt).all()
+    ]
+
+
 def count_instances_for_process_model(
     session: Session, *, tenant_id: str, process_model_identifier: str
 ) -> int:
@@ -2434,13 +2638,25 @@ def list_recent_instances_for_process_model(
         rows.append(
             {
                 "id": instance.id,
-                "started_by": username or "",
+                "started_by": _started_by_display_name(username),
                 "started_at": _iso_datetime(instance.started_at),
                 "duration_seconds": duration,
                 "status": instance.status,
             }
         )
     return rows
+
+
+TIMER_SYSTEM_DISPLAY_NAME = "M8flow scheduler"
+
+
+def _started_by_display_name(username: str | None) -> str:
+    """Return a human-readable initiator label while preserving identity keys elsewhere."""
+    if not username:
+        return ""
+    from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+    return TIMER_SYSTEM_DISPLAY_NAME if username == TIMER_SYSTEM_USERNAME else username
 
 
 # Pseudo-status for the list filter: the same live statuses the Home "Active" card counts.
@@ -2478,8 +2694,9 @@ def list_instances_for_designer(
     (case-insensitive substring) — no free-text task/summary search, same
     scope as the Templates gallery's own `search` param.
 
-    `started_by` is an exact initiator-username match (the same
-    `UserModel.username` this returns as `started_by`); options for the
+    `started_by` filters by the initiator username. The display label
+    "M8flow scheduler" is also accepted as an alias for the timer system
+    username. Options for the
     UI dropdown come from `list_instance_owners_for_designer`. `sort` is
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
@@ -2511,7 +2728,14 @@ def list_instances_for_designer(
         if completed_today:
             stmt = stmt.where(_completed_today_clause())
         if started_by:
-            stmt = stmt.where(UserModel.username == started_by)
+            from m8flow_backend.identity import TIMER_SYSTEM_USERNAME
+
+            filter_username = (
+                TIMER_SYSTEM_USERNAME
+                if started_by == TIMER_SYSTEM_DISPLAY_NAME
+                else started_by
+            )
+            stmt = stmt.where(UserModel.username == filter_username)
         stmt = _scope_instances(stmt, viewer_id=viewer_id, scope=scope)
         if search:
             like = f"%{search}%"
@@ -2546,7 +2770,7 @@ def list_instances_for_designer(
                 "process_model_identifier": instance.process_model_identifier,
                 "process_model_display_name": _display_name_for_row(instance, display_names),
                 "status": instance.status,
-                "started_by": username or "",
+                "started_by": _started_by_display_name(username),
                 "started_at": _iso_datetime(instance.started_at),
                 "ended_at": _iso_datetime(instance.ended_at),
                 "started_by_me": bool(started_by_me),
@@ -2948,7 +3172,7 @@ def get_instance_detail_for_designer(
         "process_model_identifier": instance.process_model_identifier,
         "process_model_display_name": _display_name_for_row(instance, {}),
         "status": instance.status,
-        "started_by": username or "",
+        "started_by": _started_by_display_name(username),
         "started_at": _iso_datetime(instance.started_at),
         "ended_at": _iso_datetime(instance.ended_at),
         "updated_at": _iso_datetime(instance.updated_at),
@@ -3789,7 +4013,7 @@ def _retire_stale_timer_starts(session: Session, tenant_id: str) -> None:
     from m8flow_backend import catalog
     from m8flow_backend.catalog import versions
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
-    from m8flow_core.models.scheduler_job import SchedulerJobModel, SchedulerJobType
+    from m8flow_core.models.scheduler_job import SchedulerJobModel
 
     states = {model.model_id: model for model in versions.states(session, tenant_id)}
     rows = session.execute(
@@ -3797,7 +4021,7 @@ def _retire_stale_timer_starts(session: Session, tenant_id: str) -> None:
         .join(BpmnProcessDefinitionModel, BpmnProcessDefinitionModel.id == SchedulerJobModel.bpmn_process_definition_id)
         .where(
             SchedulerJobModel.m8f_tenant_id == tenant_id,
-            SchedulerJobModel.job_type == SchedulerJobType.timer_start.value,
+            SchedulerJobModel.job_type.in_(_TIMER_START_JOB_TYPES),
             BpmnProcessDefinitionModel.m8f_tenant_id == tenant_id,
         )
     )

@@ -87,9 +87,18 @@ Use the neutral names for explicit migration targets.
 Deploy the coordinated host and core migration updates before using these
 names with standalone core Alembic tooling; older scripts cannot resolve
 neutral stamps. The host normalizes its dedicated
-`m8flow_core_alembic_version` message marker even when its own migrations
-are already at head. It accepts either message marker during schema handoff
-and leaves unrelated generic `alembic_version` rows unchanged.
+`m8flow_core_alembic_version` message marker back to the host handoff baseline
+`k2l3m4n5o6p7`, even when its own migrations are already at head. The host owns
+all subsequent schema changes through forward migrations; standalone core
+Alembic uses its separate neutral revision names. Existing host revisions remain
+unchanged, and generic `alembic_version` rows are left untouched.
+
+When an older host stamp requires replaying the immutable compensation-journal
+revision over already upgraded tables, the migration environment first validates
+the tables and temporarily restores that revision's original foreign-key shape.
+The forward runtime migration restores tenant-qualified references in the same
+transaction. On PostgreSQL and SQLite, a failed upgrade rolls back the schema
+and stamps together; existing journal records and message receipts are retained.
 
 Existing ticket-based host migration stamps and the old message ownership
 table name are translated automatically without replaying table creation.

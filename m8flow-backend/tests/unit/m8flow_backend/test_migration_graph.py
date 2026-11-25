@@ -7,8 +7,9 @@ from pathlib import Path
 from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
-_HEAD = "merge_message_error_timestamp"
-_FINAL_REVISIONS = {"merge_message_run_stats", "d8e9f0a1b2c3", _HEAD}
+_PREVIOUS_HEAD = "b6c7d8e9f0a1"
+_HEAD = "merge_message_runtime_schema"
+_FINAL_REVISIONS = {"merge_message_run_stats", "d8e9f0a1b2c3", "merge_message_error_timestamp", "a3f4e5d6c7b8", "b6c7d8e9f0a1", _HEAD}
 
 
 def _required_revisions(script: ScriptDirectory, start: str) -> set[str]:
@@ -40,6 +41,7 @@ def test_deployed_merge_ancestry_is_preserved_and_cleanup_is_reachable():
     ]
     assert len(all_revisions) == len(set(all_revisions))
     assert "d1e2f3a4b5c6" in all_revisions
+    assert _PREVIOUS_HEAD in all_revisions
 
     # These are the two heads that existed when the NATS and external-form
     # migrations were deployed. Both must reach the single current head.
@@ -180,13 +182,22 @@ def test_new_main_and_message_heads_converge():
 def test_message_and_error_timestamp_heads_converge():
     script = ScriptDirectory(str(_MIGRATIONS_DIR))
     assert _required_revisions(script, "merge_message_run_stats") == {
-        "d8e9f0a1b2c3",
-        _HEAD,
+        *_FINAL_REVISIONS - {"merge_message_run_stats"},
     }
     assert _required_revisions(script, "d8e9f0a1b2c3") == {
         "core_message_schema",
         "merge_message_host_heads",
         "merge_message_nats_permissions",
-        "merge_message_run_stats",
-        _HEAD,
+        *_FINAL_REVISIONS - {"d8e9f0a1b2c3"},
+    }
+
+
+def test_upstream_runtime_and_previous_message_heads_converge():
+    script = ScriptDirectory(str(_MIGRATIONS_DIR))
+    assert _required_revisions(script, "merge_message_error_timestamp") == {
+        "a3f4e5d6c7b8", "b6c7d8e9f0a1", _HEAD,
+    }
+    assert _required_revisions(script, "b6c7d8e9f0a1") == {
+        "core_message_schema", "merge_message_host_heads", "merge_message_nats_permissions",
+        "merge_message_run_stats", "merge_message_error_timestamp", _HEAD,
     }

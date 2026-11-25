@@ -17,6 +17,7 @@ disposable database.
 from __future__ import annotations
 
 import os
+import runpy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -72,6 +73,11 @@ def _orm_table_names() -> set[str]:
     return {name for metadata in alembic_target_metadata() for name in metadata.tables}
 
 
+def _root_baseline_table_names() -> set[str]:
+    migration = runpy.run_path(str(_MIGRATIONS_DIR / "versions" / "1518b05122bc_create_m8flow_tables.py"))
+    return set(migration["BASELINE_TABLE_NAMES"])
+
+
 def _alembic_config(database_uri: str, monkeypatch: pytest.MonkeyPatch) -> Config:
     # env.py resolves the URL from the environment; give it the empty DB.
     monkeypatch.setenv("M8FLOW_BACKEND_DATABASE_URI", database_uri)
@@ -101,6 +107,15 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
     assert "ix_process_instance_collaboration_lookup" in {
         index["name"] for index in inspector.get_indexes("process_instance")
     }
+    for table_name in _JOURNAL_TABLES:
+        journal_fks = [
+            item
+            for item in inspector.get_foreign_keys(table_name)
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in journal_fks] == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
 
     # The chain ran to completion and is stamped at its one head.
     with engine.connect() as connection:
@@ -110,7 +125,7 @@ def test_upgrade_head_on_empty_sqlite_builds_full_schema(tmp_path, monkeypatch):
         stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version_m8flow")
         ).scalar()
-    assert core_stamped == "message_correlation"
+    assert core_stamped == "k2l3m4n5o6p7"
     assert stamped == _script_head()
 
     # Base tenant seed lands regardless of dialect.
@@ -394,7 +409,7 @@ def test_core_marker_primary_key_prevents_duplicate_revisions(tmp_path, monkeypa
     with engine.connect() as connection:
         assert connection.execute(sa.text(
             "SELECT version_num FROM m8flow_core_alembic_version"
-        )).scalars().all() == ["message_correlation"]
+        )).scalars().all() == ["k2l3m4n5o6p7"]
     engine.dispose()
 
 
@@ -407,7 +422,7 @@ def test_upgrade_refuses_multiple_distinct_compatible_core_markers(tmp_path, mon
         connection.execute(sa.text(
             "INSERT INTO m8flow_core_alembic_version (version_num) VALUES ('message_correlation')"
         ))
-    with pytest.raises(RuntimeError, match="compatible revision"):
+    with pytest.raises(RuntimeError, match="Ambiguous core migration markers"):
         command.upgrade(cfg, "head")
     engine.dispose()
 
@@ -460,7 +475,7 @@ def test_upgrade_completes_missing_core_marker_for_existing_schema(tmp_path, mon
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "message_correlation"
+    assert core_stamped == "k2l3m4n5o6p7"
 
 
 def test_upgrade_applies_core_column_cleanup_when_marker_was_preseeded(tmp_path, monkeypatch):
@@ -499,10 +514,11 @@ def test_upgrade_self_heals_empty_dedicated_core_marker(tmp_path, monkeypatch):
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "message_correlation"
+    assert core_stamped == "k2l3m4n5o6p7"
 
 
-def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
+@pytest.mark.parametrize("legacy_marker", ["legacy-host-head", "m8f_1_other_schema"])
+def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch, legacy_marker):
     """Host-owned legacy rows must not collide with the core marker."""
     db_path = tmp_path / "host-legacy-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
@@ -517,7 +533,7 @@ def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
             )
         )
         connection.execute(
-            sa.text("INSERT INTO alembic_version (version_num) VALUES ('legacy-host-head')")
+            sa.text("INSERT INTO alembic_version (version_num) VALUES (:marker)"), {"marker": legacy_marker},
         )
 
     command.upgrade(cfg, "head")
@@ -529,8 +545,8 @@ def test_upgrade_ignores_unrelated_legacy_alembic_rows(tmp_path, monkeypatch):
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "message_correlation"
-    assert legacy_stamped == "legacy-host-head"
+    assert core_stamped == "k2l3m4n5o6p7"
+    assert legacy_stamped == legacy_marker
 
 
 @pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
@@ -560,7 +576,7 @@ def test_upgrade_migrates_sole_legacy_core_marker(tmp_path, monkeypatch, core_ma
         core_stamped = connection.execute(
             sa.text("SELECT version_num FROM m8flow_core_alembic_version")
         ).scalar()
-    assert core_stamped == "message_correlation"
+    assert core_stamped == "k2l3m4n5o6p7"
 
 
 @pytest.mark.parametrize("core_marker", ["k2l3m4n5o6p7", "message_correlation", _LEGACY_CORE_MARKER])
@@ -568,7 +584,10 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
     """Databases already at c4 are upgraded without replaying c4."""
     db_path = tmp_path / "old-head-marker.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
-    command.upgrade(cfg, "head")
+    # Build the actual schema at c4 before simulating its legacy version
+    # markers. Starting at head and merely rewinding the marker leaves the
+    # newer composite compensation FKs in place, which is not a valid c4 DB.
+    command.upgrade(cfg, "c4d5e6f7a8b9")
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     with engine.begin() as connection:
@@ -596,7 +615,7 @@ def test_followup_migration_moves_marker_for_database_at_old_head(tmp_path, monk
         legacy_stamped = connection.execute(
             sa.text("SELECT version_num FROM alembic_version")
         ).scalar()
-    assert core_stamped == "message_correlation"
+    assert core_stamped == "k2l3m4n5o6p7"
     assert legacy_stamped == core_marker
 
 
@@ -676,11 +695,12 @@ def test_upgrade_then_downgrade_on_empty_sqlite_is_clean(tmp_path, monkeypatch):
 
     engine = sa.create_engine(f"sqlite:///{db_path}")
     remaining = set(sa.inspect(engine).get_table_names())
-    # The historical root creates the legacy group table; the breaking
-    # migration renames it to m8f_group on upgrade. A full downgrade restores
-    # that historical table shape, so it is the one expected survivor besides
-    # Alembic's bookkeeping table.
-    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"}
+    # The historical root has a frozen downgrade scope. Tables added to the
+    # current core ORM after that baseline are deliberately retained, as are
+    # Alembic's bookkeeping table and the legacy group table restored by downgrade.
+    configuration_tables = {"m8flow_named_value", "m8flow_connector_variable"}
+    retained_core_tables = _orm_table_names() - _root_baseline_table_names() - configuration_tables
+    assert remaining <= {"alembic_version", "alembic_version_m8flow", "group"} | retained_core_tables
 
 
 @pytest.mark.parametrize("missing", ["neither", "index", "both"])
@@ -817,7 +837,13 @@ def journal_schema(tmp_path_factory):
 def _legacy_journal_table(schema, metadata, name):
     for parent in ("m8flow_tenant", "process_instance"):
         if parent not in metadata.tables:
-            sa.Table(parent, metadata, sa.Column("id", schema.tables[parent].c.id.type, primary_key=True))
+            columns = [sa.Column("id", schema.tables[parent].c.id.type, primary_key=True)]
+            if parent == "process_instance":
+                # Core 1.1 scopes journal-to-instance references by both tenant
+                # and instance id. This lightweight metadata only resolves the
+                # FK targets; the actual parent tables already exist in SQLite.
+                columns.append(sa.Column("m8f_tenant_id", sa.String(255), nullable=False))
+            sa.Table(parent, metadata, *columns)
     table = schema.tables[name].to_metadata(metadata)
     table.indexes.clear()
     for constraint in tuple(table.constraints):
@@ -1004,6 +1030,226 @@ def test_compensation_upgrade_rejects_incompatible_existing_table(
     engine.dispose()
 
 
+def test_compensation_upgrade_requires_composite_process_instance_key(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-process-instance-key.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    composite_unique_indexes = [
+        index
+        for index in sa.inspect(engine).get_indexes("process_instance")
+        if index.get("unique")
+        and index.get("column_names") == ["m8f_tenant_id", "id"]
+    ]
+    assert composite_unique_indexes, "fixture should include the core composite unique index"
+    with engine.begin() as connection:
+        # The squashed baseline may have created these tables from current ORM
+        # metadata; this test exercises the incremental revision itself.
+        for table_name in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
+        connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+
+    # Recreate the legacy journal schema, then stop before the new forward
+    # migration. The core revision repairs the process_instance key, so drop it
+    # only after that revision has run.
+    command.upgrade(cfg, "a3f4e5d6c7b8")
+    with engine.begin() as connection:
+        for index in composite_unique_indexes:
+            connection.execute(sa.text(f'DROP INDEX "{index["name"]}"'))
+
+    with pytest.raises(RuntimeError, match="non-partial unique index"):
+        command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
+    for table in _JOURNAL_TABLES:
+        references = [
+            (tuple(fk["constrained_columns"]), fk["referred_table"], tuple(fk["referred_columns"]))
+            for fk in inspector.get_foreign_keys(table)
+            if fk["referred_table"] == "process_instance"
+        ]
+        assert references == [(('process_instance_id',), 'process_instance', ('id',))]
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == "a3f4e5d6c7b8"
+    engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("index_metadata", "is_accepted"),
+    [
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "dialect_options": {"postgresql_where": None},
+            },
+            True,
+        ),
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "dialect_options": {"postgresql_where": "m8f_tenant_id IS NOT NULL"},
+            },
+            False,
+        ),
+        (
+            {
+                "unique": True,
+                "column_names": ["m8f_tenant_id", "id"],
+                "where": "m8f_tenant_id IS NOT NULL",
+            },
+            False,
+        ),
+    ],
+)
+def test_compensation_key_reflection_handles_dialect_partial_index_metadata(
+    monkeypatch, index_metadata, is_accepted
+):
+    migration = runpy.run_path(
+        str(_MIGRATIONS_DIR / "versions" / "b6c7d8e9f0a1_scope_compensation_foreign_keys.py")
+    )
+
+    class Inspector:
+        def has_table(self, _table):
+            return True
+
+        def get_pk_constraint(self, _table):
+            return {"constrained_columns": ["id"]}
+
+        def get_unique_constraints(self, _table):
+            return []
+
+        def get_indexes(self, _table):
+            return [index_metadata]
+
+    monkeypatch.setattr(sa, "inspect", lambda _bind: Inspector())
+    if is_accepted:
+        migration["_validate_process_instance_tenant_key"](object())
+    else:
+        with pytest.raises(RuntimeError, match="non-partial unique index"):
+            migration["_validate_process_instance_tenant_key"](object())
+
+
+def test_compensation_upgrade_accepts_reordered_composite_unique_index(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-process-instance-key-reordered.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = "c1e4f5a6b7d8"
+    command.upgrade(cfg, previous_revision)
+
+    engine = sa.create_engine(database_uri)
+    composite_unique_indexes = [
+        index
+        for index in sa.inspect(engine).get_indexes("process_instance")
+        if index.get("unique")
+        and set(index.get("column_names") or ()) == {"m8f_tenant_id", "id"}
+        and len(index.get("column_names") or ()) == 2
+    ]
+    assert composite_unique_indexes, "fixture should include the core composite unique index"
+    with engine.begin() as connection:
+        # The squashed baseline may create journal tables from current ORM
+        # metadata; this test exercises the incremental revision's preflight.
+        for table_name in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
+        connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+        for index in composite_unique_indexes:
+            connection.execute(sa.text(f'DROP INDEX "{index["name"]}"'))
+        connection.execute(
+            sa.text(
+                "CREATE UNIQUE INDEX process_instance_tenant_id_reordered_key "
+                "ON process_instance (id, m8f_tenant_id)"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+
+    inspector = sa.inspect(engine)
+    assert set(_JOURNAL_TABLES) <= set(inspector.get_table_names())
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) != previous_revision
+    engine.dispose()
+
+
+def test_compensation_forward_migration_replaces_legacy_fk_and_preserves_rows(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'journal-tenant-fk-forward.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, "c1e4f5a6b7d8")
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table_name in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table_name}"))
+        connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {_JOURNAL_OWNERSHIP}"))
+    command.upgrade(cfg, "a3f4e5d6c7b8")
+
+    with engine.begin() as connection:
+        connection.execute(
+            sa.text(
+                "INSERT INTO compensation_scope "
+                "(m8f_tenant_id, process_instance_id, created_at, updated_at, scope_id, "
+                "activity_id, completed, data_hash) "
+                "VALUES ('m8flow', 73, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, "
+                "'scope-preserved', 'order', 0, 'hash')"
+            )
+        )
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        fk = [
+            item for item in inspector.get_foreign_keys("compensation_scope")
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in fk] == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
+        row = connection.execute(
+            sa.text("SELECT scope_id, activity_id FROM compensation_scope")
+        ).one()
+        assert row == ("scope-preserved", "order")
+
+    command.downgrade(cfg, _JOURNAL_REVISION)
+    with engine.connect() as connection:
+        inspector = sa.inspect(connection)
+        fk = [
+            item for item in inspector.get_foreign_keys("compensation_scope")
+            if item["referred_table"] == "process_instance"
+        ]
+        assert [(item["constrained_columns"], item["referred_columns"]) for item in fk] == [
+            (["process_instance_id"], ["id"])
+        ]
+        assert connection.scalar(
+            sa.text("SELECT scope_id FROM compensation_scope")
+        ) == "scope-preserved"
+    engine.dispose()
+
+
+def test_compensation_migration_chain_keeps_prior_revision_immutable(tmp_path, monkeypatch):
+    """The prior journal revision stays legacy; this PR's migration scopes it."""
+    database_uri = f"sqlite:///{tmp_path / 'journal-immutable-history.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    command.upgrade(cfg, _JOURNAL_REVISION)
+    engine = sa.create_engine(database_uri)
+
+    def process_instance_fks(table_name: str) -> list[tuple[list[str], list[str]]]:
+        return [
+            (foreign_key["constrained_columns"], foreign_key["referred_columns"])
+            for foreign_key in sa.inspect(engine).get_foreign_keys(table_name)
+            if foreign_key["referred_table"] == "process_instance"
+        ]
+
+    for table_name in _JOURNAL_TABLES:
+        assert process_instance_fks(table_name) == [(["process_instance_id"], ["id"])]
+
+    command.upgrade(cfg, "head")
+    for table_name in _JOURNAL_TABLES:
+        assert process_instance_fks(table_name) == [
+            (["m8f_tenant_id", "process_instance_id"], ["m8f_tenant_id", "id"])
+        ]
+    engine.dispose()
+
+
 def test_compensation_downgrade_keeps_preexisting_ownership_table(tmp_path, monkeypatch):
     database_uri = f"sqlite:///{tmp_path / 'journal-ownership.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
@@ -1042,12 +1288,18 @@ def test_compensation_reconciles_indexes_and_requires_creation_record(
     database_uri = f"sqlite:///{tmp_path / 'partial-journal.db'}"
     cfg = _alembic_config(database_uri, monkeypatch)
     previous_revision = "c1e4f5a6b7d8"
-    command.upgrade(cfg, _JOURNAL_REVISION)
+    command.upgrade(cfg, previous_revision)
 
     engine = sa.create_engine(database_uri)
     name = "compensation_scope"
     tenant_index, process_index = _journal_indexes(name)
     metadata = sa.MetaData()
+    if not replace_table:
+        # Simulate a table owned by the compensation migration rather than the
+        # current core baseline, which now includes these ORM tables itself.
+        with engine.begin() as connection:
+            connection.execute(sa.text(f'DROP TABLE "{name}"'))
+    command.upgrade(cfg, _JOURNAL_REVISION)
     with engine.begin() as connection:
         if replace_table:
             table = _legacy_journal_table(journal_schema, metadata, name)
@@ -1059,8 +1311,12 @@ def test_compensation_reconciles_indexes_and_requires_creation_record(
             table.create(connection)
             original_row = _insert_journal_row(connection, table)
         else:
-            for index in (tenant_index, process_index):
-                connection.execute(sa.DDL(f"DROP INDEX {index}"))
+            # Core may use different names for equivalent indexes. Drop indexes
+            # by indexed column so this simulates an interrupted host migration.
+            for index in sa.inspect(connection).get_indexes(name):
+                if index.get("column_names") in (["m8f_tenant_id"], ["process_instance_id"]):
+                    quoted_name = connection.dialect.identifier_preparer.quote(index["name"])
+                    connection.execute(sa.text(f"DROP INDEX {quoted_name}"))
 
     # Retry the revision against the existing tables as after an interrupted upgrade.
     command.stamp(cfg, previous_revision)
@@ -1082,6 +1338,13 @@ def test_compensation_table_and_creation_record_roll_back_together(tmp_path, mon
     cfg = _alembic_config(database_uri, monkeypatch)
     previous_revision = "c1e4f5a6b7d8"
     command.upgrade(cfg, previous_revision)
+    # The current core metadata includes the journal tables in the baseline
+    # schema. Remove them to exercise this revision's create-and-rollback path.
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table in reversed(_JOURNAL_TABLES):
+            connection.execute(sa.text(f'DROP TABLE "{table}"'))
+    engine.dispose()
     create_index = op.create_index
 
     def fail_journal_index(index_name, *args, **kwargs):
@@ -1147,15 +1410,17 @@ def test_upgrade_head_self_heals_a_pre_squash_stamp(tmp_path, monkeypatch):
     db_path = tmp_path / "legacy.db"
     cfg = _alembic_config(f"sqlite:///{db_path}", monkeypatch)
 
-    # Build the schema, then forge a pre-squash stamp Alembic can't resolve.
-    command.upgrade(cfg, "head")
+    # Build the schema at the old valid head, then forge a pre-squash stamp
+    # Alembic can't resolve. A head-level schema with an old marker would not
+    # represent a database that could have existed before the squash.
+    command.upgrade(cfg, "c4d5e6f7a8b9")
     engine = sa.create_engine(f"sqlite:///{db_path}")
     with engine.begin() as connection:
         connection.execute(
             sa.text("UPDATE alembic_version_m8flow SET version_num = 'v6g7h8i9j0k1'")
         )
 
-    # Must not raise, and must land back on the real chain — data preserved.
+    # Must not raise, and must land back on the real chain â€” data preserved.
     command.upgrade(cfg, "head")
 
     with engine.connect() as connection:
@@ -1256,9 +1521,11 @@ def test_process_model_version_downgrade_removes_postgres_rls_tables(monkeypatch
         command.downgrade(cfg, previous_revision)
         command.downgrade(cfg, "e2f3a4b5c6d7@d1e2f3a4b5c6")
         with engine.connect() as connection:
-            assert connection.scalars(sa.text("SELECT version_num FROM alembic_version_m8flow")).all() == [
-                previous_revision,
-            ]
+            # Collaboration is an independent branch of the message merge;
+            # downgrading versioning leaves that branch applied.
+            assert set(connection.scalars(sa.text("SELECT version_num FROM alembic_version_m8flow"))) == {
+                previous_revision, "e1f2a3b4c5d6",
+            }
             assert table_names.isdisjoint(sa.inspect(connection).get_table_names())
             for table_name in table_names:
                 assert connection.scalars(policies, {"table_name": table_name}).all() == []
@@ -1356,9 +1623,6 @@ def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeyp
     engine = sa.create_engine(database_uri)
     if previous_revision not in {"c4d5e6f7a8b9", "d6e7f8a9b0c1"}:
         assert "compensation_record" in sa.inspect(engine).get_table_names()
-    if previous_revision != "core_message_schema":
-        assert "signal_publication" not in sa.inspect(engine).get_table_names()
-        assert "message_subscription" not in sa.inspect(engine).get_table_names()
     command.upgrade(cfg, "head")
     command.upgrade(cfg, "head")
     assert {"signal_publication", "compensation_record", "message_subscription", "message_delivery_receipt"} <= set(
@@ -1367,7 +1631,7 @@ def test_upgrade_from_pre_message_host_revision_preserves_data(tmp_path, monkeyp
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "m8flow"
         assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == (
-            "message_correlation"
+            "k2l3m4n5o6p7"
         )
     engine.dispose()
 
@@ -1464,7 +1728,10 @@ def test_legacy_message_names_upgrade_without_bootstrap_replay(
     command.downgrade(cfg, "core_message_schema")
     with engine.begin() as connection, Operations.context(MigrationContext.configure(connection)):
         revision.downgrade()
-        assert not set(revision.TABLES) & set(sa.inspect(connection).get_table_names())
+        # The immutable bootstrap creates these tables from the installed ORM;
+        # the message revision must preserve adopted tables and receipt rows.
+        assert set(revision.TABLES) <= set(sa.inspect(connection).get_table_names())
+        assert connection.scalar(sa.text("SELECT delivery_id FROM message_delivery_receipt")) == "legacy-receipt"
         assert ownership.name not in sa.inspect(connection).get_table_names()
     engine.dispose()
 
@@ -1547,7 +1814,7 @@ def test_legacy_core_marker_normalizes_at_host_head_atomically(tmp_path, monkeyp
         command.upgrade(cfg, "head")
         command.upgrade(cfg, "head")
     with engine.connect() as connection:
-        expected = _LEGACY_CORE_MARKER if fail_upgrade else "message_correlation"
+        expected = _LEGACY_CORE_MARKER if fail_upgrade else "k2l3m4n5o6p7"
         assert connection.scalar(sa.select(revision.VERSION.c.version_num)) == expected
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == _script_head()
         assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "unrelated_host_revision"
@@ -1578,6 +1845,7 @@ def test_legacy_core_marker_rejects_ambiguous_host_state(tmp_path, monkeypatch, 
 @pytest.mark.parametrize("state", [
     "malformed", "unsupported", "duplicate", "missing-table", "missing-column", "missing-fk",
     "missing-provenance", "malformed-ownership", "multiple-ownership",
+    "missing-check", "altered-check", "wrong-type", "wrong-nullability",
 ])
 def test_historical_host_adoption_rejects_unsafe_state_without_writes(tmp_path, monkeypatch, state):
     uri = f"sqlite:///{tmp_path / 'invalid-historical-schema.db'}"
@@ -1600,6 +1868,17 @@ def test_historical_host_adoption_rejects_unsafe_state_without_writes(tmp_path, 
             connection.exec_driver_sql("DROP TABLE message_delivery_receipt")
         elif state == "missing-column":
             connection.exec_driver_sql("ALTER TABLE message_delivery_receipt DROP COLUMN delivered_at")
+        elif state in {"missing-check", "altered-check", "wrong-type", "wrong-nullability"}:
+            with Operations.context(MigrationContext.configure(connection)) as operations:
+                with operations.batch_alter_table("message_delivery_receipt") as batch:
+                    if state == "wrong-type":
+                        batch.alter_column("request_digest", type_=sa.Integer())
+                    elif state == "wrong-nullability":
+                        batch.alter_column("request_digest", nullable=True)
+                    else:
+                        batch.drop_constraint("m8f_msg_receipt_outcome", type_="check")
+                        if state == "altered-check":
+                            batch.create_check_constraint("m8f_msg_receipt_outcome", "outcome IS NULL OR outcome IS NOT NULL")
         elif state == "missing-fk":
             key = next(key for key in sa.inspect(connection).get_foreign_keys("message_subscription")
                        if key["referred_table"] == "process_instance")
@@ -1641,4 +1920,205 @@ def test_unsupported_historical_core_markers_are_rejected_at_host_head(tmp_path,
         command.upgrade(cfg, "head")
     with engine.connect() as connection:
         assert connection.scalar(sa.text("SELECT version_num FROM m8flow_core_alembic_version")) == stamp
+    engine.dispose()
+
+
+_SIGNAL_REVISION = "a3f4e5d6c7b8"
+_SIGNAL_TABLES = ("signal_registry_state", "signal_publication", "signal_subscription", "signal_delivery")
+_SIGNAL_TENANT_ID_KEYS = ("m8f_process_instance_tenant_id_key", "m8f_definition_tenant_id_key")
+
+
+def _before_signal_registry() -> str:
+    from alembic.script import ScriptDirectory
+
+    return ScriptDirectory(str(_MIGRATIONS_DIR)).get_revision(_SIGNAL_REVISION).down_revision
+
+
+def test_signal_registry_downgrade_drops_only_what_it_created(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'signals.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        # A baseline built on core 1.0 creates the registry itself; start without it.
+        for table in reversed(_SIGNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table}"))
+        for index in _SIGNAL_TENANT_ID_KEYS:
+            connection.execute(sa.DDL(f"DROP INDEX IF EXISTS {index}"))
+        # One table, with a row, and one index exist before the revision runs.
+        connection.execute(sa.DDL(
+            "CREATE TABLE signal_registry_state (m8f_tenant_id VARCHAR(255) NOT NULL PRIMARY KEY "
+            "REFERENCES m8flow_tenant (id), version INTEGER NOT NULL)"
+        ))
+        connection.execute(sa.text("INSERT INTO signal_registry_state VALUES ('m8flow', 7)"))
+        connection.execute(sa.DDL(
+            "CREATE UNIQUE INDEX m8f_process_instance_tenant_id_key ON process_instance (m8f_tenant_id, id)"
+        ))
+
+    command.upgrade(cfg, "head")
+    assert set(_SIGNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
+
+    command.downgrade(cfg, previous_revision)
+    inspector = sa.inspect(engine)
+    tables = set(inspector.get_table_names())
+    assert set(_SIGNAL_TABLES) & tables == {"signal_registry_state"}
+    assert f"m8flow_{_SIGNAL_REVISION}_ownership" not in tables
+    indexes = {
+        index["name"]
+        for table in ("process_instance", "bpmn_process_definition")
+        for index in inspector.get_indexes(table)
+    }
+    assert "m8f_process_instance_tenant_id_key" in indexes
+    assert "m8f_definition_tenant_id_key" not in indexes
+    with engine.connect() as connection:
+        rows = connection.execute(sa.text("SELECT m8f_tenant_id, version FROM signal_registry_state")).all()
+    assert rows == [("m8flow", 7)]
+
+    # Upgrading again adopts the kept table and recreates the rest.
+    command.upgrade(cfg, "head")
+    assert set(_SIGNAL_TABLES) <= set(sa.inspect(engine).get_table_names())
+    engine.dispose()
+
+
+def test_signal_registry_reuses_an_equivalent_tenant_id_index(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'signals-equivalent-index.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        for table in reversed(_SIGNAL_TABLES):
+            connection.execute(sa.DDL(f"DROP TABLE IF EXISTS {table}"))
+        for index in _SIGNAL_TENANT_ID_KEYS:
+            connection.execute(sa.DDL(f"DROP INDEX IF EXISTS {index}"))
+        # Same columns and unique under another name: counts as the tenant/id key.
+        connection.execute(sa.DDL("CREATE UNIQUE INDEX legacy_pi_key ON process_instance (m8f_tenant_id, id)"))
+        # Neither a non-unique index nor a partial unique one can back a composite foreign key.
+        connection.execute(sa.DDL("CREATE INDEX legacy_def_lookup ON bpmn_process_definition (m8f_tenant_id, id)"))
+        connection.execute(sa.DDL(
+            "CREATE UNIQUE INDEX legacy_def_partial ON bpmn_process_definition (m8f_tenant_id, id) WHERE id > 0"
+        ))
+
+    def index_names() -> set[str]:
+        inspector = sa.inspect(engine)
+        return {
+            index["name"]
+            for table in ("process_instance", "bpmn_process_definition")
+            for index in inspector.get_indexes(table)
+        }
+
+    command.upgrade(cfg, "head")
+    created = index_names()
+    assert "m8f_process_instance_tenant_id_key" not in created
+    assert "m8f_definition_tenant_id_key" in created
+
+    command.downgrade(cfg, previous_revision)
+    assert index_names() >= {"legacy_pi_key", "legacy_def_lookup", "legacy_def_partial"}
+    assert not index_names() & set(_SIGNAL_TENANT_ID_KEYS)
+    engine.dispose()
+
+
+def test_signal_registry_upgrade_names_a_missing_parent_table(tmp_path, monkeypatch):
+    database_uri = f"sqlite:///{tmp_path / 'signals-missing-parent.db'}"
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    with engine.begin() as connection:
+        connection.execute(sa.DDL("ALTER TABLE bpmn_process_definition RENAME TO moved_definition"))
+
+    with pytest.raises(RuntimeError, match=r"missing table\(s\) bpmn_process_definition"):
+        command.upgrade(cfg, "head")
+
+    assert f"m8flow_{_SIGNAL_REVISION}_ownership" not in set(sa.inspect(engine).get_table_names())
+    with engine.connect() as connection:
+        stamped = connection.execute(sa.text("SELECT version_num FROM alembic_version_m8flow")).scalar()
+    assert stamped == previous_revision
+    engine.dispose()
+
+
+@pytest.mark.skipif(
+    not os.environ.get("M8FLOW_TEST_POSTGRES_URI"),
+    reason="Set M8FLOW_TEST_POSTGRES_URI to an empty, disposable database to run the RLS check.",
+)
+def test_signal_registry_downgrade_restores_rls_on_a_table_it_kept(monkeypatch):
+    database_uri = os.environ["M8FLOW_TEST_POSTGRES_URI"]
+    cfg = _alembic_config(database_uri, monkeypatch)
+    previous_revision = _before_signal_registry()
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, previous_revision)
+    engine = sa.create_engine(database_uri)
+    policies = sa.text(
+        "SELECT policyname, permissive, roles, cmd, qual, with_check FROM pg_policies "
+        "WHERE schemaname = current_schema() AND tablename = 'signal_registry_state' ORDER BY policyname"
+    )
+    rls = sa.text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('signal_registry_state')")
+    try:
+        with engine.begin() as connection:
+            connection.execute(sa.DDL("DROP TABLE IF EXISTS signal_registry_state"))
+            connection.execute(sa.DDL(
+                "CREATE TABLE signal_registry_state (m8f_tenant_id VARCHAR(255) NOT NULL PRIMARY KEY "
+                "REFERENCES m8flow_tenant (id), version INTEGER NOT NULL)"
+            ))
+            # RLS off, a same-named policy with another definition, no bypass policy.
+            connection.execute(sa.DDL(
+                "CREATE POLICY signal_registry_state_tenant_isolation ON signal_registry_state "
+                "FOR SELECT USING (version > 0)"
+            ))
+            before = connection.execute(policies).all()
+
+        command.upgrade(cfg, "head")
+        with engine.connect() as connection:
+            assert connection.scalar(rls) is True
+            assert {row.policyname: row.cmd for row in connection.execute(policies)} == {
+                "signal_registry_state_super_admin_select": "SELECT",
+                "signal_registry_state_tenant_isolation": "ALL",
+            }
+
+        command.downgrade(cfg, previous_revision)
+        with engine.connect() as connection:
+            assert connection.scalar(rls) is False
+            assert connection.execute(policies).all() == before
+    finally:
+        command.upgrade(cfg, "head")
+        engine.dispose()
+
+
+def test_compensation_replay_rolls_back_schema_and_stamps_with_failed_forward_step(tmp_path, monkeypatch):
+    uri = f"sqlite:///{tmp_path / 'journal-replay-rollback.db'}"
+    cfg = _alembic_config(uri, monkeypatch)
+    command.upgrade(cfg, "head")
+    engine = sa.create_engine(uri)
+    with engine.begin() as connection:
+        connection.execute(sa.text(
+            "INSERT INTO message_delivery_receipt "
+            "(m8f_tenant_id, delivery_id, request_digest, delivered_at) "
+            "VALUES ('m8flow', 'retained', :digest, :now)"
+        ), {"digest": "a" * 64, "now": datetime.now(UTC)})
+        before = {name: sa.inspect(connection).get_foreign_keys(name) for name in _JOURNAL_TABLES}
+    command.stamp(cfg, "f4254352d453")
+
+    def fail_forward(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.startswith("UPDATE m8flow_core_alembic_version SET"):
+            raise RuntimeError("injected forward migration failure")
+
+    sa.event.listen(sa.Engine, "before_cursor_execute", fail_forward)
+    try:
+        with pytest.raises(RuntimeError, match="injected forward migration failure"):
+            command.upgrade(cfg, "head")
+    finally:
+        sa.event.remove(sa.Engine, "before_cursor_execute", fail_forward)
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == "f4254352d453"
+        assert connection.scalar(sa.text("SELECT delivery_id FROM message_delivery_receipt")) == "retained"
+        assert {name: sa.inspect(connection).get_foreign_keys(name) for name in _JOURNAL_TABLES} == before
+    command.upgrade(cfg, "head")
+    with engine.connect() as connection:
+        assert connection.scalar(sa.text("SELECT delivery_id FROM message_delivery_receipt")) == "retained"
+        for name in _JOURNAL_TABLES:
+            keys = [key for key in sa.inspect(connection).get_foreign_keys(name)
+                    if key["referred_table"] == "process_instance"]
+            assert len(keys) == 1
+            assert keys[0]["constrained_columns"] == ["m8f_tenant_id", "process_instance_id"]
     engine.dispose()

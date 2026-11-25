@@ -22,6 +22,7 @@ ROUTE = "/v1.0/m8flow/messages/correlate"
 @pytest.mark.parametrize("legacy_revision", [
     _LEGACY_SCHEMA_REVISION, f"{_HISTORICAL_NAMESPACE}_merge_host_heads",
     f"{_HISTORICAL_NAMESPACE}_merge_nats_permissions", f"{_HISTORICAL_NAMESPACE}_merge_run_stats",
+    "f4254352d453", "c1e4f5a6b7d8",
 ])
 def test_legacy_host_stamps_preserve_live_message_waits(admin_engine, monkeypatch, legacy_revision):
     from pathlib import Path
@@ -135,7 +136,7 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
                     if name not in {index["name"] for index in sa.inspect(connection).get_indexes(table)}:
                         connection.execute(sa.text(f"CREATE UNIQUE INDEX {name} ON {table} (m8f_tenant_id, id)"))
                 for name in revision.TABLES:
-                    Base.metadata.tables[name].create(connection)
+                    Base.metadata.tables[name].create(connection, checkfirst=True)
                 connection.execute(revision.VERSION.update().values(version_num=revision.CORE_HEAD))
                 connection.execute(Base.metadata.tables["message_delivery_receipt"].insert().values(
                     m8f_tenant_id="m8flow", delivery_id="core-owned-receipt", request_digest="a" * 64,
@@ -148,9 +149,9 @@ def test_postgres_upgrade_from_both_previous_heads(admin_engine, monkeypatch, tm
         with engine.connect() as connection:
             assert connection.execute(sa.text(
                 "SELECT version_num FROM m8flow_core_alembic_version"
-            )).scalars().all() == ["message_correlation"]
+            )).scalars().all() == ["k2l3m4n5o6p7"]
             assert connection.scalar(sa.text("SELECT version_num FROM alembic_version_m8flow")) == (
-                "merge_message_error_timestamp"
+                ScriptDirectory.from_config(cfg).get_current_head()
             )
             assert connection.scalar(sa.text("SELECT slug FROM m8flow_tenant WHERE id = 'm8flow'")) == "retained-tenant"
             assert {"message_subscription", "message_delivery_receipt", "m8flow_process_model_release"} <= set(
@@ -258,6 +259,68 @@ def test_external_message_http_delivery_is_scoped_to_the_authorized_tenant():
         assert session.get(ProcessInstanceModel, duplicate_two).status == "waiting"
         assert session.get(ProcessInstanceModel, other) is None
         assert session.get(MessageDeliveryReceiptModel, (other_tenant, "payment-18")) is None
+
+
+def test_both_message_selectors_must_identify_the_same_wait():
+    from pathlib import Path
+
+    from m8flow_core.models import MessageDeliveryReceiptModel, MessageSubscriptionModel, ProcessInstanceModel
+
+    from m8flow_backend import workflow
+    from m8flow_backend.app import create_app
+    from m8flow_backend.auth import encode_auth_token
+    from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
+
+    tenant = new_tenant_id("selectors")
+    with tenant_session(tenant) as session:
+        admin = provision_member(session, tenant_id=tenant, role="tenant-admin")
+        token = encode_auth_token(user=admin)
+        instance_ids = []
+        source = (Path(__file__).resolve().parents[1] / "fixtures" / "message_waiting.bpmn").read_text(encoding="utf-8")
+        for index, model in enumerate(("selectors/first", "selectors/second")):
+            # Distinct BPMN processes produce distinct definitions; changing
+            # only the catalog path may reuse the same content-addressed one.
+            xml = source.replace("wait_for_payment", f"wait_for_payment_{index}")
+            save_model(session, tenant_id=tenant, user_id=admin.id, path=model, fixture="message_waiting.bpmn", xml=xml)
+            instance_ids.append(workflow.start(
+                session, tenant_id=tenant, user_id=admin.id, process_model_identifier=model,
+                submission_metadata={"case_number": 18, "region": "west"},
+            ).id)
+        first, second = instance_ids
+        subscriptions = session.query(MessageSubscriptionModel).filter_by(m8f_tenant_id=tenant).all()
+        definitions = {item.process_instance_id: item.process_definition_id for item in subscriptions}
+        assert definitions[first] != definitions[second]
+
+    body = {
+        "messageName": "Payment received", "deliveryId": "selector-retry",
+        "payload": {"payment": {"caseNumber": 18, "region": "west"}},
+        "processDefinitionId": definitions[first], "processInstanceId": second,
+    }
+    with create_app().test_client() as client:
+        client.cookies.set(SELECTED_TENANT_COOKIE_NAME, tenant)
+        headers = {"Authorization": f"Bearer {token}"}
+        mismatch = client.post(ROUTE, headers=headers, json=body)
+        assert mismatch.status_code == 404, mismatch.text
+        assert mismatch.json()["error_code"] == "not_found"
+        with tenant_session(tenant) as session:
+            assert session.get(MessageDeliveryReceiptModel, (tenant, body["deliveryId"])) is None
+            assert [session.get(ProcessInstanceModel, instance).status for instance in instance_ids] == [
+                "waiting", "waiting",
+            ]
+            assert session.query(MessageSubscriptionModel).filter_by(m8f_tenant_id=tenant).count() == 2
+
+        matching = {**body, "processInstanceId": first}
+        delivered = client.post(ROUTE, headers=headers, json=matching)
+        assert delivered.status_code == 200, delivered.text
+        assert delivered.json()["processInstanceId"] == first
+        assert client.post(ROUTE, headers=headers, json=matching).json() == delivered.json()
+
+    with tenant_session(tenant) as session:
+        assert session.get(ProcessInstanceModel, first).status == "complete"
+        assert session.get(ProcessInstanceModel, second).status == "waiting"
+        assert session.query(MessageSubscriptionModel).filter_by(
+            m8f_tenant_id=tenant, process_instance_id=second,
+        ).count() == 1
 
 
 def test_external_message_requires_a_concrete_tenant_without_dispatch(monkeypatch):
