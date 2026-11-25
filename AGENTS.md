@@ -3,7 +3,7 @@
 ## Project Context
 
 This repository is `m8flow`. The HTTP host lives in `m8flow-backend` and consumes
-`m8flow-core` from PyPI, pinned (`1.0.0b3`).
+`m8flow-core` from PyPI.
 Do not vendor core source. Do not import `spiffworkflow` from `m8flow-backend`.
 Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 `spiff-arena-common/`.
@@ -15,6 +15,12 @@ Do not reintroduce `spiffworkflow-backend/`, `spiffworkflow-frontend/`, or
 - Routes must not INSERT into `user` / `group` / `permission_*` / `tenant`.
 - Prefer the eight host modules: `workflow`, `catalog`, `human_task`, `scheduler`,
   `identity`, `auth`, `authorization`, `secrets`.
+
+## Naming and Tracking Identifiers
+
+- Never use a ticket code in migration revision IDs or filenames, ownership table or
+  constraint names, or source comments. Use neutral names based on the schema change
+  or purpose instead; ticket codes are for tracking, not permanent identifiers.
 
 ## Repository Ownership
 
@@ -94,6 +100,12 @@ Be careful with tenant and permission-related behavior.
 
 ## Database and Migrations
 
+- Never edit or rewrite a migration introduced by a previous PR. If a migration
+  from an earlier PR is incorrect, add a new forward migration in the current PR
+  to correct the database schema or data while preserving upgrade and downgrade
+  behavior where practical. Migrations introduced by the current PR may be
+  revised while that PR is still unmerged; after it is merged, treat them as
+  immutable and use a new forward migration for any correction.
 - Do not make destructive schema changes without clearly explaining the risk.
 - Alembic migrations must be reversible where practical.
 - Preserve existing data unless the task explicitly requires a data migration.

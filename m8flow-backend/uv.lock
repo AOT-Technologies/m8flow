@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12, <4.0"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -971,7 +971,7 @@ requires-dist = [
     { name = "joserfc", specifier = ">=1.7.6,<2.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lxml", specifier = ">=5.3.1" },
-    { name = "m8flow-core", specifier = "==1.0.0b3" },
+    { name = "m8flow-core", specifier = "==1.1.0b2" },
     { name = "m8flow-telemetry", extras = ["flask", "asgi"], directory = "../m8flow-telemetry" },
     { name = "mcp", specifier = ">=1.9.0,<2.0.0" },
     { name = "nats-py", specifier = ">=2.6.0" },
@@ -993,19 +993,20 @@ dev = [
 
 [[package]]
 name = "m8flow-core"
-version = "1.0.0b3"
+version = "1.1.0b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
     { name = "defusedxml" },
+    { name = "lxml" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "spiffworkflow" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/13/83/0607b5eae2bc1d05c13e8cb83d4bdfedb4f31acd32368254390140fe178a/m8flow_core-1.0.0b3.tar.gz", hash = "sha256:717a88169f1df911d3f81c7994fc177ab547b5d5548707993fcdf2bccd6af1f9", size = 357513, upload-time = "2026-11-05T03:42:17.64Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/88/cce9197dc4a94baa4aa5f6456c184908ef4d6173d30dc6fe2c29ee9d91aa/m8flow_core-1.1.0b2.tar.gz", hash = "sha256:82f37f42dc17ca50fb709785852026c569dd82e034aa9810d930af24657ff9e0", size = 503038, upload-time = "2026-11-24T16:44:11.463Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/ed/6bdbb4b9b03dd6da4ce8366a55148de953d1ca971354d816133567033cb6/m8flow_core-1.0.0b3-py3-none-any.whl", hash = "sha256:4a770c73d6a11c2488284994cd2e7c4f3b01e889de8d3125d20caaa5e7ea3841", size = 91395, upload-time = "2026-11-05T03:42:15.786Z" },
+    { url = "https://files.pythonhosted.org/packages/34/de/70b87c5603af12ca573d3a975c2973ee07c8202cc21cbe791765db6a64f7/m8flow_core-1.1.0b2-py3-none-any.whl", hash = "sha256:90106c8a18d710717fc55f6143de7e9dcb93a5e224b85d29b5dca3ca3bdd7151", size = 167258, upload-time = "2026-11-24T16:44:09.904Z" },
 ]
 
 [[package]]

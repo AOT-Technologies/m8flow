@@ -51,6 +51,17 @@ The shared realm is imported from
 `docker/keycloak-entrypoint.sh`. The entrypoint replaces the client id and
 redirect URIs, and `docker/keycloak-init-realms.sh` reconciles the rest.
 
+The same realm template is used when the optional realm-per-tenant provisioning
+capability creates a new tenant realm. It includes a `reviewer` group and a
+sample `reviewer` account assigned to that group. This affects fresh realm
+imports only; it does not add groups or members to existing realms or to
+organizations in an already-running shared realm. Do not re-import the whole
+template as an upgrade. To add reviewer access to an existing realm, create or
+verify its `reviewer` group and assign the intended users through the normal
+Keycloak or m8flow group-management flow. The bundled realm accounts are for
+development/demo use; disable or replace their credentials before exposing a
+realm outside a development environment.
+
 ### Client
 
 A confidential client in the shared realm, id `M8FLOW_KEYCLOAK_SPOKE_CLIENT_ID`

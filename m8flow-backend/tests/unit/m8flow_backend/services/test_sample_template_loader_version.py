@@ -19,8 +19,13 @@ from m8flow_backend.services import sample_template_loader as loader
 
 
 def test_version_is_v3():
-    """V1 embedded credentials; V2 called the retired smtp/SendHTMLEmail operator."""
+    """The shared sample-template default advances as a coordinated release."""
     assert loader.VERSION == "V3"
+
+
+def test_template_version_override_is_limited_to_the_independently_updated_template():
+    assert loader._template_version("recurring-timer-start-verification") == "V4"
+    assert loader._template_version("demo-template") == loader.VERSION
 
 
 def test_no_sample_template_uses_the_retired_smtp_operator():

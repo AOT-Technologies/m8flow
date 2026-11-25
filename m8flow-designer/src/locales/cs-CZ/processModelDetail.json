@@ -151,5 +151,14 @@
     "expectedOutputJson": "Očekávaný výstupní JSON",
     "invalidJson": "Pole {{label}} musí obsahovat platný JSON",
     "notJsonObject": "Pole {{label}} musí obsahovat objekt JSON"
+  },
+  "timerSchedules": {
+    "title": "Planovane casovacove starty",
+    "activeCount_one": "{{count}} aktivni plan",
+    "activeCount_few": "{{count}} aktivnich planu",
+    "activeCount_many": "{{count}} aktivnich planu",
+    "activeCount_other": "{{count}} aktivnich planu",
+    "noneActive": "Tento model nema zadne aktivni planovane casovacove starty.",
+    "nextRun": "Dalsi spusteni {{number}}:"
   }
 }

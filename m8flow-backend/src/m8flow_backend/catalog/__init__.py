@@ -136,14 +136,26 @@ def save(
     then to {leaf-of-path}.bpmn for a genuinely new model with no metadata
     yet. Guessing the leaf name unconditionally (the old behavior) wrote a
     phantom {leaf}.bpmn alongside the real file for every non-default-named
-    model."""
+    model.
+
+    The tenant transaction lock intentionally spans core import, the BPMN file
+    write, and timer-job reconciliation. The import creates scheduler rows and
+    reconciliation chooses the active definition; allowing a scheduler poll or
+    another save between those steps could expose a definition/job set that does
+    not match the catalog file being saved. BPMN files are small, so the bounded
+    write cost is preferable to splitting this consistency boundary."""
     _reject_unsupported_constructs(xml)
     source_dmn_xml = model_dmn_xml(
         tenant_id=tenant_id,
         process_model_identifier=path,
         bpmn_xml=xml,
     )
-    workflow.import_definition(
+    # Serialize the core import and the subsequent timer-job reconciliation
+    # with both other catalog writes and the scheduler poller. Otherwise two
+    # concurrent saves of a published model can each import a definition and
+    # briefly expose both sets of timer-start jobs to the poller.
+    versions.lock_tenant(session, tenant_id)
+    definition = workflow.import_definition(
         session,
         tenant_id=tenant_id,
         user_id=user_id,
@@ -157,10 +169,64 @@ def save(
         if file_name
         else _model_file_path(tenant_id, path)
     )
+    # A named-file update can import a secondary BPMN definition. Only make
+    # that definition active when it is the model's primary BPMN; otherwise
+    # reconciliation must resolve the primary definition from the catalog and
+    # retain its timer-start schedule.
+    primary_file_name = _primary_bpmn_file_name_for_save(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=path,
+        fallback_file_name=disk_path.name,
+    )
+    is_primary_file = disk_path.name == primary_file_name
     disk_path.parent.mkdir(parents=True, exist_ok=True)
     # Use binary I/O so Windows does not translate LF to CRLF. Uploaded file
     # bytes must remain byte-for-byte identical after the BPMN re-import.
     disk_path.write_bytes(xml.encode("utf-8"))
+    workflow.reconcile_process_model_timer_starts(
+        session,
+        tenant_id=tenant_id,
+        process_model_identifier=path,
+        status=process_model_status(
+            tenant_id=tenant_id,
+            process_model_identifier=path,
+        ),
+        user_id=user_id,
+        active_definition_id=definition.id if is_primary_file else None,
+        tenant_lock_held=True,
+    )
+
+
+def _primary_bpmn_file_name_for_save(
+    session: Session,
+    *,
+    tenant_id: str,
+    process_model_identifier: str,
+    fallback_file_name: str,
+) -> str:
+    """Resolve the model's primary BPMN filename before a named-file save.
+
+    A versioned working copy is authoritative when present. Legacy models use
+    their metadata, then the same first-BPMN fallback as schedule
+    reconciliation. A new model with no BPMN yet treats the file being saved
+    as primary.
+    """
+    model = versions.state(session, tenant_id, process_model_identifier)
+    if model is not None and not model.deleted:
+        primary = versions.primary_bpmn(model.working, process_model_identifier)
+        return primary or fallback_file_name
+
+    model_dir = _resolved_inside_tenant(
+        tenant_id, process_model_identifier, **_MODEL_PATH_ERROR
+    )
+    metadata = _tenant_json(
+        tenant_id, process_model_identifier, "process_model.json", **_MODEL_PATH_ERROR
+    )
+    primary = metadata.get("primary_file_name")
+    if isinstance(primary, str) and primary.strip():
+        return primary.strip()
+    return _first_bpmn_name(model_dir) or fallback_file_name
 
 
 def is_process_model_identifier(path: str, tenant_id: str | None = None) -> bool:
@@ -910,6 +976,11 @@ def update_process_model_metadata(
 
 
 def _first_bpmn_name(model_dir: Path) -> str:
+    # A first save can resolve the model directory before it has been created.
+    # Treat that as an empty model so callers can fall back to the filename
+    # being saved; Path.iterdir() raises FileNotFoundError for this valid case.
+    if not model_dir.is_dir():
+        return ""
     names = sorted(
         path.name
         for path in model_dir.iterdir()

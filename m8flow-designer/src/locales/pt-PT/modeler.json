@@ -23,7 +23,12 @@
     "resume": "Retomar",
     "resuming": "A retomar…",
     "startProcess": "Iniciar processo",
-    "starting": "A iniciar…"
+    "starting": "A iniciar…",
+    "timerStartsActive_one": "Inicios por temporizador: {{count}} ativo; proximo {{date}}",
+    "timerStartsActive_many": "Inicios por temporizador: {{count}} ativos; proximo {{date}}",
+    "timerStartsActive_other": "Inicios por temporizador: {{count}} ativos; proximo {{date}}",
+    "timerStartsNoneActive": "Nenhum inicio por temporizador ativo",
+    "timerStartsNextRun": "Proxima ocorrencia do temporizador: {{date}}"
   },
   "saveStatus": {
     "saved": "Guardado",

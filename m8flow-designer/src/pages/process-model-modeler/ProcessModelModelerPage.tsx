@@ -26,6 +26,7 @@ import {
   type ProcessModelDetailFile,
   type ProcessModelIdentity,
   type ProcessModelStatus,
+  type ProcessModelTimerStartSchedule,
   type ProcessModelVersionState,
 } from '@/lib/api';
 import {
@@ -167,6 +168,7 @@ export default function ProcessModelModelerPage() {
   // Lifecycle status from the detail fetch; null until it resolves so no
   // Publish/Start button flashes for the wrong state.
   const [modelStatus, setModelStatus] = useState<ProcessModelStatus | null>(null);
+  const [timerStartSchedules, setTimerStartSchedules] = useState<ProcessModelTimerStartSchedule[] | null>(null);
   const [versionState, setVersionState] = useState<ProcessModelVersionState>({});
   const revisionRef = useRef<string | null | undefined>(undefined);
   const fileRevision = useRef<string | undefined>();
@@ -240,10 +242,14 @@ export default function ProcessModelModelerPage() {
     if (!modifiedId) {
       setGroupInfo(null);
       setModelFiles([]);
+      setModelStatus(null);
+      setTimerStartSchedules(null);
       return undefined;
     }
 
     let cancelled = false;
+    setModelStatus(null);
+    setTimerStartSchedules(null);
     updateVersion({});
     setModelStatus(null);
     fetchProcessModelDetail(modifiedId, tenantId)
@@ -253,6 +259,7 @@ export default function ProcessModelModelerPage() {
           setModelDisplayName(detail.display_name);
           setModelFiles(detail.files);
           setModelStatus(normalizeProcessModelStatus(detail.status));
+          setTimerStartSchedules(detail.timer_start_schedules);
           updateVersion(detail);
           // Under All Tenants the backend resolves the owning tenant for us;
           // keep it so saves target that tenant instead of failing closed.
@@ -559,6 +566,15 @@ export default function ProcessModelModelerPage() {
         ? await publishProcessModel(modifiedId, revision, effectiveTenantId)
         : await updateProcessModel(modifiedId, { status: 'published' }, effectiveTenantId, revision);
       setModelStatus(normalizeProcessModelStatus(identity.status ?? 'published'));
+      setTimerStartSchedules(null);
+      try {
+        const detail = await fetchProcessModelDetail(modifiedId, tenantId);
+        setTimerStartSchedules(detail.timer_start_schedules);
+        updateVersion(detail);
+      } catch {
+        // Lifecycle transition succeeded; schedule status can refresh on the
+        // next model load if this follow-up detail request is unavailable.
+      }
       fileRevision.current = identity.working_revision ?? undefined;
       updateVersion(identity);
     } catch (err: unknown) {
@@ -712,6 +728,7 @@ export default function ProcessModelModelerPage() {
           status={modelStatus}
           pendingDraft={versionState.has_unpublished_changes}
           versioned={Boolean(versionState.working_revision)}
+          timerStartSchedules={timerStartSchedules}
           onPublish={
             (versionState.working_revision && modelStatus !== 'paused' ? versionPermissions?.publish : canManageProcessModels)
               && !needsTenantToWrite ? () => void handlePublish() : undefined

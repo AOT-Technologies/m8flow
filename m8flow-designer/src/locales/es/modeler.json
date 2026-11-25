@@ -23,7 +23,12 @@
     "resume": "Reanudar",
     "resuming": "Reanudando…",
     "startProcess": "Iniciar proceso",
-    "starting": "Iniciando…"
+    "starting": "Iniciando…",
+    "timerStartsActive_one": "Inicios por temporizador: {{count}} activo; siguiente {{date}}",
+    "timerStartsActive_many": "Inicios por temporizador: {{count}} activos; siguiente {{date}}",
+    "timerStartsActive_other": "Inicios por temporizador: {{count}} activos; siguiente {{date}}",
+    "timerStartsNoneActive": "No hay inicios por temporizador activos",
+    "timerStartsNextRun": "Siguiente ejecucion del temporizador: {{date}}"
   },
   "saveStatus": {
     "saved": "Guardado",

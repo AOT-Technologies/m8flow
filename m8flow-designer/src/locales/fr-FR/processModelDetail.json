@@ -150,5 +150,13 @@
     "expectedOutputJson": "JSON de sortie attendu",
     "invalidJson": "{{label}} doit être un JSON valide",
     "notJsonObject": "{{label}} doit être un objet JSON"
+  },
+  "timerSchedules": {
+    "title": "Planifications de demarrage par minuteur",
+    "activeCount_one": "{{count}} planification active",
+    "activeCount_many": "{{count}} planifications actives",
+    "activeCount_other": "{{count}} planifications actives",
+    "noneActive": "Aucune planification de demarrage par minuteur active pour ce modele.",
+    "nextRun": "Prochaine execution {{number}} :"
   }
 }

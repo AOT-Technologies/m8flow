@@ -27,7 +27,14 @@ from m8flow_backend.startup.shared_realm_bootstrap import resolve_default_shared
 logger = logging.getLogger(__name__)
 
 SYSTEM_USER = "system"
+# Default version for the packaged sample set. Bump this when a release updates
+# the samples together; keep per-template overrides only when one template must
+# advance independently. Remove an override once VERSION reaches that value so
+# the map stays limited to active exceptions rather than becoming a history.
 VERSION = "V3"
+# Template versions are immutable storage keys. This exception lets the timer
+# verification template ship its BPMN update without re-versioning every sample.
+_TEMPLATE_VERSION_OVERRIDES = {"recurring-timer-start-verification": "V4"}
 UNIQUE_TEMPLATE_CONSTRAINT = "uq_template_key_version_tenant"
 
 _SAMPLE_TEMPLATES_DIR = os.path.join(
@@ -60,6 +67,10 @@ def _derive_display_name(filename: str) -> str:
     name = re.sub(r"[-_]+", " ", name)
     name = re.sub(r"\s{2,}", " ", name).strip()
     return name.title()
+
+
+def _template_version(template_key: str) -> str:
+    return _TEMPLATE_VERSION_OVERRIDES.get(template_key, VERSION)
 
 
 def _extract_zip(zip_path: str) -> list[tuple[str, bytes]]:
@@ -109,6 +120,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                 try:
                     template_key = _derive_template_key(zip_filename)
                     display_name = _derive_display_name(zip_filename)
+                    template_version = _template_version(template_key)
 
                     if not template_key:
                         logger.warning("Could not derive template key from %s; skipping", zip_filename)
@@ -117,7 +129,11 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
 
                     existing = (
                         session.query(TemplateModel)
-                        .filter_by(template_key=template_key, version=VERSION, m8f_tenant_id=tenant_id)
+                        .filter_by(
+                            template_key=template_key,
+                            version=template_version,
+                            m8f_tenant_id=tenant_id,
+                        )
                         .first()
                     )
                     zip_path = os.path.join(sample_dir, zip_filename)
@@ -126,7 +142,10 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                         # recreated or differently-mounted templates dir leaves rows
                         # pointing at nothing, failing every create-from-template
                         # (M8F-650). Restore whatever is missing from the ZIP.
-                        present = {f["file_name"] for f in storage.list_files(tenant_id, template_key, VERSION)}
+                        present = {
+                            f["file_name"]
+                            for f in storage.list_files(tenant_id, template_key, template_version)
+                        }
                         listed = {e.get("file_name") for e in existing.files or []} - {None}
                         missing = listed - present
                         if missing:
@@ -134,7 +153,9 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                             for file_name, content in _extract_zip(zip_path):
                                 if file_name in missing:
                                     ft = file_type_from_filename(file_name)
-                                    storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
+                                    storage.store_file(
+                                        tenant_id, template_key, template_version, file_name, ft, content
+                                    )
                                     restored.add(file_name)
                             logger.warning(
                                 "Sample template '%s' was missing %d file(s) in storage; restored %d from %s; "
@@ -164,7 +185,9 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                     try:
                         for file_name, content in files:
                             ft = file_type_from_filename(file_name)
-                            storage.store_file(tenant_id, template_key, VERSION, file_name, ft, content)
+                            storage.store_file(
+                                tenant_id, template_key, template_version, file_name, ft, content
+                            )
                             file_entries.append({"file_type": ft, "file_name": file_name})
                     except Exception:
                         logger.exception("Failed to store files for %s", zip_filename)
@@ -173,7 +196,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
 
                     template = TemplateModel(
                         template_key=template_key,
-                        version=VERSION,
+                        version=template_version,
                         name=display_name,
                         description=f"Sample template: {display_name}",
                         tags=["sample"],

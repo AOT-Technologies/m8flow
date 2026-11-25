@@ -5,7 +5,7 @@ import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, MetaData, and_, create_engine, func, or_
+from sqlalchemy import Engine, ForeignKeyConstraint, MetaData, and_, create_engine, func, or_
 from sqlalchemy.orm import Session, sessionmaker
 
 from m8flow_core.models.base import Base as CoreBase
@@ -135,7 +135,12 @@ def alembic_target_metadata() -> list[MetaData]:
     return [CoreBase.metadata, HostBase.metadata]
 
 
-def combined_model_metadata() -> MetaData:
+_COMPENSATION_JOURNAL_TABLES = frozenset(
+    {"compensation_scope", "compensation_run", "compensation_record"}
+)
+
+
+def combined_model_metadata(*, legacy_compensation_foreign_keys: bool = True) -> MetaData:
     """Return one metadata collection so cross-core/host foreign keys resolve.
 
     The host models reference tables owned by m8flow-core. SQLAlchemy cannot
@@ -143,12 +148,98 @@ def combined_model_metadata() -> MetaData:
     to ``create_all`` separately, even if the referenced core tables were
     created first in the database. Copying both collections into one metadata
     object lets SQLAlchemy resolve the cross-metadata foreign keys.
+
+    The historical root migration calls this with no arguments and must keep
+    producing the schema shape expected by the following historical migration,
+    including its single-column compensation-journal FK. The current ORM's
+    tenant-scoped composite FK is applied by the forward migration. Runtime
+    ``create_all`` callers should pass ``legacy_compensation_foreign_keys=False``
+    to use the post-migration tenant-scoped schema without a redundant
+    single-column process-instance foreign key.
     """
     combined = MetaData()
     for metadata in alembic_target_metadata():
         for table in metadata.tables.values():
             table.to_metadata(combined)
+    if legacy_compensation_foreign_keys:
+        _use_legacy_compensation_foreign_keys(combined)
+    else:
+        _use_tenant_scoped_compensation_foreign_keys(combined)
     return combined
+
+
+def _use_legacy_compensation_foreign_keys(metadata: MetaData) -> None:
+    """Project the journal tables onto the schema expected by old migrations.
+
+    The root baseline is intentionally dynamic and imports this helper from
+    the host package. Keep that baseline's output compatible with the
+    historical compensation-journal revision; the forward revision then
+    upgrades these references to the current tenant-scoped shape.
+    """
+    for table_name in _COMPENSATION_JOURNAL_TABLES:
+        table = metadata.tables.get(table_name)
+        if table is None:
+            continue
+        for constraint in tuple(table.foreign_key_constraints):
+            elements = tuple(constraint.elements)
+            if (
+                {
+                    (element.parent.name, element.target_fullname)
+                    for element in elements
+                }
+                == {
+                    ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
+                    ("process_instance_id", "process_instance.id"),
+                }
+            ):
+                table.constraints.remove(constraint)
+                for element in elements:
+                    foreign_keys = table.c[element.parent.name].foreign_keys
+                    for foreign_key in tuple(foreign_keys):
+                        if foreign_key.target_fullname == element.target_fullname:
+                            foreign_keys.discard(foreign_key)
+                break
+        if not any(
+            tuple(element.parent.name for element in constraint.elements)
+            == ("process_instance_id",)
+            and tuple(element.target_fullname for element in constraint.elements)
+            == ("process_instance.id",)
+            for constraint in table.foreign_key_constraints
+        ):
+            table.append_constraint(
+                ForeignKeyConstraint(["process_instance_id"], ["process_instance.id"])
+            )
+
+
+def _use_tenant_scoped_compensation_foreign_keys(metadata: MetaData) -> None:
+    """Match the post-forward-migration journal schema used by runtime create_all."""
+    for table_name in _COMPENSATION_JOURNAL_TABLES:
+        table = metadata.tables.get(table_name)
+        if table is None:
+            continue
+        has_tenant_scoped_reference = any(
+            {
+                (element.parent.name, element.target_fullname)
+                for element in constraint.elements
+            }
+            == {
+                ("m8f_tenant_id", "process_instance.m8f_tenant_id"),
+                ("process_instance_id", "process_instance.id"),
+            }
+            for constraint in table.foreign_key_constraints
+        )
+        if not has_tenant_scoped_reference:
+            continue
+        for constraint in tuple(table.foreign_key_constraints):
+            if (
+                len(constraint.elements) == 1
+                and constraint.elements[0].parent.name == "process_instance_id"
+                and constraint.elements[0].target_fullname == "process_instance.id"
+            ):
+                table.constraints.remove(constraint)
+                for foreign_key in tuple(table.c.process_instance_id.foreign_keys):
+                    if foreign_key.target_fullname == "process_instance.id":
+                        table.c.process_instance_id.foreign_keys.discard(foreign_key)
 
 
 def assert_disjoint_table_names() -> None:
@@ -162,7 +253,7 @@ def assert_disjoint_table_names() -> None:
 def create_all(engine: Engine | None = None) -> None:
     bind = engine or get_engine()
     assert_disjoint_table_names()
-    combined_model_metadata().create_all(bind)
+    combined_model_metadata(legacy_compensation_foreign_keys=False).create_all(bind)
 
 
 @contextmanager

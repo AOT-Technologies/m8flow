@@ -2117,8 +2117,9 @@ paths:
           schema:
             type: string
           description: >-
-            Exact initiator-username match. Options come from
-            GET /process-instances/owners.
+            Initiator username match. The display label "M8flow scheduler" is
+            accepted as an alias for the timer-start system username. Options
+            come from GET /process-instances/owners.
         - name: scope
           in: query
           schema:
@@ -2843,7 +2844,8 @@ paths:
       summary: Processes page — process model detail
       description: >-
         Combined detail for one process model: identity, description, group,
-        last_run_at, running_now, runs_30d, recent_instances, files.
+        last_run_at, running_now, runs_30d, recent_instances,
+        timer_start_schedules, files.
         Path uses colon-encoded nested ids (finance:invoice-approval).
         Concrete tenant required. Missing model or denied list permission → 404.
       operationId: m8flow_backend.routes.processes_controller.get_process_model
@@ -6890,6 +6892,9 @@ components:
           type: integer
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler".
         started_at:
           type: string
           format: date-time
@@ -6933,6 +6938,7 @@ components:
         - running_now
         - runs_30d
         - recent_instances
+        - timer_start_schedules
         - files
         - status
         - collaboration_participants
@@ -6973,6 +6979,20 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ProcessModelDetailRecentInstance"
+        timer_start_schedules:
+          type: array
+          description: >-
+            Active recurring timer-start schedules for this model. Each item
+            is backed by the tenant-scoped scheduler record for one timer
+            start event; one-shot timer occurrences are excluded.
+          items:
+            type: object
+            required:
+              - next_run_at
+            properties:
+              next_run_at:
+                type: string
+                format: date-time
         files:
           type: array
           items:
@@ -7051,6 +7071,10 @@ components:
           type: string
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler". The started_by filter
+            still accepts the initiator username.
         started_at:
           type: string
           format: date-time
@@ -7150,6 +7174,9 @@ components:
           type: string
         started_by:
           type: string
+          description: >-
+            Human-readable process initiator label. The timer-start service
+            identity is displayed as "M8flow scheduler".
         started_at:
           type: string
           format: date-time
