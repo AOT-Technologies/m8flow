@@ -73,6 +73,61 @@ def test_multi_org_reviewer_route_access_granted_via_real_db_permission_rows(cli
     assert allow_uri(user, "GET", "/v1.0/process-instances", session=db_session) is False
 
 
+def test_api_versions_preserve_real_tenant_scoped_permission_grants(client, db_session):
+    """The same permission-check operation keeps its DB grant across API versions
+    and only sees grants belonging to the selected tenant.
+
+    ``/users/search`` is intentionally used because reviewer access comes from
+    the persisted tenant YAML grant, not ``_group_identifier_fallback``.
+    """
+    tenant_a = ensure_tenant(db_session, tenant_id="api-version-org-a", slug="api-version-org-a")
+    tenant_b = ensure_tenant(db_session, tenant_id="api-version-org-b", slug="api-version-org-b")
+    user = ensure_user(
+        db_session,
+        username="api-version-multi-org-reviewer",
+        service="https://example.test/realms/m8flow",
+        service_id="api-version-multi-org-reviewer",
+    )
+    ensure_membership(db_session, user, tenant_a)
+    ensure_membership(db_session, user, tenant_b)
+    sync_groups(
+        db_session,
+        user=user,
+        group_identifiers=["api-version-org-a:reviewer"],
+        tenant_id="api-version-org-a",
+    )
+    sync_groups(
+        db_session,
+        user=user,
+        group_identifiers=["api-version-org-b:submitter"],
+        tenant_id="api-version-org-b",
+    )
+    identity.import_yaml(db_session, tenant_id="api-version-org-a")
+    identity.import_yaml(db_session, tenant_id="api-version-org-b")
+    db_session.commit()
+    db_session.expire_all()
+    db_session.refresh(user)
+
+    headers = {"Authorization": f"Bearer {encode_auth_token(user=user)}"}
+    expected_by_tenant = {"api-version-org-a": True, "api-version-org-b": False}
+    for tenant_id, expected in expected_by_tenant.items():
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
+        for api_version in ("1.0", "2.0"):
+            response = client.post(
+                "/v1.0/permissions-check",
+                headers={**headers, "X-M8Flow-API-Version": api_version},
+                json={
+                    "requests_to_check": {
+                        "/v1.0/users/search": ["GET"],
+                    }
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.headers["X-M8Flow-API-Version"] == api_version
+            assert response.get_json()["results"]["/v1.0/users/search"]["GET"] is expected
+
+
 def test_multi_org_editor_granted_via_real_db_permission_rows(db_session):
     """A second org, a different role: editor is also covered unconditionally
     by _group_identifier_fallback (any path but tenant-wide instance read), so assert against
