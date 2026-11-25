@@ -224,13 +224,14 @@ class HostAuthorizationPolicy:
 
 
 # Paths whose routes gate with ``group_fallback=False`` as policy, not per call site:
-# secrets have explicit role grants; NATS monitoring is split by endpoint, NATS API
+# secrets and named configuration values have explicit grants; NATS monitoring is split by endpoint, NATS API
 # keys are tenant-admin only, MCP Tools runs arbitrary tools as the caller, and Celery
 # monitoring shows every tenant's worker state and task history. The tenant-admin/editor
 # group fallback would re-open these to every tenant role.
 # Applied inside ``allow_uri`` so permission checks agree with route authorization.
 _NO_GROUP_FALLBACK_PREFIXES = (
     "/secrets",
+    "/m8flow/named-values",
     "/m8flow/connector-profiles",
     "/m8flow/nats/",
     "/m8flow/nats-tokens",

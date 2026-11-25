@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { createMemoryRouter, Navigate, RouterProvider } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { GLOBAL_TENANT_STORAGE_KEY } from '@/lib/selectedTenant';
@@ -8,6 +8,7 @@ import { NetworkError } from '@/lib/networkErrors';
 import { chooseOption } from '@/test/chooseOption';
 import { SessionProvider } from '@/components/session/SessionProvider';
 import { AppShell } from './AppShell';
+import { NamedValuesGate } from '@/pages/configuration/NamedValuesGate';
 
 const mockGetCurrentUser = vi.fn();
 const mockLogout = vi.fn();
@@ -78,6 +79,10 @@ async function renderShell(initialPath = '/', waitForReady = true) {
           { path: 'system/nats', element: <div>restricted-outlet</div> },
           { path: 'tenant-management', element: <div>tenant-management-outlet</div> },
           { path: 'configuration/secrets', element: <div>configuration-outlet</div> },
+          { path: 'configuration', element: <Navigate to="/configuration/named-values" replace /> },
+          { path: 'configuration/named-values', element: <NamedValuesGate title="Configuration variables"><div>named-values-outlet</div></NamedValuesGate> },
+          { path: 'configuration/named-values/new', element: <NamedValuesGate title="New variable" access="create"><div>named-values-outlet</div></NamedValuesGate> },
+          { path: 'configuration/named-values/:id', element: <NamedValuesGate title="Variable" access="item"><div>named-values-outlet</div></NamedValuesGate> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -93,6 +98,32 @@ async function renderShell(initialPath = '/', waitForReady = true) {
 }
 
 describe('AppShell', () => {
+  it.each([
+    '/configuration', '/configuration/named-values',
+    '/configuration/named-values/new', '/configuration/named-values/var-1',
+  ])('hides Editor navigation and shows page-level denial for %s', async (path) => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/m8flow/named-values': { GET: false, POST: false },
+      '/m8flow/named-values/{id}': { GET: false, PUT: false, DELETE: false },
+    });
+    await renderShell(path);
+    expect(await screen.findByText('Access denied')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Configuration variables' })).not.toBeInTheDocument();
+    expect(screen.queryByText('home-outlet')).not.toBeInTheDocument();
+    expect(screen.queryByText('named-values-outlet')).not.toBeInTheDocument();
+  });
+
+  it('uses the backend read grant to show configuration navigation', async () => {
+    mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
+    mockCheckPermissions.mockResolvedValue({ '/m8flow/named-values': { GET: true } });
+    await renderShell();
+    expect(screen.getByRole('link', { name: 'Configuration variables' })).toHaveAttribute(
+      'href', '/configuration/named-values',
+    );
+  });
+
   it('shows Retry for a failed permission bootstrap and restores authorized navigation', async () => {
     mockGetCurrentUser.mockReturnValue({ username: 'editor', email: null });
     mockCheckPermissions.mockRejectedValueOnce(new NetworkError());
