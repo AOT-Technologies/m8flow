@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import os
@@ -1370,6 +1371,15 @@ def _xml_boolean_is_true(value: str | None) -> bool:
     return isinstance(value, str) and value.strip().lower() in {"true", "1"}
 
 
+def _core_runs_parallel_completion_conditions() -> bool:
+    """Whether the installed core can stop a parallel multi-instance loop early.
+
+    m8flow-core added this, with the loop counters, in the M8F-640 release.
+    ponytail: drop once the pin includes multi_instance_runtime.
+    """
+    return importlib.util.find_spec("m8flow_core.services.multi_instance_runtime") is not None
+
+
 def _validate_multi_instance_features(root) -> None:
     """Reject MI configurations whose behavior is unsafe or unsupported by the runtime."""
     for characteristics in root.iter():
@@ -1383,11 +1393,14 @@ def _validate_multi_instance_features(root) -> None:
             for child in characteristics
             if isinstance(child.tag, str)
         }
-        is_sequential = _xml_boolean_is_true(characteristics.attrib.get("isSequential"))
-        if not is_sequential and "completionCondition" in children:
+        if (
+            "completionCondition" in children
+            and not _xml_boolean_is_true(characteristics.attrib.get("isSequential"))
+            and not _core_runs_parallel_completion_conditions()
+        ):
             raise ApiError(
                 "unsupported_bpmn",
-                "Completion conditions on parallel multi-instance activities are not supported",
+                "The installed core does not support completion conditions on parallel multi-instance activities",
                 400,
             )
 

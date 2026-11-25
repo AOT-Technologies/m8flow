@@ -116,6 +116,47 @@
   color: var(--color-muted-foreground);
 }
 
+/* Minimize (paletteMinimize.ts). Closed, diagram-js shows only its own
+   .djs-palette-toggle, drawn here as a "shapes" icon that reopens it. */
+.djs-palette .m8flow-bpmn-palette-minimize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 24px;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+
+.djs-palette .m8flow-bpmn-palette-minimize:hover,
+.djs-palette .djs-palette-toggle:hover {
+  background: color-mix(in srgb, var(--color-info) 12%, transparent);
+  color: var(--color-info);
+}
+
+.djs-palette:not(.open) .m8flow-bpmn-palette-minimize {
+  display: none;
+}
+
+.djs-palette:not(.open) {
+  width: auto !important;
+}
+
+.djs-palette .djs-palette-toggle:before {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1'/%3E%3Ccircle cx='17.5' cy='17.5' r='3.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1Z'/%3E%3Crect x='3' y='14' width='7' height='7' rx='1'/%3E%3Ccircle cx='17.5' cy='17.5' r='3.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  background-color: currentColor;
+}
+
 .djs-palette .entry:hover {
   background: color-mix(in srgb, var(--color-info) 12%, transparent);
   color: var(--color-info);

@@ -834,7 +834,8 @@ test.describe('Processes for a tenant with data', () => {
     };
     const act = async (item: string, expectedItems: string[]) => {
       const menu = await openRowMenu(page, M.cycle.name);
-      expect(await menuItemLabels(menu)).toEqual(expectedItems);
+      // Publish/Start wait on a permissions-check that reruns after each status change.
+      await expect.poll(() => menuItemLabels(menu)).toEqual(expectedItems);
       await menu.getByRole('menuitem', { name: item, exact: true }).click();
       steps.push(item);
     };

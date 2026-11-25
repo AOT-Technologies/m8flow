@@ -32,6 +32,8 @@ import { encodeProcessModelId } from '@/lib/processModelId';
 import { startErrorMessage } from '@/lib/startProcessError';
 import { useProcessStart } from '@/components/useProcessStart';
 
+const EMPTY_GROUPS: ProcessGroupListItem[] = [];
+
 /**
  * Processes models list — wired to GET /v1.0/m8flow/process-models.
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
@@ -65,8 +67,9 @@ export default function ProcessesPage() {
   const groupFilter = searchParams.get('group');
 
   const [models, setModels] = useState<ProcessModelListItem[]>([]);
+  const [modelsTenantId, setModelsTenantId] = useState<typeof scopedTenantId>();
   const [allowedModelActions, setAllowedModelActions] = useState<{
-    models: ProcessModelListItem[]; tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
+    tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
   }>();
   useEffect(() => {
     if (needsTenantForWrite) return;
@@ -82,12 +85,14 @@ export default function ProcessesPage() {
       const allowed = (action: 'publish' | 'start') => new Set(versioned.filter((model) =>
         permissions[processModelActionPath(encodeProcessModelId(model.id), action)]?.POST === true,
       ).map((model) => model.id));
-      setAllowedModelActions({ models, tenantId: scopedTenantId, publish: allowed('publish'), start: allowed('start') });
+      setAllowedModelActions({ tenantId: scopedTenantId, publish: allowed('publish'), start: allowed('start') });
     }).catch(() => { if (active) setAllowedModelActions(undefined); });
     return () => { active = false; };
   }, [models, needsTenantForWrite, scopedTenantId]);
-  const currentActions = allowedModelActions?.models === models && allowedModelActions.tenantId === scopedTenantId
-    ? allowedModelActions : undefined;
+  // Grants are per model and tenant, not per status, so keep the last answer
+  // while a refetched list is re-checked; otherwise Publish and Start vanish
+  // after every status change until the check returns.
+  const currentActions = allowedModelActions?.tenantId === scopedTenantId ? allowedModelActions : undefined;
   const [owners, setOwners] = useState<ProcessInstanceOwnerOption[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -99,9 +104,17 @@ export default function ProcessesPage() {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [groupsCreateMode, setGroupsCreateMode] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(false);
-  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [groupsState, setGroupsState] = useState<{
+    tenantId: typeof scopedTenantId;
+    rows: ProcessGroupListItem[];
+    loading: boolean;
+    error: string | null;
+  }>({ tenantId: scopedTenantId, rows: [], loading: true, error: null });
+  // Hide the old scope during render, before the new tenant's effect runs.
+  const currentGroups = groupsState.tenantId === scopedTenantId ? groupsState : undefined;
+  const groups = currentGroups?.rows ?? EMPTY_GROUPS;
+  const groupsLoading = currentGroups?.loading ?? true;
+  const groupsError = currentGroups?.error ?? null;
   /** Bumped after a successful delete to re-run the models fetch effect. */
   const [refreshKey, setRefreshKey] = useState(0);
   /** Bumped after group create/edit/delete to refetch the group list. */
@@ -132,6 +145,7 @@ export default function ProcessesPage() {
           return;
         }
         setModels(rows);
+        setModelsTenantId(scopedTenantId);
         setAllCount(allRows.length);
       })
       .catch((err: unknown) => {
@@ -177,24 +191,27 @@ export default function ProcessesPage() {
   // Loaded up front: the Group filter dropdown and the Manage groups dialog share it.
   useEffect(() => {
     let cancelled = false;
-    setGroupsLoading(true);
-    setGroupsError(null);
+    setGroupsState((prev) => ({
+      tenantId: scopedTenantId,
+      rows: prev.tenantId === scopedTenantId ? prev.rows : [],
+      loading: true,
+      error: null,
+    }));
 
     fetchProcessGroups(scopedTenantId)
       .then((rows) => {
         if (!cancelled) {
-          setGroups(rows);
+          setGroupsState({ tenantId: scopedTenantId, rows, loading: false, error: null });
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setGroupsError(err instanceof Error ? err.message : i18n.t('processes.page.loadGroupsFailed'));
-          setGroups([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setGroupsLoading(false);
+          setGroupsState({
+            tenantId: scopedTenantId,
+            rows: [],
+            loading: false,
+            error: err instanceof Error ? err.message : i18n.t('processes.page.loadGroupsFailed'),
+          });
         }
       });
 
@@ -211,9 +228,10 @@ export default function ProcessesPage() {
     if (fromGroups) {
       return fromGroups.display_name || groupFilter;
     }
-    const match = models.find((m) => m.group_id === groupFilter);
+    const match = modelsTenantId === scopedTenantId
+      ? models.find((m) => m.group_id === groupFilter) : undefined;
     return match?.group_display_name || groupFilter;
-  }, [groupFilter, models, groups, t]);
+  }, [groupFilter, models, modelsTenantId, scopedTenantId, groups, t]);
 
   function setGroup(groupId: string | null) {
     setSearchParams(
@@ -284,7 +302,9 @@ export default function ProcessesPage() {
     const created = await createProcessGroup(input, scopedTenantId);
     // Close and filter to the new group so the user lands on its (empty) model
     // list. Merge it into `groups` so the filter label resolves without a refetch.
-    setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
+    setGroupsState((prev) => prev.tenantId === scopedTenantId ? {
+      ...prev, rows: [...prev.rows.filter((g) => g.id !== created.id), created],
+    } : prev);
     setGroupsRefreshKey((k) => k + 1);
     setGroup(created.id);
     closeGroups();
@@ -325,8 +345,7 @@ export default function ProcessesPage() {
         groupsError={groupsError}
         onRetryGroups={() => {
           if (groupsLoading) return;
-          setGroupsLoading(true);
-          setGroupsError(null);
+          setGroupsState((prev) => ({ ...prev, loading: true, error: null }));
           setGroupsRefreshKey((k) => k + 1);
         }}
         onClearGroupFilter={() => setGroup(null)}
