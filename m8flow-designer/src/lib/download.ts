@@ -1,5 +1,5 @@
 /** Triggers a browser download of an in-memory Blob — shared by
- * `downloadTextFile` below and the Template modeler map's ticket 04
+ * `downloadTextFile` below and template exports
  * (template export, already a `Blob` from `exportTemplate()`, no text
  * wrapping needed). */
 export function downloadBlob(fileName: string, blob: Blob) {

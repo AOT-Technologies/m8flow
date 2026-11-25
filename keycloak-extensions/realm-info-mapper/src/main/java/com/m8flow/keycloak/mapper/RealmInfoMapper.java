@@ -59,7 +59,7 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
     /**
      * User attribute the backend writes (via Admin API) to name the single
      * active organization for this user — the switch-tenant flow's signal
-     * (active-tenant deep-module map, ticket 08/09/10). Holds the org id.
+     *. Holds the org id.
      * A refresh_token grant re-runs this mapper and reads the fresh value
      * (verified: KC re-mints on refresh with the freshly-written attribute).
      */
@@ -85,7 +85,7 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
 
         // Populate the single-active-org `organization` claim ourselves. The
         // stock org-membership mapper leaves this empty for a multi-org user
-        // with no org-scope selection (KC26 limitation, see ticket 08), and the
+        // with no org-scope selection (KC26 limitation), and the
         // org's group memberships are not reachable from the protocol-mapper
         // SPI — the backend derives roles from the Keycloak Admin API directory,
         // not this claim (sync_groups_from_token reads VerifiedClaims enriched
@@ -110,11 +110,11 @@ public class RealmInfoMapper extends AbstractOIDCProtocolMapper implements OIDCA
 
     /**
      * Prefer the backend-set active-tenant attribute (single active org per
-     * user, cookie-authoritative — ticket 08); fall back to Keycloak's own
+     * user, cookie-authoritative); fall back to Keycloak's own
      * resolution for a genuine single-org user / pre-first-switch login.
      *
      * The attribute normally holds the org id (what the backend writes), but a
-     * bare org alias is accepted too (ticket 09). Either way the result is gated
+     * bare org alias is accepted too. Either way the result is gated
      * on membership so a stale/forged attribute can never mint a token for an
      * org the user does not belong to.
      */

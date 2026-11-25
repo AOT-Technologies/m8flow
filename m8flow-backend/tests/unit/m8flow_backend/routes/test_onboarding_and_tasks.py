@@ -263,7 +263,7 @@ class _SubmitterThinTokenProvider(_ThinTokenProvider):
 def test_lane_member_sees_task_started_while_their_other_org_was_active(
     client, db_session, monkeypatch, tmp_path
 ):
-    """M8F-580: core skips a lane member whose active org (tenant_specific_field_1)
+    """core skips a lane member whose active org (tenant_specific_field_1)
     was another tenant when the task materialized. Their lane membership does not
     change when they return, so the next request must still reconcile the task
     (also when the lane was partially assigned to another member at creation)."""

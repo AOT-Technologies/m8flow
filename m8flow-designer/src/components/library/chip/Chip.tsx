@@ -16,7 +16,7 @@ export interface ChipProps extends React.ComponentPropsWithoutRef<"button"> {
   /**
    * Renders the "selected filter chip" pattern instead of the default
    * filter-chip pattern: a trailing `X` button in place of the chevron,
-   * for tags added via a multi-select (see ticket 07's
+   * for tags added via a multi-select (see 's
    * `MultiSelectDropdown`). The chip root becomes a non-interactive
    * `<span>` — only the trailing `X` is a real `<button>` — matching the
    * mockup, which never nests a `<button>` inside a `<button>`. Pass

@@ -247,7 +247,7 @@ class NatsTokenService:
         """HMAC-SHA256 over a trigger event's signed fields.
 
         The backend authenticates the raw key at the HTTP edge and publishes only the key's
-        public id, so the broker never stores a usable credential (M8F-574). This signature
+        public id, so the broker never stores a usable credential. This signature
         is what stops a broker client from forging an event that names someone else's key.
         The signing key is derived from the server pepper, which the backend and the
         consumer already share; the label keeps it distinct from the key-hash use. An unset

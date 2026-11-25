@@ -442,7 +442,7 @@ class TestSerializeMessage:
         }
 
     def test_redacts_external_form_reference_ids(self, monkeypatch):
-        # Notification events published before M8F-574 carried the secure-link credential,
+        # Notification events published before signed trigger payloads carried the secure-link credential,
         # and the stream still holds them.
         monkeypatch.setattr(module, "nats_message_preview_max_bytes", lambda: 4096)
         body = json.dumps(

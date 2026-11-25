@@ -83,7 +83,7 @@ describe('ProcessModelOverview', () => {
     vi.restoreAllMocks();
   });
 
-  it('submitter view: no files, identifier, or run metrics; only their own instances (M8F-534)', () => {
+  it('submitter view: no files, identifier, or run metrics; only their own instances', () => {
     render(
       <MemoryRouter>
         <ProcessModelOverview
@@ -196,7 +196,7 @@ describe('ProcessModelOverview', () => {
     renderOverview();
 
     // 'Published' is no longer in this list: it is now a real lifecycle
-    // status pill (M8F-508), not one of the invented facts from the mockup.
+    // status pill, not one of the invented facts from the mockup.
     expect(screen.queryByText('Owner')).not.toBeInTheDocument();
     expect(screen.queryByText('Trigger')).not.toBeInTheDocument();
     expect(screen.queryByText('Success rate')).not.toBeInTheDocument();
@@ -412,7 +412,7 @@ describe('ProcessModelOverview', () => {
     });
   });
 
-  it('wires the recent-instances "View all" link and each row id to Process Instances (ticket 04 capstone)', () => {
+  it('wires the recent-instances "View all" link and each row id to Process Instances (capstone)', () => {
     renderOverview();
 
     expect(screen.getByRole('link', { name: /View all/ })).toHaveAttribute(
@@ -449,7 +449,7 @@ describe('ProcessModelOverview', () => {
   it('opens the modeler from the file name itself, not only the icon', () => {
     renderOverview();
 
-    // M8F-530 #7: the name is the obvious target, so it carries the same
+    // the name is the obvious target, so it carries the same
     // destination as the row's icon. The icon stays for explicitness.
     const nameLink = screen.getByRole('link', { name: 'invoice-approval.bpmn' });
     expect(nameLink).toHaveAttribute(
@@ -492,7 +492,7 @@ describe('ProcessModelOverview', () => {
     expect(screen.queryByRole('link', { name: /Open in modeler/ })).not.toBeInTheDocument();
   });
 
-  // --- Publish lifecycle (M8F-508) -------------------------------------
+  // --- Publish lifecycle -------------------------------------
 
   it('hides Start and explains the status when the model is a draft', () => {
     render(

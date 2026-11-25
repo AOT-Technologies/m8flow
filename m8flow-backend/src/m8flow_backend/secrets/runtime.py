@@ -56,7 +56,7 @@ def masked_service_task_error(
     if masked == message:
         return None
     copy = ServiceTaskExecutionError(masked)
-    # Core catches a coded failure on a matching error boundary (M8F-675).
+    # Core catches a coded failure on a matching error boundary.
     # Set, not passed: core 1.0.0b3's error takes no ``error_code`` argument.
     copy.error_code = getattr(exc, "error_code", None)
     return copy

@@ -47,7 +47,7 @@ export interface BreadcrumbsProps
    * already uses on the `<nav>`. Defaults to unchanged `text-primary`
    * (the mockup's own pink) for any caller that doesn't pass one.
    * Every real page that's adopted `Breadcrumbs` so far actually wants
-   * `text-info` instead (component-adoption map, ticket 24) — pass
+   * `text-info` instead— pass
    * `linkClassName="text-info"` to reproduce that look rather than
    * baking it in as this component's new default, since a future
    * consumer may still want the mockup's original color.
@@ -60,7 +60,7 @@ export interface BreadcrumbsProps
    * to unchanged plain prose styling for any caller that doesn't pass one.
    * Every confirmed consumer whose last crumb is a technical identifier
    * (an instance id, a file name, a group/id path) rather than prose wants
-   * `font-mono` instead (component-adoption map, ticket 26) — pass
+   * `font-mono` instead— pass
    * `lastClassName="font-mono"` to reproduce that look. At least one real
    * consumer's last crumb *is* prose (a tenant display name) and matches
    * this default exactly, confirming `font-mono` shouldn't become the new
@@ -142,8 +142,7 @@ export interface BackLinkProps extends React.ComponentProps<"a"> {
   /**
    * Overrides the rendered element for client-side navigation — e.g. an
    * adapter around `react-router-dom`'s `Link`, the same shape as
-   * `Breadcrumbs`' own `LinkComponent` prop (component-adoption map, ticket
-   * 22 / ticket 07): `({href, className, children}) => <Link to={href}
+   * `Breadcrumbs`' own `LinkComponent` prop: `({href, className, children}) => <Link to={href}
    * className={className}>{children}</Link>`. Requires `href` to also be
    * set (the adapter needs a target). Defaults to a plain `<a>`, unchanged
    * for any caller that doesn't pass one — `library/breadcrumbs` still

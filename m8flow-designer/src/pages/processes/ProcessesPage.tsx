@@ -51,7 +51,7 @@ export default function ProcessesPage() {
     canUpdateProcessGroups,
     canDeleteProcessGroups,
   } = useCapabilities();
-  // M8F-479: super-admin may write catalog when a concrete tenant is selected.
+  // super-admin may write catalog when a concrete tenant is selected.
   // Catalog writes must target one tenant, so they stay disabled under
   // All Tenants even though the list itself renders.
   const canCreateModel = canCreateProcessModels && !needsTenantForWrite;

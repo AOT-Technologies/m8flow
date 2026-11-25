@@ -713,9 +713,7 @@ def remove_group_member(group: Group, *, username: str, admin_token: str | None 
 
 def list_member_groups(*, username: str, tenant_ref: TenantRef, admin_token: str | None = None) -> list[Group]:
     """Given a user, list the groups they belong to within one tenant --
-    the inverse of list_group_members. Added by the auth-provider-seam
-    wayfinder map's ticket 08 (a gap ticket 07's audit found: no capability
-    expressed this direction before)."""
+    the inverse of list_group_members."""
     tenant = resolve_tenant_ref(tenant_ref, admin_token=admin_token)
     organization_id = _organization_id(tenant.ref, admin_token=admin_token)
     member_id = _user_id_for_username(username, admin_token=admin_token)
@@ -799,8 +797,7 @@ def remove_roles(
     roles: list[str],
     admin_token: str | None = None,
 ) -> None:
-    """Symmetric counterpart to assign_roles (auth-provider-seam wayfinder
-    map, ticket 09) -- removes from every candidate group name a role maps
+    """Symmetric counterpart to assign_roles  -- removes from every candidate group name a role maps
     to, not just the primary one, since assign_roles only ever adds to the
     primary group but a role could have been granted under a legacy/
     alternate group name."""

@@ -40,14 +40,9 @@ class IssuerRef:
 
     Never derived from TenantRef: it is often chosen *before* any tenant is
     known (the shared-realm login entry point is the default case), not
-    after tenant resolution. Added by the auth-provider-seam wayfinder map's
-    ticket 06 (ahead of ticket 13's full port-surface rename) because ticket
-    06's host-code drain needed the type to exist; ticket 13 has since
-    applied it to the nine pre-existing session methods on ``AuthProvider``,
-    which all take ``issuer: IssuerRef`` now. The capability ABCs in
-    ``capabilities.py`` (``SupportsUserAdmin.create_user``/``delete_user``)
-    were a deliberate exception -- see ticket 01's locked port-surface
-    decision, `Scope of the rename -- port boundary only`.
+    after tenant resolution. The session methods on ``AuthProvider`` take
+    ``issuer: IssuerRef``. Capability ABCs in ``capabilities.py`` retain their
+    separate inputs for user administration.
     """
 
     value: str
@@ -100,11 +95,9 @@ class VerifiedClaims:
     memberships: list[Membership] = field(default_factory=list)
     # The finalized/active tenant a RealmInfoMapper-style claim names
     # explicitly, distinct from `memberships` (every tenant the user belongs
-    # to). Added by the auth-provider-seam wayfinder map's ticket 13, per
-    # ticket 01's decision 6.
+    # to).
     active_tenant_ref: TenantRef | None = None
-    # Verified JWT payload -- debug-only (auth-provider-seam wayfinder map,
-    # ticket 10: "Neutralize the token shape"). Kept for diagnosis (logging,
+    # Verified JWT payload -- debug-only. Kept for diagnosis (logging,
     # a debug endpoint, `g.decoded_token`'s narrow production reader --
     # `auth/bind.py`'s `is_master_issuer` check, which only reads `.issuer`/
     # this field and is explicitly exempted, see that module's
@@ -169,7 +162,7 @@ class Role:
 class Group:
     """A neutral group identifier, optionally scoped to a tenant.
 
-    ``path`` (added by the auth-provider-seam wayfinder map's ticket 08) lets
+    ``path``  lets
     mutation methods' existing ``-> Group`` return values serve a caller's
     read-after-write API response directly, instead of the caller discarding
     the return value and re-fetching a raw representation just to read a

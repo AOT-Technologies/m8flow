@@ -70,7 +70,7 @@ export const PublishProcess: Story = {
   ),
 }
 
-// The `pending` state (component-adoption map, ticket 25): every real
+// The `pending` state: every real
 // "delete while showing Deleting…" consumer's own hand-rolled pattern —
 // disable both buttons, relabel Confirm, and (since passing `pending` at
 // all hands closing-control to the caller) stay open until the simulated

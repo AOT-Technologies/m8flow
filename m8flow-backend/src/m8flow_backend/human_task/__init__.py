@@ -544,7 +544,7 @@ def _prior_submission_values(
     process_data = workflow._process_data(
         session, tenant_id=tenant_id, process_instance_id=work_item.process_instance_id
     )
-    # The task's own scope wins (M8F-640): a multi-instance iteration's input item
+    # The task's own scope wins: a multi-instance iteration's input item
     # and loop counters exist only there, and process variables can still hold a
     # value an earlier form posted back after a later step changed it. Process
     # variables fill in whatever the scope lacks.

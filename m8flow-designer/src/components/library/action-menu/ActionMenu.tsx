@@ -48,8 +48,7 @@ export interface ActionMenuProps {
 /**
  * Kebab-button-triggered overflow menu, wrapping `ui/dropdown-menu.tsx`.
  * Replaces the app's three independently hand-rolled "open state +
- * outside-click/Escape close" row/header action menus (component-adoption
- * map, ticket 21) with one component backed by Radix — outside-click,
+ * outside-click/Escape close" row/header action menus  with one component backed by Radix — outside-click,
  * Escape, and closing on select are handled by `DropdownMenu` itself, so
  * callers no longer manage `open` state or close-on-select by hand.
  */
@@ -66,7 +65,7 @@ const ActionMenu = React.forwardRef<HTMLButtonElement, ActionMenuProps>(
     ref
   ) => {
     const { t } = useTranslation()
-    // No permitted actions means no kebab: an empty menu is a dead control (M8F-534).
+    // No permitted actions means no kebab: an empty menu is a dead control.
     if (items.length === 0) return null
     return (
       <DropdownMenu>

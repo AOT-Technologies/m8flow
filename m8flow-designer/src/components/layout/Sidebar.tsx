@@ -81,7 +81,7 @@ export type SidebarProps = {
   showProcessInstances?: boolean;
   showTaskReview?: boolean;
   showSystem?: boolean;
-  /** When true, show the Tenant selector (ticket 02: super-admin only). */
+  /** When true, show the Tenant selector (super-admin only). */
   showTenantSelector?: boolean;
   tenants?: SidebarTenant[];
   /** `null` means "All Tenants". Ignored when showTenantSelector is false. */
@@ -90,7 +90,7 @@ export type SidebarProps = {
   /**
    * Read-only active-tenant chip for non-super-admin shared-realm users.
    * Ignored when `showTenantSelector` is true. Becomes an interactive
-   * switcher instead when `organizations` has >=2 entries (ticket 06).
+   * switcher instead when `organizations` has >=2 entries.
    */
   activeTenantLabel?: string | null;
   /**
@@ -171,7 +171,7 @@ const TOP_NAV: NavItem[] = [
 
 type SidebarChild = {
   labelKey: ParseKeys;
-  /** Route path when this child is a live link (Templates modeler map, ticket 02). */
+  /** Route path when this child is a live link. */
   to?: string;
   external?: boolean;
 };
@@ -652,7 +652,7 @@ function InertChild({ label }: { label: string }) {
   );
 }
 
-/** A live nested nav link (Templates modeler map, ticket 02) — same size/spacing as InertChild, active state driven by NavLink itself. */
+/** A live nested nav link— same size/spacing as InertChild, active state driven by NavLink itself. */
 function LiveChild({ label, to }: { label: string; to: string }) {
   return (
     <NavLink

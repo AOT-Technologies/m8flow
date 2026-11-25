@@ -60,7 +60,7 @@ describe('classifyDroppedConstruct', () => {
     ).toBe('eventSubprocess');
   });
 
-  it('leaves call activity and multi-instance unclassified (M8F-668)', () => {
+  it('leaves call activity and multi-instance unclassified', () => {
     expect(classifyDroppedConstruct({ type: 'bpmn:CallActivity', businessObject: {} })).toBeNull();
     expect(
       classifyDroppedConstruct({

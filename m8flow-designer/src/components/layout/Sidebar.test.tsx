@@ -104,7 +104,7 @@ describe('Sidebar live nav', () => {
       'href',
       '/processes',
     );
-    // Process Instances + task-state map, ticket 02: now a real link too.
+    // Process Instances is a real navigation link.
     expect(screen.getByRole('link', { name: 'Process Instances' })).toHaveAttribute(
       'href',
       '/process-instances',
@@ -160,7 +160,7 @@ describe('Sidebar live nav', () => {
     expect(screen.queryByRole('button', { name: /Acme Corp/i })).not.toBeInTheDocument();
   });
 
-  it('renders the interactive TenantSwitcher (ticket 06) for >=2 org memberships', async () => {
+  it('renders the interactive TenantSwitcher  for >=2 org memberships', async () => {
     const router = createMemoryRouter(
       [
         {

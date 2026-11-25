@@ -113,7 +113,7 @@ def create_app() -> FlaskApp:
 
     if nats_enabled() and nats_trigger_signing_salt() is None:
         # Reported at boot, not fatal: only NATS triggers depend on the salt (they answer
-        # 503 until it is fixed), and the rest of the API must keep serving (M8F-574).
+        # 503 until it is fixed), and the rest of the API must keep serving.
         LOGGER.error(
             "M8FLOW_NATS_ENABLED is true but M8FLOW_NATS_TOKEN_SALT is unset, a published"
             " placeholder, or under 32 characters: NATS triggers will be refused with 503."

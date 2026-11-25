@@ -30,7 +30,7 @@ class NatsEventOutcome(str, enum.Enum):
     rejected_auth = "rejected_auth"
     # Validly signed, but issued outside M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS: a replay, or a
     # trigger that waited out a consumer outage. Separate from rejected_auth so an outage
-    # can be alerted on without the noise of forged events (M8F-574).
+    # can be alerted on without the noise of forged events.
     rejected_stale = "rejected_stale"
     rejected_scope = "rejected_scope"
     tenant_mismatch = "tenant_mismatch"

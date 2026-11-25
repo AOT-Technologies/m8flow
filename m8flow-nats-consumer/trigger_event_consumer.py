@@ -301,7 +301,7 @@ async def check_idempotency(kv: KeyValue | None, tenant_id: str, event_id: str) 
             return None
         except Exception as e:
             logger.warning("NATS KV dedup check failed (%s) — processing event without dedup guard.", e)
-            
+
     return dedup_key
 
 def _extract_tenant_from_subject(subject: str) -> str | None:
@@ -318,7 +318,7 @@ def _extract_tenant_from_subject(subject: str) -> str | None:
 
 
 def require_trigger_config() -> None:
-    """Refuse to start when every trigger would be refused anyway (M8F-574): a salt that
+    """Refuse to start when every trigger would be refused anyway: a salt that
     cannot verify signatures, or a replay window that is not a positive number of seconds.
     Failing at boot surfaces the misconfiguration on deploy instead of per message."""
     from m8flow_backend.config import nats_trigger_max_age_seconds, nats_trigger_signing_salt
@@ -414,7 +414,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
 
             # Only the backend's HTTP trigger publishes here. It authenticates the raw key and
             # sends the key's public id with a signature, so the broker never stores a usable
-            # credential (M8F-574). Anything unsigned or altered is not trusted.
+            # credential. Anything unsigned or altered is not trusted.
             if not api_key_id or not NatsTokenService.verify_trigger(data):
                 failure_outcome = NatsEventOutcome.rejected_auth.value
                 raise ValueError(
@@ -550,7 +550,7 @@ async def process_message(msg: Any, kv: KeyValue | None, nc: NATS) -> None:
             username=username,
             insert_only=not sender_verified,
         )
-        
+
         if dedup_key and kv:
             try:
                 await kv.delete(dedup_key)

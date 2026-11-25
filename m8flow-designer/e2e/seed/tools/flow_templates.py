@@ -1,4 +1,4 @@
-"""Small approval and task processes for the process-flow and run specs (M8F-677, phase 2).
+"""Small approval and task processes for the process-flow and run specs (approval and task fixtures).
 
 Written by build_catalog.py into e2e/seed/catalog/templates/flow-<key>/. Each one
 is a short business process (expense approval, purchase request, ...) built to

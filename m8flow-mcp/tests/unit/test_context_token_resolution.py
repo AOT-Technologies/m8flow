@@ -3,7 +3,7 @@
 Focus: the per-request forwarded ``Authorization`` bearer token. The m8flow-backend
 MCP catalog bridge authenticates by forwarding the calling user's own token in that
 header, so a tool that cannot see it fails with "No authentication token available"
-even though the caller was fully authenticated (M8F-404).
+even though the caller was fully authenticated.
 """
 
 from __future__ import annotations

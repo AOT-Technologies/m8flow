@@ -371,7 +371,7 @@ services:
 
   m8flow-notification-worker:
     # Not behind the nats profile: its sweep emails external-form links with or without
-    # NATS (M8F-574). The worker skips the NATS subscription itself when NATS is disabled.
+    # NATS. The worker skips the NATS subscription itself when NATS is disabled.
     container_name: m8flow-notification-worker
     image: m8flow-backend
     pull_policy: never

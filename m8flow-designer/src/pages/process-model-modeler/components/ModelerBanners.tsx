@@ -12,7 +12,7 @@ export type NotPrimaryBannerProps = {
 };
 
 /**
- * Warns that edits to this file do not change what the process runs (M8F-510).
+ * Warns that edits to this file do not change what the process runs.
  *
  * The "Saved" pill only ever means "no unsaved edits in this session", and the
  * toolbar's "Set as primary" button was the only hint that the open file was

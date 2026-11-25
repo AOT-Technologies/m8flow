@@ -245,7 +245,7 @@ def _reject_in_app_completion_of_external_form_task(
         return
 
     # Block only while a secure link can still finish the task. With none open, blocking
-    # would strand it with no way to complete (M8F-574).
+    # would strand it with no way to complete.
     from m8flow_backend.models.external_form_request import OPEN_STATUSES, ExternalFormRequestModel
 
     link_open = (
@@ -602,7 +602,7 @@ def disable_model_timers(session: Session, *, tenant_id: str, model_id: str) -> 
 
 
 def _require_startable_status(*, tenant_id: str, process_model_identifier: str) -> None:
-    """Only published models start instances (M8F-508).
+    """Only published models start instances.
 
     Guarding here rather than in the route means the designer Start button,
     the thin POST /v1.0/process-instances, and MCP all hit the same rule.
@@ -648,7 +648,7 @@ def _emit_external_form_requests(
 def _cancel_external_form_requests(
     session: Session, *, tenant_id: str, process_instance_id: int
 ) -> None:
-    """Retire the instance's open secure links once it is terminated (M8F-575).
+    """Retire the instance's open secure links once it is terminated.
 
     Best-effort like `_emit_external_form_requests`: a failure must not undo the
     terminate, and the links are refused anyway because the external-form endpoints
@@ -1629,7 +1629,7 @@ def _task_data(session: Session, *, tenant_id: str, task_guid: str | None) -> di
 
 # Spiff keeps BPMN data objects in workflow.data["data_objects"]. That is engine
 # state, not a process variable: never show it in a form and never accept it from
-# one, or it replaces the engine's store (M8F-680).
+# one, or it replaces the engine's store.
 _ENGINE_DATA_KEYS = frozenset({"data_objects"})
 
 
@@ -1779,7 +1779,7 @@ def _failure_messages(
 ) -> tuple[dict[int, str | None], str | None]:
     """The recorded failure message for each ``task_failed`` and
     ``process_instance_error`` event, taken from that event's own execution
-    attempt, and the message of the latest Error (M8F-675 review). A caught
+    attempt, and the message of the latest Error. A caught
     connector error has a row but no ``task_failed`` event, so it never
     becomes an Error's message, and an attempt with no failure message of its
     own never reaches back to an earlier one."""
@@ -2256,7 +2256,7 @@ def _assigned_to(user_id: int) -> Any:
 
 
 def instance_scope_clause(user_id: int, scope: str | None = None) -> Any:
-    """Instances a user started, has a task assigned in, or both (M8F-653).
+    """Instances a user started, has a task assigned in, or both.
 
     ``scope`` "started"/"assigned" narrows to one side; anything else is "mine" (both).
     """
@@ -2668,7 +2668,7 @@ def list_instances_for_designer(
     an allowlisted key (see `_INSTANCE_SORTS`) — never a raw column name —
     defaulting to newest-first when unset/unknown.
 
-    ``viewer_id`` narrows to that user's instances (``scope``, M8F-653); ``user_id``
+    ``viewer_id`` narrows to that user's instances (``scope``); ``user_id``
     adds the caller's ``started_by_me``/``assigned_to_me`` to each row.
     """
     from m8flow_core.models.user import UserModel
@@ -2895,7 +2895,7 @@ _BPMN_LOGIC_TEXT_TAGS = frozenset(
 
 def diagram_only_bpmn_xml(xml: str) -> str | None:
     """`xml` reduced to what bpmn-js draws, for instance readers without model-file
-    read (M8F-651): shapes, ids, names and DI stay, so task-state markers still
+    read: shapes, ids, names and DI stay, so task-state markers still
     apply. Elements and attributes outside `_DIAGRAM_NAMESPACES` (wherever they
     sit, not only in `extensionElements`), comments and script/expression bodies
     go. Logic elements stay, emptied, so e.g. conditional-flow markers still
@@ -4092,9 +4092,9 @@ def _definition_id_for_start(
     must run that same file -- as the pre-next-gen host did, recording the BPMN
     version as part of creating the instance. Resolving from the database alone
     broke Start whenever the two diverged: a clean rebuild (`down -v`) wipes the
-    database but keeps the bind-mounted spec dir (M8F-566), and a definition
+    database but keeps the bind-mounted spec dir, and a definition
     stored with a DMN other than the one the BPMN calls failed "No DMN Diagram
-    available" (M8F-657).
+    available".
 
     Imports only when this model has not yet been imported with this exact XML:
     import re-syncs timer-start jobs, so importing on every Start would keep

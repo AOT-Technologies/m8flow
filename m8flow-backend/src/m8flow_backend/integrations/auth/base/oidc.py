@@ -1,6 +1,5 @@
 """Spec-defined OIDC engine (RFC 6749 / RFC 7517 / OIDC Core), hoisted out of
-``keycloak/oidc.py`` + ``keycloak/jwks.py`` (auth-provider-seam wayfinder
-map, ticket 04) so a second provider doesn't have to re-type discovery/JWKS
+``keycloak/oidc.py`` + ``keycloak/jwks.py``  so a second provider doesn't have to re-type discovery/JWKS
 caching, RS256 verification, or the authorization-code/refresh token-endpoint
 grants -- the same document any OIDC-compliant IdP implements.
 
@@ -20,8 +19,7 @@ own.
 
 Pure extraction: this is a direct line-for-line move of the pre-hoist
 Keycloak adapter's spec-defined logic, not a redesign of the verification
-pipeline. Ticket 04's own acceptance criterion is mechanical --
-``test_jwks.py`` must keep passing with zero edits.
+pipeline. The shared verification behavior is covered by ``test_jwks.py``.
 """
 from __future__ import annotations
 

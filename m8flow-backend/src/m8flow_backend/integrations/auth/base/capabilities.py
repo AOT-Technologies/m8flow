@@ -7,12 +7,11 @@ capability or raise ``CapabilityNotSupported``.
 
 Four narrow ABCs (``SupportsUserAdmin``/``SupportsTenantAdmin``/
 ``SupportsGroupAdmin``/``SupportsRoleAdmin``) replace the single 21-method
-``SupportsDirectoryAdmin`` that predates ticket 01's port-surface lock — a
+``SupportsDirectoryAdmin`` interface — a
 provider that only supports a subset can decline the rest independently.
 ``SupportsDirectoryAdmin`` survives as a composing aggregate of all four, for
 the ~15 existing call sites that need everything and don't care which
-narrow capability backs which method (auth-provider-seam wayfinder map,
-ticket 13).
+narrow capability backs which method.
 """
 from __future__ import annotations
 

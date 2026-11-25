@@ -171,7 +171,7 @@ describe('HomeStatsGrid', () => {
 
     expect(screen.queryByText('Tasks waiting on me')).not.toBeInTheDocument();
   });
-  describe('clickable cards (M8F-711)', () => {
+  describe('clickable cards', () => {
     const stats = {
       active_process_instances: 5,
       tasks_waiting_on_me: 0,

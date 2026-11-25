@@ -90,7 +90,7 @@ def create_realm(body: dict) -> tuple[dict, int]:
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
-    
+
     is_authorized = allow_uri(
         user,
         "POST",
@@ -236,7 +236,7 @@ def get_current_user_organization_memberships() -> tuple[dict, int]:
     # The directory is the source of truth for the *full* membership list this
     # endpoint exists to serve (it drives the tenant switcher's option list).
     # The token's `organization` claim can no longer stand in for it: since the
-    # active-tenant deep-module work (ticket 09), RealmInfoMapper populates that
+    # active-tenant deep-module work, RealmInfoMapper populates that
     # claim with only the single *active* org, not every membership -- so a
     # multi-org user would otherwise see just their current tenant here and lose
     # the ability to switch. Fall back to the token claim only when the username
@@ -296,9 +296,9 @@ def delete_tenant_realm(realm_id: str) -> tuple[dict, int]:
     user = getattr(g, 'user', None)
     if not user:
         raise ApiError(error_code="not_authenticated", message="User not authenticated", status_code=401)
-    
+
     is_authorized = user_has_permission(user, "delete", request.path)
-        
+
     if not is_authorized:
         logger.warning(
             "User %s (groups: %s) attempted to delete tenant %s without required permissions", 

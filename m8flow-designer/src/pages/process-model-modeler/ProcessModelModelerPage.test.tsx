@@ -582,7 +582,7 @@ describe('ProcessModelModelerPage file chrome', () => {
 });
 
 /**
- * M8F-510. An uploaded .bpmn persists immediately, but it does not become the
+ * An uploaded.bpmn persists immediately, but it does not become the
  * model's primary file — so the process still starts from the old one. The
  * toolbar's "Set as primary" button was the only hint, and the "Saved" pill
  * (which only ever meant "no unsaved edits in this session") read as proof

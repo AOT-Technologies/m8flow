@@ -14,7 +14,7 @@ import { loadBaseline } from '../seed/seed';
  * Removes, as the tenant admin:
  *   - every E2E group, model, instance and template whose id carries a run time stamp
  *     (data of earlier or stopped runs, whatever its age),
- *   - the old mock catalog group (before M8F-677),
+ *   - the old mock catalog group (before the seeded catalog),
  *   - every instance of the seeded catalog models, and stamped copies of them,
  *   - catalog templates no longer in baseline.json (e2e-<key> without a time stamp, e.g. after
  *     templates were merged).

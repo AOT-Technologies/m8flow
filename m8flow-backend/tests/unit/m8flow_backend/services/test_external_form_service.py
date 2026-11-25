@@ -472,7 +472,7 @@ def test_emit_requests_for_ready_tasks_publishes_the_fast_path_event(db_session,
     [row] = _rows_for(db_session, "task-guid-published")
     assert payload["request_ids"] == [row.id]
     # The reference id is the secure link's bearer credential; the broker retains this
-    # message indefinitely, so it must never be in it (M8F-574).
+    # message indefinitely, so it must never be in it.
     assert row.reference_id not in json.dumps(payload)
 
 
@@ -590,7 +590,7 @@ def test_a_parked_request_still_expires_by_ttl(db_session):
 
 
 # ---------------------------------------------------------------------------
-# M8F-575 issue 1: resend used to flip the status back to pending and nothing
+# resend used to flip the status back to pending and nothing
 # else, so a request that had expired (e.g. parked for missing SMTP past its TTL)
 # was "requeued" into a state the sweep never sends. Resend now re-issues: a new
 # reference id and a new expiry, or a 409 that says why it cannot.
@@ -612,7 +612,7 @@ def _resendable(db_session, status, *, process_instance_id=600, **fields):
 def test_reissue_gives_an_expired_request_a_fresh_link(db_session):
     import time
 
-    # The ticket's state: parked, expired, then revived to pending by the sweep.
+    # The legacy state: parked, expired, then revived to pending by the sweep.
     row = _resendable(
         db_session, ExternalFormRequestStatus.pending.value, expires_at_in_seconds=1, attempts=3, last_error="x"
     )
@@ -718,7 +718,7 @@ def test_reissue_does_not_cross_tenants(db_session):
 
 
 def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
-    """M8F-575 issue 2: a worker killed mid-send leaves the row 'sending'. Past the lease
+    """a worker killed mid-send leaves the row 'sending'. Past the lease
     it is resendable; inside it a send may still finish, so rotating the link would mail
     the recipient a dead one."""
     import time
@@ -740,7 +740,7 @@ def test_reissue_refuses_a_send_in_progress_but_not_a_crashed_one(db_session):
 
 
 # ---------------------------------------------------------------------------
-# M8F-575 issue 3: core's terminate closes the instance's human tasks, but nothing
+# core's terminate closes the instance's human tasks, but nothing
 # touched the tracking rows, so a terminated process's link still read
 # actionable=true. A link whose task has closed is now cancelled: not actionable,
 # refused on submit, and never emailed.

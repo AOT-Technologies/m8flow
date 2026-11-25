@@ -50,7 +50,7 @@ export type TemplateFileListProps = {
 
 /**
  * Per-file list on template detail — each supported file opens
- * `/templates/:id/modeler/:fileName` (Templates to 100%, ticket 07).
+ * `/templates/:id/modeler/:fileName` (Templates to 100%).
  */
 export function TemplateFileList({ template, canEdit = false }: TemplateFileListProps) {
   const { t } = useTranslation();

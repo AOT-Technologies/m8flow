@@ -59,7 +59,7 @@ describe('McpToolsPage', () => {
     expect(await screen.findByText('Connected · 12 ms')).toBeInTheDocument();
   });
 
-  it('shows the backend reason and the ping result when the catalog fails (M8F-539)', async () => {
+  it('shows the backend reason and the ping result when the catalog fails', async () => {
     api.fetchMcpToolsCatalog.mockRejectedValue(
       new ApiError('/v1.0/m8flow/mcp-tools', 502, 'GET', 'Not authorized to reach the MCP server (HTTP 401).'),
     );

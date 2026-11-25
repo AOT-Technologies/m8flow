@@ -412,8 +412,7 @@ def test_cookie_wins_over_jwt_claim_for_multi_org_membership(app, db_session):
     user = SimpleNamespace(
         groups=[SimpleNamespace(identifier="org-b:reviewer")], service_id=None, username=None
     )
-    # VerifiedClaims is the contract resolve_request_tenant reads (auth-
-    # provider-seam wayfinder map, ticket 10) -- active_tenant_ref carries
+    # VerifiedClaims is the contract resolve_request_tenant reads  -- active_tenant_ref carries
     # the explicit m8flow_tenant_id claim (org-a) and memberships carries
     # every organization (org-a, org-b), mirroring the raw payload this test
     # used to poke g.decoded_token with directly.

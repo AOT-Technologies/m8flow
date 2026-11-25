@@ -230,7 +230,7 @@ def reset_keycloak_settings() -> None:
 # Every former config.py accessor, now a one-line delegation to the active
 # KeycloakSettings instead of a per-call os.environ read. Names and
 # signatures are unchanged, so callers across the adapter — and the callers
-# outside it that tickets 06/07-09 still need to drain onto the port — are
+# outside it that still need to move onto the provider port — are
 # untouched by this rename beyond their import path.
 
 

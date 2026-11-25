@@ -2,7 +2,7 @@
  * Static, dependency-free linter for the properties-panel "Launch Editor"
  * popup (EditorDialog). spiffworkflow-frontend's own script editor ships no
  * in-editor Python linting — it leans on Monaco's syntax highlighting plus
- * server-side unit tests. This adds the linting/format/validation the ticket
+ * server-side unit tests. This adds the linting/format/validation the editor
  * asked for, entirely client-side: no Pyodide, no backend round-trip.
  *
  * Scope is deliberately *syntactic*, not semantic: it catches the mistakes a

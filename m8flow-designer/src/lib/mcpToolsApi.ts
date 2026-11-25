@@ -1,7 +1,7 @@
 import { ApiError, apiGet, apiPost } from './api';
 
 /**
- * Admin MCP tools catalog (M8F-404, restored for next-gen in M8F-539). Shapes mirror
+ * Admin MCP tools catalog (restored for the designer). Shapes mirror
  * `mcp_tools_controller.py`; the backend's `/m8flow/mcp-tools*` grants are the
  * enforcement layer.
  */
@@ -56,7 +56,7 @@ export function executeMcpTool(
 }
 
 /** The backend's own reason (not configured / not authorized / unreachable) beats a
- * generic line -- hiding it is what made M8F-539 undiagnosable. */
+ * generic line -- hiding it is what made MCP tool failures undiagnosable. */
 export function mcpErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError && err.serverMessage) return err.serverMessage;
   return fallback;

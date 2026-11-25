@@ -36,7 +36,7 @@ CLAIMABLE_STATUSES = (
     ExternalFormRequestStatus.failed,
 )
 
-# TODO(M8F-575): once the designer has a Resend button for external-form links, remove this
+# TODO: once the designer has a Resend button for external-form links, remove this
 # automatic re-send (the 'sending' branch of _claimable) and leave crashed sends to an admin
 # resend, which already accepts a 'sending' row past the lease.
 
@@ -113,7 +113,7 @@ class ExternalFormNotificationService:
                 status=ExternalFormRequestStatus.sending,
                 notified_at_in_seconds=now,
                 # The link's lifetime starts when it is sent, not when the row was created: a
-                # request parked or failing past its TTL would otherwise expire unread (M8F-575).
+                # request parked or failing past its TTL would otherwise expire unread.
                 expires_at_in_seconds=now + external_form_link_ttl_seconds(),
                 attempts=ExternalFormRequestModel.attempts + 1,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
@@ -518,7 +518,7 @@ class ExternalFormNotificationService:
             LOGGER.warning(
                 "external-form-notify: could not read the task for instance=%s", row.process_instance_id, exc_info=True
             )
-        # Never email a link that can no longer complete its task (M8F-575).
+        # Never email a link that can no longer complete its task.
         if ExternalFormService.cancel_if_task_closed(row, human_task):
             return "skipped:task_closed"
 

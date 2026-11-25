@@ -133,7 +133,7 @@ def external_form_notification_list() -> flask.wrappers.Response:
     )
 
 
-# TODO(M8F-575): when the Resend button ships, give resend a permission of its own so the
+# TODO: when the Resend button ships, give resend a permission of its own so the
 # tenant admin (or the role that owns the process) can resend any failed email, instead of
 # riding on the tenant's /secrets "create" grant. A new grant only reaches tenants seeded
 # after it is added (see the module docstring), so plan a backfill for existing tenants.

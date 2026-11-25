@@ -31,8 +31,7 @@ const PER_PAGE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Templates gallery — wired to GET /v1.0/m8flow/templates (Template
- * modeler map, ticket 02 — .scratch/template-modeler/). Same tenant-gating
+ * Templates gallery — wired to GET /v1.0/m8flow/templates. Same tenant-gating
  * posture as ProcessesPage: super-admin must pick a concrete tenant, no
  * merged all-tenant catalog view, even though the backend itself would
  * technically allow one for an unscoped super-admin request — kept
@@ -75,7 +74,7 @@ export default function TemplatesPage() {
   // dependency, not a direct re-call, since the main fetch effect below
   // already owns loading/error state for the current filter combination.
   const [reloadKey, setReloadKey] = useState(0);
-  // Ticket 04 (create/import/export/delete): errors from these actions are
+  // Errors from create/import/export/delete actions are
   // reported separately from the list's own load `error` above, so a
   // failed delete doesn't get mistaken for "the list failed to load."
   const [actionError, setActionError] = useState<string | null>(null);

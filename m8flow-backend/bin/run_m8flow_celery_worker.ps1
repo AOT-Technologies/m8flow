@@ -28,7 +28,7 @@ function Resolve-RepoRelativePath {
 # Mirror the bash launcher (run_m8flow_celery_worker.sh): run everything through
 # `uv run` so uv manages the venv on the repo-pinned Python (.python-version).
 # Do NOT pre-create it with `python -m venv`, which binds to whatever python is on
-# PATH (e.g. 3.14) and lacks a psycopg2 wheel, breaking on Windows. See M8F-432.
+# PATH (e.g. 3.14) and lacks a psycopg2 wheel, breaking on Windows. Use the supported Python version.
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
   Write-Host "uv not found on PATH; attempting to install it with pip..."
   try { python -m pip install uv } catch { }

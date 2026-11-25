@@ -1,7 +1,7 @@
 /**
  * Vite plugin for hosts that mount m8flow-bpmn with the properties panel /
  * bpmn-js-spiffworkflow. Owns the Preact single-instance aliases and the
- * Spiff JSX transform (ticket 12).
+ * Spiff JSX transform.
  *
  * Plain JS so Vite can import this from vite.config without a TS loader.
  */

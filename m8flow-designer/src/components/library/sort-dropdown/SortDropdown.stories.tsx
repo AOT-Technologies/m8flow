@@ -45,7 +45,7 @@ export const NameSelected: Story = {
 }
 
 // Reuses the same pill-dropdown shape for a plain single-select filter
-// (ticket 19) instead of the "Sort: " prefix — e.g. a Status filter.
+//  instead of the "Sort: " prefix — e.g. a Status filter.
 const statusOptions = [
   { label: "All", value: "all" },
   { label: "Active", value: "active" },

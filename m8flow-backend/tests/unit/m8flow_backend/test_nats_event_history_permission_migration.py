@@ -1,4 +1,4 @@
-"""Revoking tenant-admin NATS event-history grants (M8F-700)."""
+"""Revoking tenant-admin NATS event-history grants."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def test_tenant_admin_group_query_quotes_reserved_group_identifier_for_postgresq
 # The rows above are hand-built; this runs the real migration chain on PostgreSQL, the
 # production dialect, against grants written by the real seed. Skipped unless
 # M8FLOW_TEST_POSTGRES_URI points at a disposable database (CI's test matrix sets it).
-_PRE_M8F_700_GRANTS = """
+_PRE_EVENT_HISTORY_RESTRICTION_GRANTS = """
 permissions:
   read-nats-monitoring: {groups: [super-admin], actions: [read], uri: /m8flow/nats/*}
   read-nats-events: {groups: [tenant-admin, super-admin], actions: [read], uri: /m8flow/nats/events}
@@ -179,13 +179,13 @@ def test_upgrade_on_postgres_revokes_seeded_tenant_admin_event_history(tmp_path,
     command.downgrade(cfg, _migration_module().down_revision)
 
     engine = sa.create_engine(database_uri)
-    old_seed = tmp_path / "pre-m8f-700.yml"
-    old_seed.write_text(_PRE_M8F_700_GRANTS, encoding="utf-8")
+    old_seed = tmp_path / "pre-event-history-restriction.yml"
+    old_seed.write_text(_PRE_EVENT_HISTORY_RESTRICTION_GRANTS, encoding="utf-8")
     with Session(engine) as session:
-        identity.ensure_tenant(session, tenant_id="m8f700", slug="m8f700")
-        identity.import_yaml(session, tenant_id="m8f700", yaml_path=str(old_seed))
+        identity.ensure_tenant(session, tenant_id="nats_permissions", slug="nats_permissions")
+        identity.import_yaml(session, tenant_id="nats_permissions", yaml_path=str(old_seed))
         session.commit()
-    events = {("m8f700:tenant-admin", "/m8flow/nats/events"), ("m8f700:tenant-admin", "/m8flow/nats/events/%")}
+    events = {("nats_permissions:tenant-admin", "/m8flow/nats/events"), ("nats_permissions:tenant-admin", "/m8flow/nats/events/%")}
     assert events <= _nats_grants(engine)
 
     command.upgrade(cfg, "head")
@@ -193,7 +193,7 @@ def test_upgrade_on_postgres_revokes_seeded_tenant_admin_event_history(tmp_path,
     remaining = _nats_grants(engine)
     assert not events & remaining
     assert {
-        ("m8f700:tenant-admin", "/m8flow/nats-tokens"),
+        ("nats_permissions:tenant-admin", "/m8flow/nats-tokens"),
         ("super-admin", "/m8flow/nats/%"),
         ("super-admin", "/m8flow/nats/events"),
         ("super-admin", "/m8flow/nats/events/%"),

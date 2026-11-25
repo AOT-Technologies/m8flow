@@ -342,7 +342,7 @@ def _request_for_model(db_session, bpmn_xml: str) -> ServiceTaskRequest:
     ensure_tenant(db_session, tenant_id="t1", slug="t1", name="t1")
     definition = BpmnProcessDefinitionModel(
         m8f_tenant_id="t1",
-        process_xml_digest="m8f675",
+        process_xml_digest="coded_error",
         bpmn_identifier="P",
         properties_json={},
         source_bpmn_xml=bpmn_xml,
@@ -376,7 +376,7 @@ def _http404_registry() -> ServiceTaskRegistry:
 def test_coded_service_task_error_is_always_recorded(db_session, caplog, catch_code, in_subprocess):
     """The failure happens before core decides whether an error boundary
     catches it, and only core knows which task and process version ran, so the
-    host never guesses from the BPMN: it always records (M8F-675 review). A
+    host never guesses from the BPMN: it always records. A
     caught error's row isn't shown -- the instance doesn't go to Error and core
     records no task_failed for that task."""
     request = _request_for_model(
@@ -455,7 +455,7 @@ class _CodedEchoingConnector(_EchoingConnector):
 
 
 def test_masking_a_secret_keeps_the_bpmn_error_code(db_session, monkeypatch):
-    """Core routes on ``error_code`` (M8F-675), so the masked copy must keep it."""
+    """Core routes on ``error_code``, so the masked copy must keep it."""
     _seed_profile(db_session, monkeypatch)
     db_session.commit()
 

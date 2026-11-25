@@ -237,7 +237,7 @@ export function EditorDialog({ session, onClose }: EditorDialogProps) {
               style compromise (border + no background + rounded-md, vs.
               every Button variant either adding a background or a different
               radius), and this shape isn't duplicated elsewhere — see this
-              ticket's resolution. */}
+              design decision. */}
           <button
             type="button"
             onClick={handleFormat}

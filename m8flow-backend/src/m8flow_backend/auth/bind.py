@@ -260,7 +260,7 @@ def require_catalog_write_tenant_id(
     *,
     explicit_tenant_id: str | None = None,
 ) -> str:
-    """Concrete tenant for catalog / create-from-template writes (M8F-479).
+    """Concrete tenant for catalog / create-from-template writes.
 
     Non-super-admins ignore body ``m8f_tenant_id`` and use ``require_tenant_id``.
 
@@ -368,8 +368,7 @@ def _canonical(tenant_id: str) -> str:
 
 
 def _claims_match_cookie(claims, cookie: str) -> bool:
-    """Neutral replacement for the former ``_payload_matches_cookie`` (auth-
-    provider-seam wayfinder map, ticket 10): reads ``VerifiedClaims.memberships``
+    """Neutral replacement for the former ``_payload_matches_cookie``: reads ``VerifiedClaims.memberships``
     instead of destructuring the raw ``organization`` claim."""
     from m8flow_backend.integrations.auth.base.models import VerifiedClaims
 
@@ -391,8 +390,7 @@ def _claims_match_cookie(claims, cookie: str) -> bool:
 
 
 def _jwt_tenant(claims, payload: dict | None) -> str | None:
-    """Neutral replacement for the former raw-payload-only lookup (auth-
-    provider-seam wayfinder map, ticket 10): ``VerifiedClaims.active_tenant_ref``
+    """Neutral replacement for the former raw-payload-only lookup: ``VerifiedClaims.active_tenant_ref``
     carries the finalized/active tenant. The ``TENANT_CLAIM`` (default
     ``m8flow_tenant_id``, overridable via ``M8FLOW_TENANT_CLAIM``) fallback
     stays a raw-payload read on purpose -- it's a host-configurable generic

@@ -17,7 +17,7 @@ import { buttonVariants } from "@/components/ui/button"
 //      using AlertDialog over Dialog here.
 // Also uses the bracket-form `data-[state=open]:`/`data-[state=closed]:`
 // variants, not dialog.tsx's bare `data-open:`/`data-closed:` — see
-// ui/tooltip.tsx's comment (ticket 02) for why the bare form is dead CSS
+// ui/tooltip.tsx's comment  for why the bare form is dead CSS
 // against Radix's real `data-state` attribute; AlertDialog's Content
 // inherits Dialog's own `data-state="open"|"closed"` under the hood.
 

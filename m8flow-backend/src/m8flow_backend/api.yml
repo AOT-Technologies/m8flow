@@ -2137,8 +2137,7 @@ paths:
           description: >-
             Result ordering: newest, oldest, recent_start, or status. Unknown
             values fall back to newest-first (the controller degrades gracefully,
-            so no enum constraint is enforced here — ticket 03 owns any decision
-            to tighten this into a validated enum).
+            so no enum constraint is enforced here).
         - name: page
           in: query
           schema:

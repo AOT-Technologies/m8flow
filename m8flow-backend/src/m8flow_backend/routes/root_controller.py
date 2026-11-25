@@ -1,5 +1,5 @@
 # m8flow-backend/src/m8flow_backend/routes/root_controller.py
-"""Public root endpoint (M8F-409).
+"""Public root endpoint.
 
 Unauthenticated requests to the backend root used to hit tenant resolution and
 fail with a confusing ``tenant_required`` error. This controller gives the

@@ -4,7 +4,7 @@ import { apiFetch, API_BASE_URL, ApiError } from './api';
 import { NetworkError } from './networkErrors';
 
 /** The backend's reason when it sent one, else `fallback` — never
- * `ApiError.message` ("POST /v1.0/… failed: 400"), which is for logs (M8F-685). */
+ * `ApiError.message` ("POST /v1.0/… failed: 400"), which is for logs. */
 export function templateErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof NetworkError) return err.message;
   return (err instanceof ApiError && err.serverMessage) || fallback;
@@ -12,8 +12,7 @@ export function templateErrorMessage(err: unknown, fallback: string): string {
 
 /**
  * Client for m8flow-backend's already-live `/v1.0/m8flow/templates*`
- * contract (Template modeler map, ticket 01 —
- * `.scratch/template-modeler/`). Types and response shapes are read
+ * contract. Types and response shapes are read
  * directly from `templates_controller.py`'s own `_serialize_template`/
  * `template_list`/pagination code, not guessed from the
  * `m8flow-frontend` reference client (`TemplateService.ts`) — that
@@ -323,7 +322,7 @@ export type CreateProcessModelFromTemplateRequest = {
   processModelId: string;
   displayName: string;
   description?: string;
-  /** Super-admin write binding (M8F-479); also sent as `?tenantId=`. */
+  /** Super-admin write binding; also sent as `?tenantId=`. */
   tenantId?: string | null;
 };
 

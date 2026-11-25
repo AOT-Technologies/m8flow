@@ -1,7 +1,7 @@
 """Liveness/readiness probes for load balancers and container orchestration.
 
 Relocated from tenancy.py during the active-tenant deep-module collapse
-(ticket 03): health/readiness has nothing to do with tenant resolution.
+: health/readiness has nothing to do with tenant resolution.
 """
 from __future__ import annotations
 

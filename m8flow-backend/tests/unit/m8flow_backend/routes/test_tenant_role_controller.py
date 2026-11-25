@@ -200,8 +200,7 @@ class _ThinTenantAdminProvider:
         # "Thin" on purpose: this session's own token only asserts the one
         # organization it was scoped to (t1) -- not every tenant Keycloak's
         # directory happens to know about. ensure_request_can_access_tenant
-        # reads VerifiedClaims.memberships (auth-provider-seam wayfinder map,
-        # ticket 10), so this is the request-scoping boundary: it must NOT
+        # reads VerifiedClaims.memberships, so this is the request-scoping boundary: it must NOT
         # include t2, or a thin t1 session could reach t2 data. The fuller
         # t1+t2 list in list_memberships() below is the separate directory
         # lookup group-sync enrichment uses -- that gap between "what this

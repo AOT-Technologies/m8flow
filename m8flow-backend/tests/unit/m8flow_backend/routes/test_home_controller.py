@@ -137,7 +137,7 @@ def _seed_pending_task(
 
 
 def test_editor_instance_stats_count_only_their_own_and_assigned_instances(client, db_session):
-    """M8F-627/M8F-653: an editor's Home instance stats count instances they started
+    """An editor's Home instance stats count instances they started
     or have a task assigned in, never the tenant's, and are 0 rather than null when
     there are none. Task stats and total_tenants stay withheld."""
     user, token = _login_user(
@@ -177,12 +177,12 @@ def test_editor_instance_stats_count_only_their_own_and_assigned_instances(clien
     )
     assert permission_response.get_json()["results"]["/m8flow/home-task-count"]["GET"] is False
     assert permission_response.get_json()["results"]["/m8flow/task-review"]["GET"] is False
-    # The designer's canReadAllProcessInstances flag (M8F-627).
+    # The designer's canReadAllProcessInstances flag.
     assert permission_response.get_json()["results"]["/process-instances"]["GET"] is False
 
 
 def test_reviewer_gets_task_stats_but_null_instance_stats(client, db_session):
-    """The central ticket-03 decision: reviewer has read-task-list but is
+    """The permission rule: reviewer has read-task-list but is
     deliberately excluded from read-process-instance-list (m8flow.yml) --
     the response must reflect that per-field, not 403 the whole request
     and not silently grant reviewer instance visibility either.

@@ -448,7 +448,7 @@ export const BpmnCanvas = forwardRef<DiagramCanvasHandle, BpmnCanvasProps>(funct
     // .dmn instead. The option value becomes calledDecisionId, which the
     // engine resolves as a decision id, so it is the file's `decision_id`
     // from the model's file list — a file name there fails Start with
-    // "No DMN Diagram available" (M8F-657).
+    // "No DMN Diagram available".
     instance.on('spiff.dmn_files.requested', (event: any) => {
       const modelFiles = propsRef.current.files ?? [];
       const options = modelFiles

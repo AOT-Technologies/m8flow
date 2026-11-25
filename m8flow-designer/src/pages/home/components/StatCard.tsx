@@ -18,7 +18,7 @@ interface StatCardProps {
 
 /**
  * One of Home's stat cards — icon badge with label on one row, big number below.
- * With `to`, the whole card is a link to the matching filtered list (M8F-711).
+ * With `to`, the whole card is a link to the matching filtered list.
  */
 export function StatCard({ icon: Icon, iconClassName, value, label, to, description }: StatCardProps) {
   const card = (

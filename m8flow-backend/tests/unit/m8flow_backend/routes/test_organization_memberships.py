@@ -51,7 +51,7 @@ def _login_user(client, db_session, *, username: str, groups: list[str], tenant_
 
 
 class _ActiveOrgTokenProvider:
-    """Since ticket 09 the token's `organization` claim carries only the single
+    """The token's `organization` claim carries only the single
     *active* org, so verify_token yields one membership -- but the endpoint must
     still surface the full list from the directory (both orgs), or a multi-org
     user loses the ability to switch."""

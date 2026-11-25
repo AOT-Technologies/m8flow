@@ -72,7 +72,7 @@ export function CallActivitySearchDialog({ session, onClose }: CallActivitySearc
     // capabilities this dialog didn't have before (it previously had no
     // Escape or outside-click handling at all) — a deliberate gain from
     // adopting the shared primitive, not silently introduced: see this
-    // ticket's resolution.
+    // design decision.
     <Dialog open onOpenChange={(next) => { if (!next) onClose(); }}>
       <DialogPortal>
         {/* `DialogPrimitive.Content` used directly (not the shared

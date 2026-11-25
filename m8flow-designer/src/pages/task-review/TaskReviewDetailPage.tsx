@@ -37,9 +37,9 @@ const STATUS_LABELS: Record<string, ParseKeys> = {
 };
 
 // `error`/`muted` (not `destructive`/`secondary`) — Pill's own tone
-// vocabulary (component-adoption map, ticket 10). `error` is Pill's always-
+// vocabulary. `error` is Pill's always-
 // tinted look, a deliberate softening from `ui/badge.tsx`'s solid
-// `destructive` variant, the same accepted trade-off ticket 15's
+// `destructive` variant, the same accepted trade-off used by the
 // StatusBadge→Pill consolidation made for the analogous process-instance
 // status vocabulary.
 const STATUS_TONES: Record<string, NonNullable<PillProps['tone']>> = {
@@ -105,7 +105,7 @@ function eventLabel(eventType: string): string {
 }
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 10). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>
@@ -324,7 +324,7 @@ export default function TaskReviewDetailPage() {
     setAutomaticStepFailure(null);
     submitTaskReview(parsedId, payload)
       .then(() => {
-        // Without the inbox (editor, M8F-647), go back to the instance the task came from.
+        // Without the inbox (editor), go back to the instance the task came from.
         navigate(canReadTaskReview ? '/task-review' : (detail.instance.detail_path ?? '/'));
       })
       .catch((err: unknown) => {

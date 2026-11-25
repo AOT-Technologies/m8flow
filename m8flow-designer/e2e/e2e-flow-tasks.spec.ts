@@ -188,7 +188,7 @@ test.describe('Process flow: task assignment and Task Review access', { tag: ['@
       await expect(page).toHaveURL((url) => url.pathname === '/');
       await page.goto(`/task-review/${task.id}`);
       // Viewer/integrator are sent back to Home. Editors may open task pages
-      // (only their own tasks, M8F-647), so they get "Task not found." here.
+      // (only their own tasks), so they get "Task not found." here.
       await expect
         .poll(async () => new URL(page.url()).pathname === '/' || (await page.getByText('Task not found.', { exact: true }).isVisible()), {
           message: 'the task page is not shown',
@@ -681,7 +681,7 @@ test.describe('Process flow: task input validation and submission', { tag: ['@va
     const id = await start(browser, 'approval');
     await useSession(page, reviewerCredentials());
     const task = await waitForTask(page, id);
-    // Suspend/resume: the starter or a tenant admin (M8F-627).
+    // Suspend/resume: the starter or a tenant admin.
     expect(await withPage(browser, tenantAdminCredentials(), (ad) => instanceAction(ad, id, 'suspend'))).toBeLessThan(300);
 
     await openTask(page, task.id, taskTitle(task));

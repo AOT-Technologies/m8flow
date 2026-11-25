@@ -18,7 +18,7 @@ export type TemplateDetailsPanelProps = {
   /** PUT /m8flow/templates (visibility/publish): not super-admin. */
   canManage: boolean;
   /**
-   * Create-from-template (M8F-479). Super-admin may create when a concrete
+   * Create-from-template. Super-admin may create when a concrete
    * tenant is selected; template metadata mutate stays behind `canManage`.
    */
   canCreateProcessModel?: boolean;

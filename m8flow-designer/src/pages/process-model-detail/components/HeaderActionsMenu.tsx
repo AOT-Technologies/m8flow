@@ -16,9 +16,7 @@ export type HeaderActionsMenuProps = {
 };
 
 /** Overflow menu for secondary process-model actions, built on
- * `library/action-menu`'s `ActionMenu` (component-adoption map, ticket 07 —
- * this file used to hand-roll its own open/outside-click/Escape state, the
- * 2nd of 3 duplicate implementations found by ticket 21's audit). Save as
+ * `library/action-menu`'s `ActionMenu`. Save as
  * template is enabled only when the caller can POST templates (catalog
  * manager, not super-admin). */
 export function HeaderActionsMenu({

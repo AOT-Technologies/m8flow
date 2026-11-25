@@ -2,7 +2,7 @@
 never any one provider's internals. A reviewer should be able to read every
 ``test_*`` method below without knowing what a Keycloak realm is.
 
-Built by the auth-provider-seam wayfinder map, ticket 02. Subclass
+Subclass
 ``AuthProviderConformance``, override the hooks in the first half of the
 class body, and leave every ``test_*`` method untouched. Both
 ``InMemoryAuthProvider`` (``testing/fake.py``, via
@@ -26,8 +26,7 @@ from m8flow_backend.integrations.auth.base.models import IssuerRef, TenantRef, T
 from m8flow_backend.integrations.auth.base.provider import AuthProvider
 from m8flow_backend.integrations.auth.core import AuthService, SwitchMode
 
-#: Every capability accessor AuthProvider exposes (auth-provider-seam
-#: wayfinder map, ticket 13's split). A conforming provider either returns
+#: Every capability accessor AuthProvider exposes. A conforming provider either returns
 #: something usable from each, or declines it with CapabilityNotSupported --
 #: nothing else.
 ALL_CAPABILITIES = ("user_admin", "tenant_admin", "group_admin", "role_admin", "directory_admin", "provisioning")
@@ -207,7 +206,7 @@ class AuthProviderConformance:
         assert claims.active_tenant_ref is None
 
     def test_verified_claims_memberships_carries_every_tenant(self):
-        """auth-provider-seam wayfinder map, ticket 10: request-time tenant
+        """Request-time tenant
         resolution (auth/bind.py, services/tenant_management_authorization.py)
         reads VerifiedClaims.memberships to know every tenant a request's
         session may touch -- a provider that only surfaces one membership,

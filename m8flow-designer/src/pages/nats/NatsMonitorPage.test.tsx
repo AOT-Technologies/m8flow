@@ -374,7 +374,7 @@ describe('NatsMonitorPage', () => {
     expect(await screen.findAllByRole('button', { name: 'View events' })).toHaveLength(1);
     await userEvent.click(screen.getByRole('button', { name: 'View events' }));
 
-    // M8F-575: View events matches the trigger counts beside it, so it opens the trigger stream.
+    // View events matches the trigger counts beside it, so it opens the trigger stream.
     expect(screen.getByTestId('location')).toHaveTextContent('tab=events&tenant=t-1&source=consumer');
     await vi.waitFor(() =>
       expect(api.fetchNatsEvents).toHaveBeenCalledWith(

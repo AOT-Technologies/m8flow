@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Every call site in services/tenant_role_service.py used to fetch this token
 # once per top-level operation and thread it through every nested Keycloak
 # Admin API call by hand, specifically to avoid re-authenticating dozens of
-# times per request (auth-provider-seam wayfinder map, ticket 07's audit).
+# times per request.
 # Caching it here gives every caller -- that manual threading, and any future
 # capability call that doesn't thread a token at all -- the same benefit
 # without any signature changes, the same idiom as keycloak/settings.py's
@@ -109,7 +109,7 @@ def fetch_master_admin_token() -> str:
 
     Wall clock, not monotonic: Keycloak judges ``exp`` by wall clock, and a
     monotonic clock stops while a VM is paused (e.g. Docker Desktop during host
-    sleep), which kept serving an already-expired token after wake (M8F-544)."""
+    sleep), which kept serving an already-expired token after wake."""
     now = time.time()
     with _master_admin_token_lock:
         cached = _master_admin_token_cache.get("master")

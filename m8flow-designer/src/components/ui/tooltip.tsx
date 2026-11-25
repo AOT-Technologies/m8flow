@@ -43,8 +43,7 @@ const TooltipContent = React.forwardRef<
         // selector (`[data-open]`), which Radix never actually sets — built
         // and inspected the compiled CSS to confirm dialog.tsx's own
         // animate-in/out classes are inert for this reason (0 occurrences
-        // of `[data-state=open]` in the built CSS). Not this ticket's file
-        // to fix; not repeating the same mistake in a new one.
+        // of `[data-state=open]` in the built CSS). Keep the new tooltip animation selectors explicit.
         "z-50 rounded-lg bg-foreground px-2.5 py-1.5 text-xs font-medium text-background shadow-md data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=delayed-open]:zoom-in-95 data-[state=instant-open]:animate-in data-[state=instant-open]:fade-in-0",
         className
       )}

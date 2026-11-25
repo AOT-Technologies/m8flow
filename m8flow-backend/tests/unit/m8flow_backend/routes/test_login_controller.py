@@ -62,7 +62,7 @@ def _state_with_expired_nonce_cookie(client, response) -> str:
 
 
 def test_login_return_restarts_login_when_nonce_cookie_expired(client, monkeypatch):
-    # M8F-629: a Keycloak login form left idle past the nonce cookie's lifetime
+    # a Keycloak login form left idle past the nonce cookie's lifetime
     # must not dead-end on invalid_state; the callback starts a fresh attempt.
     login_response = client.get(
         "/v1.0/login",
@@ -498,8 +498,7 @@ class _DirectoryProvider:
         self._memberships = memberships
 
     def verify_token(self, token: str):
-        """try_finalize_shared_realm_session's fallback path (auth-provider-
-        seam wayfinder map, ticket 10) re-verifies through the port when
+        """try_finalize_shared_realm_session's fallback path  re-verifies through the port when
         decode_auth_token's HS256 branch (this fixture mints HS256 tokens
         via encode_auth_token, standing in for an already-authenticated
         shared-realm session) never populated g.verified_claims. A real
@@ -808,9 +807,7 @@ def test_tenant_finalization_not_found_when_tenant_missing(client, db_session, m
     )
     # _finalization_token mints an HS256 token whose "issuer" is a fake
     # https://example.test/... realm the real KeycloakAuthProvider would
-    # correctly refuse to trust (auth-provider-seam wayfinder map, ticket
-    # 10's fallback now re-verifies through the port instead of hand-mapping
-    # an unverified payload) -- use the same fake directory provider the
+    # correctly refuse to trust  -- use the same fake directory provider the
     # sibling finalization tests use so this test still reaches the
     # tenant-lookup 404 it's actually about.
     monkeypatch.setattr(

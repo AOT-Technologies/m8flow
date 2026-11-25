@@ -78,7 +78,7 @@ function Resolve-RepoRelativePath {
 function Ensure-LocalUvEnvironment {
   # Let uv create/manage the venv on the repo-pinned Python (.python-version).
   # Pre-creating it with `python -m venv` would bind to whatever python is on PATH
-  # (e.g. 3.14), which lacks a psycopg2 wheel and breaks on Windows. See M8F-432.
+  # (e.g. 3.14), which lacks a psycopg2 wheel and breaks on Windows. Use the supported Python version.
   if (-not (Test-CommandAvailable uv)) {
     Write-Host 'uv not found on PATH; attempting to install it with pip...'
     try { python -m pip install uv } catch { }

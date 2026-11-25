@@ -2,7 +2,7 @@
 
 ``verify_access_token``/``reset_jwks_cache`` used to own the JWKS fetch/
 cache/verify pipeline directly; that pipeline is now
-``base.oidc.OidcClient`` (auth-provider-seam wayfinder map, ticket 04),
+``base.oidc.OidcClient``,
 realized here as ``keycloak.oidc.oidc_client``. Both names are kept exactly
 as they were -- same signatures, same process-wide cache -- so every
 existing caller (production and test) is unaffected by the hoist.

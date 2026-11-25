@@ -148,7 +148,7 @@ def test_capabilities_requires_auth(client, db_session):
 
 
 def test_viewer_cannot_manage_process_models(client, db_session):
-    """Regression for M8F-508: the publish lifecycle gates on
+    """Regression for the publish lifecycle gates on
     `can_manage_process_models` (the PUT /process-models hint), so a viewer is
     never shown Publish / Pause / Unpublish and then 403'd on click."""
     _user, token = _login_user(client, db_session, username="cap-viewer-pm", groups=["t1:viewer"])

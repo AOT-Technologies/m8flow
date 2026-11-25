@@ -1,7 +1,6 @@
 """Abstract ``AuthProvider``: session/verify + directory read, plus typed capability accessors.
 
-``ABC`` with ``@abstractmethod`` on every required method (auth-provider-seam
-wayfinder map, ticket 13, per ticket 01's locked decision): a half-built
+``ABC`` with ``@abstractmethod`` on every required method: a half-built
 concrete provider fails at construction, not at first call. ``is_master_issuer``
 is the one deliberate exception — a concrete default, not abstract; see its
 own docstring.
@@ -97,7 +96,7 @@ class AuthProvider(ABC):
     def set_active_tenant(self, *, username: str, tenant_id: str) -> None:
         """Record the user's single active tenant/org so the next minted token
         carries its claims. Paired with ``refresh`` to re-mint seamlessly on a
-        tenant switch (active-tenant deep-module map, ticket 10)."""
+        tenant switch."""
         raise NotImplementedError
 
     @abstractmethod
@@ -107,10 +106,7 @@ class AuthProvider(ABC):
         session's tenant."""
         raise NotImplementedError
 
-    # --- Added by the auth-provider-seam map's ticket 06 --------------------
-    # (drain the nine thin config readers). Host code needs a default
-    # identifier before any tenant is known — ticket 01 deferred that design
-    # to this ticket; see assets/01-port-surface.md's addendum.
+    # Host code needs a default issuer before any tenant is known.
 
     @abstractmethod
     def default_issuer(self) -> IssuerRef:

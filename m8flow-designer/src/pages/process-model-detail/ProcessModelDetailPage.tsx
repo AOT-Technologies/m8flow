@@ -39,7 +39,7 @@ export default function ProcessModelDetailPage() {
   // (model ids collide across tenants), so a model opened from the list
   // resolves to exactly one tenant and behaves as if it were selected.
   const tenantId = searchParams.get('tenantId') || scopedTenantId;
-  // M8F-479: catalog writes allowed for SA with a concrete tenant. A regular
+  // catalog writes allowed for SA with a concrete tenant. A regular
   // user has no sidebar scope at all (their tenant is the cookie), so gate on
   // the super-admin write flag -- satisfied here by an explicit ?tenantId.
   const needsTenantToWrite = needsTenantForWrite && !searchParams.get('tenantId');

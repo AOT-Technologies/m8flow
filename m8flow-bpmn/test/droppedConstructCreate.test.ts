@@ -13,7 +13,7 @@ import {
 } from '../lib/features/droppedConstructPanel';
 
 describe('omitDroppedReplaceEntries', () => {
-  it('strips dropped morphs and keeps call activity (M8F-668)', () => {
+  it('strips dropped morphs and keeps call activity', () => {
     const entries = {
       'replace-with-data-store-reference': { label: 'Data store' },
       'replace-with-call-activity': { label: 'Call activity' },

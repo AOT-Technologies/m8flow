@@ -393,7 +393,7 @@ class TestCountsCoverTriggerEventsOnly:
         acme = {entry["tenantId"]: entry for entry in Q.per_tenant()}[ACME]
 
         assert (acme["total"], acme["instantiated"], acme["failed"]) == (3, 1, 1)
-        # M8F-575 issue 4: email events are counted, but apart from the trigger counts.
+        # email events are counted, but apart from the trigger counts.
         assert (acme["emailsSent"], acme["emailFailures"]) == (1, 1)
 
     def test_a_tenant_with_only_email_events_is_listed(self, app):

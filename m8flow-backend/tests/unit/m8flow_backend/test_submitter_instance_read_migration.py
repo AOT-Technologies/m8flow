@@ -1,4 +1,4 @@
-"""Regression tests for revoking submitter tenant-wide instance read (M8F-534)."""
+"""Regression tests for revoking submitter tenant-wide instance read."""
 
 from __future__ import annotations
 

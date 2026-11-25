@@ -65,7 +65,7 @@ def get_home_stats():
         user, "GET", "/v1.0/m8flow/home-task-count", session=session
     )
     # Tenant-wide readers count every instance; own-instance readers count the ones
-    # they started or have a task assigned in (M8F-653), so they see 0, not null.
+    # they started or have a task assigned in, so they see 0, not null.
     can_read_instances = user_has_permission(
         user, "GET", "/v1.0/process-instances/for-me", session=session
     )
@@ -123,7 +123,7 @@ def _home_scope_tenant_id(*, user: UserModel, own_tenant_id: str | None) -> str 
 @handle_api_errors
 @require_permission(
     # Own-instance read is enough; the list narrows to the caller's own
-    # instances unless they read tenant-wide (M8F-534).
+    # instances unless they read tenant-wide.
     uri="/v1.0/process-instances/for-me",
     on_deny="empty",
     empty_response=[],
@@ -134,9 +134,9 @@ def get_home_recent_instances():
     {id, status} shape is what MCP's list_process_instances still hits, and
     m8flow-frontend's Process Instances page uses a different SpiffArena-style
     report path (/process-instances POST with filters) entirely -- mutating
-    the shared list shape was the risk this ticket asked to avoid.
+    the shared list shape was the risk this endpoint must avoid.
 
-    Authorization mirrors ticket 03's live allow_uri check against
+    Authorization uses a live allow_uri check against
     /v1.0/process-instances. Denied
     callers get an empty list (200), not a 403 -- same Home-still-loads
     philosophy as home-stats returning null per unauthorized field. That
@@ -201,11 +201,11 @@ def get_home_my_tasks():
     richer SpiffArena-shaped `{results: ProcessInstanceTask[]}` payload from
     `/tasks`, while the bare v1 list returns
     `{id, task_name, task_title, process_instance_id}` and MCP still calls
-    that path -- mutating either contract was the risk this ticket asked to
+    that path -- mutating either contract was the risk this endpoint must
     avoid. Also cannot reuse list_pending_tasks_for_super_admin (no user_id
     filter -- every pending task for every user).
 
-    Authorization mirrors ticket 03/04: live allow_uri against /v1.0/tasks.
+    Authorization uses live allow_uri against /v1.0/tasks.
     Denied callers get [] (200), not 403. Inherits pre-existing issue #3
     (YAML uri prefix) deliberately, matching today's /v1.0/tasks behavior.
     """

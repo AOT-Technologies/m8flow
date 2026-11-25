@@ -104,7 +104,7 @@ export default function TenantGroupsSection({
   const [deleting, setDeleting] = useState(false);
 
   const [groupForRoles, setGroupForRoles] = useState<TenantGroup | null>(null);
-  // Staged picks; nothing reaches the API until Save (M8F-591).
+  // Staged picks; nothing reaches the API until Save.
   const [roleSelection, setRoleSelection] = useState<TenantRole[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
   const [rolesError, setRolesError] = useState<string | null>(null);

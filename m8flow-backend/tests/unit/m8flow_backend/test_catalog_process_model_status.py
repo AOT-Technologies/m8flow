@@ -1,4 +1,4 @@
-"""Process model publish lifecycle (M8F-508).
+"""Process model publish lifecycle.
 
 Covers the status field itself, the allowed transitions, and the two places
 that rebuild process_model.json from scratch and would otherwise silently

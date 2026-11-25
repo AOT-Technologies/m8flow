@@ -9,7 +9,7 @@ const alertVariants = cva(
   {
     variants: {
       // Same tone->token pale-surface mapping as `library/pill/Pill.tsx`
-      // (ticket 06): `bg-{tone}/10 text-{tone}`. "info" is the one tone
+      //: `bg-{tone}/10 text-{tone}`. "info" is the one tone
       // Pill doesn't have — `--info` already exists as a token.
       tone: {
         success: "bg-success/10 border-success/20",

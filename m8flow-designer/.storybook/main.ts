@@ -13,7 +13,7 @@ const dirname = path.dirname(fileURLToPath(import.meta.url));
  * and shouldn't pull in. Only the two things component stories actually
  * need are added here: the `@` alias (matches `tsconfig.json`) and the
  * Tailwind v4 plugin (so `src/styles/index.css`'s `@import 'tailwindcss'`
- * resolves). See m8flow-designer-component-library map, ticket 01 —
+ * resolves). Keep the Storybook configuration separate:
  * isolation from the production build is load-bearing, not incidental.
  */
 const config: StorybookConfig = {

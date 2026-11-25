@@ -179,7 +179,7 @@ def test_notification_list_places_null_created_at_rows_last(client, db_session):
 
 
 def test_resend_reissues_an_expired_parked_request(client, db_session):
-    """M8F-575 issue 1: a parked request past its TTL answered 200 "requeued" and was never
+    """a parked request past its TTL answered 200 "requeued" and was never
     sent. Resend now issues a fresh link with a new expiry."""
     row = _request_row(db_session, status=ExternalFormRequestStatus.smtp_unconfigured.value)
     row.expires_at_in_seconds = 1

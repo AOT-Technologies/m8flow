@@ -45,7 +45,7 @@ def test_regular_subprocess_is_not_rejected(value):
     _reject_unsupported_constructs(xml)
 
 
-@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-m8f-640", "core-1.0.0b3"])
+@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-multi-instance-runtime", "core-1.0.0b3"])
 @pytest.mark.parametrize(
     ("value", "parallel"),
     [
@@ -61,7 +61,7 @@ def test_regular_subprocess_is_not_rejected(value):
 def test_multi_instance_completion_condition_needs_core_support_when_parallel(
     value, parallel, core_supports, monkeypatch
 ):
-    """Core evaluates the condition after each iteration of either loop kind (M8F-640),
+    """Core evaluates the condition after each iteration of either loop kind,
     but a core without that release can't stop a parallel loop early."""
     monkeypatch.setattr(catalog, "_core_runs_parallel_completion_conditions", lambda: core_supports)
     attribute = "" if value is None else f' isSequential="{value}"'
@@ -82,7 +82,7 @@ def test_multi_instance_completion_condition_needs_core_support_when_parallel(
 
 
 def test_pinned_core_1_0_0b3_has_no_parallel_completion_conditions():
-    """The pinned 1.0.0b3 predates M8F-640, so the catalog must keep rejecting them on it."""
+    """The pinned 1.0.0b3 predates iteration-local runtime support, so the catalog must keep rejecting them on it."""
     supported = catalog._core_runs_parallel_completion_conditions()
     assert supported is (importlib.metadata.version("m8flow-core") != "1.0.0b3")
 

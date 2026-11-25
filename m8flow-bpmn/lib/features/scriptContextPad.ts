@@ -1,5 +1,5 @@
 /**
- * Pre/Post-script context pad entries (M8F-564).
+ * Pre/Post-script context pad entries.
  *
  * bpmn-js-spiffworkflow's CustomContextPadProvider adds `trigger-preScript`
  * / `trigger-postScript` only once a script exists, opens the Monaco modal,

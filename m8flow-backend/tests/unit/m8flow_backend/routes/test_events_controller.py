@@ -1,4 +1,4 @@
-"""POST /m8flow/events/m8flow-trigger publishes the key's id, never the raw key (M8F-574)."""
+"""POST /m8flow/events/m8flow-trigger publishes the key's id, never the raw key."""
 
 from __future__ import annotations
 

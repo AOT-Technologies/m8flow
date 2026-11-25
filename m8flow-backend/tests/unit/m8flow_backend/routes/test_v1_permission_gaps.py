@@ -106,7 +106,7 @@ def test_no_grant_matches_viewer_save_process_model(db_session):
 
 
 def test_read_process_instance_list_grants_tenant_admin_but_not_viewer_or_reviewer(db_session):
-    """M8F-627: tenant-wide instance read is tenant-admin only."""
+    """tenant-wide instance read is tenant-admin only."""
     admin = _provision_tenant_role(db_session, username="admin-pi-list", group_name="tenant-admin")
     viewer = _provision_tenant_role(db_session, username="viewer-pi-list", group_name="viewer")
     reviewer = _provision_tenant_role(db_session, username="reviewer-pi-list", group_name="reviewer")
@@ -119,7 +119,7 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
     submitter = _provision_tenant_role(db_session, username="submitter-processes", group_name="submitter")
     viewer = _provision_tenant_role(db_session, username="viewer-processes", group_name="viewer")
     assert _resource_path_permitted(db_session, submitter, "create", "/process-instances") is True
-    # M8F-534: own instances only -- no tenant-wide instance read, no model files.
+    # own instances only -- no tenant-wide instance read, no model files.
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-me") is True
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42") is False
@@ -127,7 +127,7 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/42/events") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-instances/for-mex") is False
     assert _resource_path_permitted(db_session, submitter, "read", "/process-model-files/finance/a") is False
-    # M8F-627: viewer reads own instances only, but keeps model files.
+    # viewer reads own instances only, but keeps model files.
     assert _resource_path_permitted(db_session, viewer, "read", "/process-instances/for-me") is True
     assert _resource_path_permitted(db_session, viewer, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, viewer, "read", "/process-model-files/finance/a") is True
@@ -135,7 +135,7 @@ def test_submitter_can_start_and_list_own_process_instances_but_viewer_cannot_st
 
 
 def test_permissions_check_reports_lifecycle_actions_as_the_routes_authorize_them(client, db_session):
-    """M8F-534: lifecycle routes need ``execute`` on the instance.
+    """lifecycle routes need ``execute`` on the instance.
     permissions-check must not read their POST as ``create``, which the
     submitter's start grant (create /process-instances*) would satisfy.
     Both unversioned and /v1.0-prefixed paths must behave identically."""

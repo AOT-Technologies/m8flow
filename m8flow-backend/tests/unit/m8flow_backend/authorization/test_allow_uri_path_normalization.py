@@ -282,7 +282,7 @@ def _user_with_groups(*identifiers):
     "path", ["/process-instances", "/v1.0/process-instances", "/v1.0/process-instances/", "process-instances//"]
 )
 def test_editor_group_fallback_does_not_imply_tenant_wide_instance_read(path, monkeypatch):
-    """M8F-627: editors read only instances they started, so their role-name
+    """editors read only instances they started, so their role-name
     fallback must not stand in for the tenant-wide instance grant."""
     monkeypatch.setattr(authorization, "current_tenant_identifiers", lambda: ())
     editor = _user_with_groups("t1:editor")

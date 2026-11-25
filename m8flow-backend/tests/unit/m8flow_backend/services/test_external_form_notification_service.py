@@ -195,7 +195,7 @@ def test_sweep_ignores_parked_requests(app, db_session):
         g.db_session = db_session
         candidates = ExternalFormNotificationService.sweep_candidates(now=10_000_000)
 
-    # Row ids only: the reference id is the emailed link's credential (M8F-574).
+    # Row ids only: the reference id is the emailed link's credential.
     assert candidates == [(owed.id, TENANT)]
     assert parked.id not in {request_id for request_id, _tenant in candidates}
 
@@ -274,7 +274,7 @@ def test_tenants_with_parked_requests_lists_each_tenant_once(app, db_session):
 
 
 # ---------------------------------------------------------------------------
-# M8F-575 issue 2: the claim wrote 'notified' before the SMTP send, so a worker
+# the claim wrote 'notified' before the SMTP send, so a worker
 # killed mid-send left a row that looked delivered: the sweep skipped it and resend
 # answered 409. A claim is now 'sending' until the send returns, and a claim older
 # than the lease belongs to a dead worker and is reclaimed by the sweep.
@@ -352,7 +352,7 @@ def test_a_stale_send_is_parked_when_the_tenant_lost_its_smtp(app, db_session):
 
 
 def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant_smtp_secrets, monkeypatch):
-    """M8F-575 issue 3: never email a link for a task that can no longer be completed."""
+    """never email a link for a task that can no longer be completed."""
     from m8flow_core.models.work_item import WorkItemModel
     from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
 
@@ -385,7 +385,7 @@ def test_notify_retires_a_request_whose_task_has_closed(app, db_session, _tenant
 
 
 def test_a_request_parked_past_its_ttl_is_sent_with_a_fresh_expiry(app, db_session, _tenant_smtp_secrets, monkeypatch):
-    """M8F-575 issue 1: the link's TTL ran from row creation, so a request parked for
+    """the link's TTL ran from row creation, so a request parked for
     missing SMTP expired before it was ever emailed and then sat as 'pending' forever.
     A link's lifetime now starts when its email is sent."""
     from m8flow_backend.config import external_form_link_ttl_seconds

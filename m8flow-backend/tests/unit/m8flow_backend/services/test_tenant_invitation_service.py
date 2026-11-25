@@ -163,13 +163,13 @@ def test_create_invitation_email_and_dev_link_use_designer_accept_url(db_session
 
 def test_accept_invitation_creates_user_and_grants_tenant_role_via_capability(monkeypatch, db_session):
     """accept_invitation had zero test coverage at any level before the
-    auth-provider-seam wayfinder map's ticket 16 (which drained its last
+    the role-management refactor (which removed its last
     tenant_group_mapping.py usage). This exercises it end to end: directory
     user creation, tenant membership, and role grant all go through the real
     AuthProvider capability surface -- Keycloak-shaped HTTP mocked at the
     admin_client boundary, the same standard test_tenant_role_service.py
     already holds add_tenant_member to, rather than mocking add_tenant_member
-    (the seam this ticket touched) away."""
+    (the affected seam) away."""
     from m8flow_backend.integrations.auth import get_auth_provider as real_get_auth_provider
     from m8flow_backend.integrations.auth.keycloak.client_auth import reset_master_admin_token_cache
     from m8flow_backend.integrations.auth.keycloak.settings import reset_keycloak_settings

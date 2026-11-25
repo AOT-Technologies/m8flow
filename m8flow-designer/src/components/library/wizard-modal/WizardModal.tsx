@@ -12,11 +12,7 @@ export interface WizardModalStep {
    * Gates the Continue/Finish button for this step — disabled whenever this
    * is `false`. Defaults to `true` (unchanged for any caller that doesn't
    * pass it). Re-evaluated on every render, so a caller can flip it live as
-   * the step's own selection state changes (component-adoption map, ticket
-   * 12 follow-up — tenant-management's "Add Member" wizard needs "Next"
-   * disabled until a user is picked, and "Add" disabled while the final
-   * submit is in flight — this is the gap the map's own "Not yet specified"
-   * section flagged when `WizardModal` had only one candidate consumer).
+   * the step's own selection state changes.
    */
   canContinue?: boolean
   /**

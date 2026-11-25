@@ -232,7 +232,7 @@ describe('useCapabilities', () => {
     expect(mockCheckPermissions.mock.calls[0][0]['/process-instances']).toContain('POST');
   });
 
-  it('submitter shape: own instances readable, tenant-wide instances and model files not (M8F-534)', async () => {
+  it('submitter shape: own instances readable, tenant-wide instances and model files not', async () => {
     mockCheckPermissions.mockResolvedValue({
       '/process-instances/for-me': { GET: true },
       '/process-instances': { GET: false, POST: true },
@@ -247,7 +247,7 @@ describe('useCapabilities', () => {
     expect(result.current.canStartProcesses).toBe(true);
   });
 
-  it('fails closed when the permissions-check payload lacks the M8F-534 targets', async () => {
+  it('fails closed when the permissions-check payload lacks the own-instance permission targets', async () => {
     mockCheckPermissions.mockResolvedValue({ '/process-models': { GET: true } });
     const { result } = renderHook(() => useCapabilities(), { wrapper });
 

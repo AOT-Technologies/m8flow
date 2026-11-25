@@ -1,7 +1,7 @@
 """NATS monitoring access, end to end. READ ONLY throughout.
 
 Locks in:
-- every route, event history included, is super-admin only (M8F-700); tenant-admin,
+- every route, event history included, is super-admin only; tenant-admin,
   editor and reviewer stay out of every route;
 - the wildcard does not reach ``/m8flow/nats-tokens``, whose tenant-admin grants are unchanged.
 """

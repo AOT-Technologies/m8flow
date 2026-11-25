@@ -282,7 +282,7 @@ export type ProcessModelOverviewProps = {
   tenantId?: string | null;
   canManage?: boolean;
   /** permissions-check GET /process-model-files/{id}: shows the Files card and
-   * the model identifier. Submitters lack it (M8F-534). */
+   * the model identifier. Submitters lack it. */
   canReadFiles?: boolean;
   onUpdateIdentity?: (patch: { display_name: string; description: string }) => Promise<void>;
   onAddFile?: (input: { file_name: string; content?: string }) => Promise<void>;
@@ -294,7 +294,7 @@ export type ProcessModelOverviewProps = {
   onCopy?: (input: { id: string; display_name: string }) => Promise<{ id: string }>;
   /** POST /m8flow/templates: same catalog managers as Copy. Super-admin stays disabled. */
   onSaveAsTemplate?: (templateId: number) => void;
-  /** Publish lifecycle transition (M8F-508). Same catalog-write gate as Copy.
+  /** Publish lifecycle transition. Same catalog-write gate as Copy.
    * Should reject (throw) on failure so the reason can be surfaced. */
   onChangeStatus?: (status: ProcessModelStatus) => Promise<void>;
   onPublish?: () => Promise<void>;
@@ -374,7 +374,7 @@ export function ProcessModelOverview({
 
   const groupHref = `/processes?group=${encodeURIComponent(detail.group_id)}`;
   // Run metrics are tenant-wide; the backend sends null to callers who may see
-  // only their own instances (M8F-534), so the strip and count follow the data.
+  // only their own instances, so the strip and count follow the data.
   const hasRunStats = detail.runs_30d != null;
   const viewAllLabel = hasRunStats
     ? t('processModelDetail.instances.viewAll', { total: detail.runs_30d })

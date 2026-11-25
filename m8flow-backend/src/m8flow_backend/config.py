@@ -118,7 +118,7 @@ def nats_token_salt() -> str:
 
 
 # Salts published in this repo (the code default, sample.env, the consumer README): anyone
-# can read them, so they must never sign a trigger event (M8F-574 review).
+# can read them, so they must never sign a trigger event.
 _PUBLIC_NATS_SALTS = frozenset({"m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string"})
 # Signed events sit on the broker, so a short salt can be brute-forced offline from one of
 # them. 32 characters is half of the documented `openssl rand -hex 32`.

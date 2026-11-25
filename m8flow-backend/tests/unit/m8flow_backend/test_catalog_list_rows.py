@@ -1,4 +1,4 @@
-"""M8F-703: the Processes list reads each catalog file once.
+"""the Processes list reads each catalog file once.
 
 list_model_rows read process_model.json three times per model, the group's
 process_group.json once per model, and parsed every BPMN (and DMN) even for

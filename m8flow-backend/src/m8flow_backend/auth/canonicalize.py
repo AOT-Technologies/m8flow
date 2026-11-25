@@ -3,8 +3,7 @@ the local canonical M8flowTenantModel row (or the row's slug), and reading
 the active tenant out of the current request/context.
 
 Collapses what were three near-identical inline queries (one per public
-function) into one shared ``_find_tenant_row`` helper -- see the active-tenant
-deep-module map, ticket 03.
+function) into one shared ``_find_tenant_row`` helper.
 """
 
 from __future__ import annotations
@@ -29,7 +28,7 @@ def request_memo(name: str, session: Session | None) -> dict | None:
     that bypass sessions (a raw connection, another process) are seen from
     the next request: for those, the lookups are a per-request snapshot.
     Nothing in the request path writes grants, groups or tenants that way.
-    M8F-703: authorization ran 3 queries per (uri, method) checked, ~250 per
+    authorization ran 3 queries per (uri, method) checked, ~250 per
     permissions-check.
     """
     if session is None or not has_request_context():

@@ -44,7 +44,7 @@ export interface SortDropdownProps {
  * `ui/dropdown-menu.tsx` panel, per the mockup's "Dropdown" example (sort
  * options: Last run / Name / Status). `label` defaults to `"Sort"`, matching
  * the mockup exactly; overriding it reuses the same shape for a plain
- * single-select filter (component-adoption map, ticket 19) rather than
+ * single-select filter  rather than
  * inventing a second dropdown component for what's visually identical.
  * Rows are `DropdownMenuRadioItem`s: selected = checkmark + medium weight,
  * hover/keyboard focus = neutral `bg-muted`. Keep the "all" option's label

@@ -1,4 +1,4 @@
-"""Ticket 10 regression: non-admin shared-realm Home + onboarding/tasks.
+"""Regression: non-admin shared-realm Home + onboarding/tasks.
 
 Covers AGENTS.md's bar for this map's Home work:
 - non-admin editor/reviewer (not only super-admin)

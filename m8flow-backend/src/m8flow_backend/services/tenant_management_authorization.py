@@ -86,8 +86,7 @@ def _normalized_request_tenant_identifiers() -> set[str]:
     plausibly be scoped to: the already-resolved request tenant, the
     finalized/active tenant, and every tenant the user is a member of.
 
-    Reads only `VerifiedClaims` (auth-provider-seam wayfinder map, ticket 10:
-    "Neutralize the token shape") -- `active_tenant_ref` replaces the former
+    Reads only `VerifiedClaims`  -- `active_tenant_ref` replaces the former
     raw `m8flow_tenant_id`/`m8flow_tenant_alias`/active-organization claim
     reads, and `memberships` replaces the raw `organization` claim
     destructuring. Despite the filename this is tenant-identifier

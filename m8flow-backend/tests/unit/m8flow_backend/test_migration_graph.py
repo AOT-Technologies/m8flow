@@ -8,8 +8,8 @@ from alembic.script import ScriptDirectory
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 _UPSTREAM_MERGE = "c81d2e3f4a56"
-# M8F-700 NATS revoke; the run-stats index (M8F-703) sits on top of it, then
-# the M8F-675 error-row timestamp, then the M8F-640 signal registry.
+# NATS event-history revoke; the run-stats index sits on top of it, then
+# the error-row timestamp, then the signal registry.
 _NATS_REVOKE = "c7e9a1b3d5f7"
 _RUN_STATS_INDEX = "e9c4b2a71f53"
 _ERROR_CREATED_AT = "d8e9f0a1b2c3"

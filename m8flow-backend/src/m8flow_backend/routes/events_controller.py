@@ -133,7 +133,7 @@ def m8flow_trigger() -> tuple:
     try:
         event_data = NatsService.publish_event(
             # Identity comes only from the authenticated key; the raw key never enters
-            # the broker and no caller-chosen username exists (M8F-574).
+            # the broker and no caller-chosen username exists.
             authenticated=authenticated,
             tenant_slug=tenant_slug,
             process_identifier=process_identifier,

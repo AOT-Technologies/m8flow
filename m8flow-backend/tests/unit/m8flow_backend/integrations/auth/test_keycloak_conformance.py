@@ -1,5 +1,4 @@
-"""KeycloakAuthProvider runs the AuthProvider conformance suite (auth-provider-
-seam wayfinder map, ticket 02) -- the second implementation proving
+"""KeycloakAuthProvider runs the AuthProvider conformance suite  -- the second implementation proving
 ``testing/conformance.py`` asserts the port's contract, not
 ``InMemoryAuthProvider``'s shape.
 

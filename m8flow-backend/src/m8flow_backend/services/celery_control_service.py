@@ -1,4 +1,4 @@
-"""Celery control actions for the System -> Celery page (M8F-602). Super-admin only.
+"""Celery control actions for the System -> Celery page. Super-admin only.
 
 The commands Flower's UI offers, sent through Celery's own ``app.control`` API: revoke or
 terminate a task, change a task type's rate or time limit, resize or restart a worker's

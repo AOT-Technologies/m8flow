@@ -28,7 +28,7 @@ INDEXED_COLUMNS: tuple[str, ...] = ("name", "state", "worker", "tenant_id", "upd
 
 
 class CeleryTaskModel(HostBase):
-    """One row per Celery task, updated as the task moves through a worker (M8F-602).
+    """One row per Celery task, updated as the task moves through a worker.
 
     Celery keeps no task history (Flower rebuilds one in memory from worker events), so the
     worker records it here from its own task signals; see

@@ -14,7 +14,7 @@ const avatarVariants = cva(
     variants: {
       // Mockup's "Avatar" section shows three solo sizes (44/36/28px) plus
       // a 32px pair in the overlapping AvatarGroup — that fourth size is
-      // AvatarGroup's own concern (ticket 10), not this primitive's.
+      // AvatarGroup's own concern, not this primitive's.
       size: {
         sm: "size-7", // 28px
         md: "size-9", // 36px

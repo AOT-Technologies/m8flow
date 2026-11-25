@@ -9,7 +9,7 @@ computation are all exercisable with in-memory fakes, no Keycloak/DB needed.
 
 ``select(...)`` is the one operation both login-finalize
 (``auth.try_finalize_shared_realm_session``) and the in-session tenant switch
-call -- see the active-tenant deep-module map, ticket 02's Answer. This
+call. This
 module does NOT mint or persist anything; callers own token lifecycle and
 the group-sync write.
 """

@@ -1,4 +1,4 @@
-"""Small BPMN / DMN / form writer for the E2E seed catalog (M8F-677).
+"""Small BPMN / DMN / form writer for the E2E seed catalog.
 
 Diagrams are described on a grid: a node sits in a column, a lane and a row
 inside that lane; the writer works out the shapes, edges and lanes. Only the

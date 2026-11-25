@@ -360,8 +360,8 @@ def test_list_denied_caller_gets_forbidden(client, db_session):
 
 
 def test_editor_has_no_task_review_inbox_but_opens_tasks_assigned_to_them(client, db_session):
-    """The Task Review inbox stays reviewer-facing (M8F-558), but an editor opens
-    and submits the tasks assigned to them -- the instance page's Go (M8F-647)."""
+    """The Task Review inbox stays reviewer-facing, but an editor opens
+    and submits the tasks assigned to them -- the instance page's Go."""
     from m8flow_backend.identity import import_yaml
 
     editor, token = _login_user(
@@ -387,7 +387,7 @@ def test_editor_has_no_task_review_inbox_but_opens_tasks_assigned_to_them(client
     assert client.get(f"/v1.0/m8flow/task-review/{theirs.id}", headers=headers).status_code == 404
 
     # Completed tasks stay open to their assignee, matching instance visibility
-    # (M8F-653); completion never opens someone else's task.
+    #; completion never opens someone else's task.
     mine.completed = True
     theirs.completed = True
     db_session.commit()
@@ -582,7 +582,7 @@ def test_detail_composite_shape(client, db_session):
 
 
 def test_detail_links_the_instance_only_when_the_caller_can_open_it(client, db_session):
-    """M8F-653: a submitter working a task in someone else's instance can open that
+    """a submitter working a task in someone else's instance can open that
     instance, so it is linked, as is their own; a tenant-wide reader (tenant-admin)
     gets the link on a task of their own."""
     editor, _editor_token = _login_user(
@@ -734,7 +734,7 @@ def test_detail_other_tenant_is_404(client, db_session):
 
 def test_editor_cannot_open_their_own_task_from_another_tenant(client, db_session):
     """A multi-org editor assigned a task in t2 gets 404 for it while t1 is the
-    active tenant: the tenant match runs before the candidate check (M8F-647)."""
+    active tenant: the tenant match runs before the candidate check."""
     editor, _token = _login_user(
         client, db_session, username="editor-multi-org", groups=["t2:editor"], tenant_id="t2"
     )
@@ -756,7 +756,7 @@ def test_editor_cannot_open_their_own_task_from_another_tenant(client, db_sessio
 def test_super_admin_detail_resolves_tenant_from_task(client, db_session):
     """Super-admin has no m8flow_selected_tenant cookie (the sidebar tenant is a
     UI filter), and the inbox lists every tenant's tasks, so opening one must
-    resolve the task's own tenant instead of 400 tenant_required (M8F-570)."""
+    resolve the task's own tenant instead of 400 tenant_required."""
     user, token = _login_user(
         client, db_session, username="super-admin", groups=["super-admin"], tenant_id="t1"
     )
@@ -1083,7 +1083,7 @@ def test_submit_forbidden_is_403(client, db_session):
 
 
 def test_submit_editor_completes_task_assigned_to_them(client, db_session, tmp_path, monkeypatch):
-    """M8F-647: an editor who starts a lane-less process completes its first task."""
+    """an editor who starts a lane-less process completes its first task."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     user, token = _login_user(
         client, db_session, username="editor", groups=["t1:editor"], tenant_id="t1"

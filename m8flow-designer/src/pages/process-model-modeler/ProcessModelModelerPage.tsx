@@ -60,7 +60,7 @@ const XmlEditorDialog = lazy(() =>
   import('./components/XmlEditorDialog').then((module) => ({ default: module.XmlEditorDialog })),
 );
 
-/** Save/dirty state machine (decided on the manual-save ticket, HITL): the
+/** Save/dirty state machine (decided on the manual save design, HITL): the
  * Save button and the SavedStatusPill are never shown together — 'dirty'
  * shows the button, everything else shows the pill. 'error' is a brief
  * flash before automatically reverting to 'dirty' (the save didn't
@@ -71,7 +71,7 @@ type SavePhase = ModelerSavePhase;
 const ERROR_FLASH_MS = 2500;
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 08). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>
@@ -85,7 +85,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
  * Fetches GET /v1.0/m8flow/process-models/{id}/files/{fileName} and mounts
  * BpmnCanvas (.bpmn), DmnCanvas (.dmn), or TextFileCanvas (.json / .md).
  * Manual save (Cmd/Ctrl+S or the Save button) PUTs the current contents
- * back; the RBAC gap logged on the backend-endpoints ticket (a .bpmn save
+ * back; the RBAC gap logged on the backend endpoint review (a.bpmn save
  * needs m8flow-core's V1 "admin" role, not just the editor group) is
  * deliberately not special-cased here — it surfaces as the same generic
  * "Save failed" flash as any other error (decided, not an oversight).
@@ -111,7 +111,7 @@ export default function ProcessModelModelerPage() {
     canUpdateProcessModelFiles,
     canDeleteProcessModelFiles,
   } = useCapabilities();
-  // M8F-479: super-admin may edit catalog files when a concrete tenant is selected.
+  // super-admin may edit catalog files when a concrete tenant is selected.
   /** Tenant the backend resolved this model to, for All-Tenants navigation
    * that arrived without an explicit ?tenantId. */
   const [resolvedTenantId, setResolvedTenantId] = useState<string | null>(null);
@@ -135,7 +135,7 @@ export default function ProcessModelModelerPage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savePhase, setSavePhase] = useState<SavePhase>('saved');
-  // Breadcrumb group label (header-chrome ticket, HITL): `fetchProcessModelDetail`
+  // Breadcrumb group label (header layout, HITL): `fetchProcessModelDetail`
   // is the same detail call ProcessModelOverview already uses — reused here
   // rather than `fetchProcessGroups`'s list-and-find, since the model's own
   // detail response already carries its group's id/display name directly.
@@ -160,7 +160,7 @@ export default function ProcessModelModelerPage() {
   const [viewXml, setViewXml] = useState<string | null>(null);
   // The XML editor's in-progress edit lives here, not in the dialog: dialog-
   // local state seeded from `viewXml` was restored to the saved snapshot on
-  // any remount, wiping the user's edits (M8F-524 follow-up).
+  // any remount, wiping the user's edits (draft preservation).
   const [viewXmlDraft, setViewXmlDraft] = useState<string | null>(null);
   const [viewXmlError, setViewXmlError] = useState<string | null>(null);
   const [leaveTo, setLeaveTo] = useState<string | null>(null);
@@ -467,7 +467,7 @@ export default function ProcessModelModelerPage() {
   // on the seed BPMN. Once the list is known, a file missing from it (just
   // created, list not yet refreshed) is not primary.
   const isPrimary = currentFileMeta ? currentFileMeta.primary : modelFiles.length === 0;
-  // M8F-510: a .bpmn that is not primary is still not what the process runs --
+  // a.bpmn that is not primary is still not what the process runs --
   // the toolbar's "Set as primary" button was the only hint, and testers read
   // the "Saved" pill as proof their upload had taken effect instead.
   const primaryFileName = modelFiles.find((entry) => entry.primary)?.name;
@@ -508,7 +508,7 @@ export default function ProcessModelModelerPage() {
     return () => document.removeEventListener('click', onClick, true);
   }, [dirty]);
 
-  /** M8F-524: writes the edited XML back and re-seeds the canvas from it.
+  /** writes the edited XML back and re-seeds the canvas from it.
    * `setXml` is all the canvas plumbing needed — BpmnCanvas and DmnCanvas
    * both re-run their import effect on the `xml` prop, which also resets
    * their dirty baseline, so any canvas edits the text overrode are dropped
@@ -759,7 +759,7 @@ export default function ProcessModelModelerPage() {
         </p>
       ) : null}
 
-      {/* `isolate` (M8F-524): diagram-js draws its context pad at z-index 100
+      {/* `isolate`: diagram-js draws its context pad at z-index 100
           and its popup menus at 200 (diagram-js.css). Without a stacking
           context here they compete in the root layer and paint over the
           app's z-50 Radix dialogs — see the per-dialog `z-[1000]` escapes in

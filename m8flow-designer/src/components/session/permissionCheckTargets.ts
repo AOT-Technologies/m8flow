@@ -8,7 +8,7 @@ export const permissionCheckTargets = {
   readProcessModels: ['/process-models', 'GET'],
   createProcessModels: ['/process-models', 'POST'],
   updateProcessModels: ['/process-models', 'PUT'],
-  // At least one's own instances: tenant-wide readers match it too (M8F-534).
+  // At least one's own instances: tenant-wide readers match it too.
   readProcessInstances: ['/process-instances/for-me', 'GET'],
   // Every user's instances plus run metrics; submitters read only their own.
   readAllProcessInstances: ['/process-instances', 'GET'],

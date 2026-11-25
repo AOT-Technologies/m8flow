@@ -86,7 +86,7 @@ def require_task_candidate(session: Any, user: UserModel, task: WorkItemModel) -
     the task-level grants are not a way to reach any task by id; this does not
     lean on core's own assignment check. Completed tasks stay readable on
     purpose: the same assignment keeps the instance and its completed tasks
-    visible to them (M8F-653). Super-admin reads any task (read-only). The
+    visible to them. Super-admin reads any task (read-only). The
     task's tenant is the caller's own here: callers match it first. Missing
     assignment -> 404, so task ids are not confirmable.
     """
@@ -240,7 +240,7 @@ def get_task_review(work_item_id: int):
 
     # Link the instance page only when its read gate would let this caller in:
     # reviewers have no instance read; own-instance readers open instances they
-    # started or have a task in (M8F-534/M8F-653), which includes this one.
+    # started or have a task in, which includes this one.
     can_open_instance = (
         instance is not None
         and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)

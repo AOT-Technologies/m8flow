@@ -1,4 +1,4 @@
-"""M8F-703: a request loads the caller's grants once, however many checks it runs.
+"""a request loads the caller's grants once, however many checks it runs.
 
 Batch endpoints (permissions-check, capabilities, home-stats) used to reload every
 permission assignment for every (uri, method) they checked. The snapshot must not

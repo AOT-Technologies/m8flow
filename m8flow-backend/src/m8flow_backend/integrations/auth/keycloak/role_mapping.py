@@ -15,9 +15,7 @@ from m8flow_backend.integrations.auth.base.roles import (
 )
 
 # Neutral role-name validation lives in ``base.roles``; re-exported here so the
-# existing Keycloak-side importer (groups) is unchanged. (tenant_group_mapping
-# used to be a second importer; deleted -- auth-provider-seam wayfinder map,
-# ticket 16.)
+# existing Keycloak-side importer (groups) is unchanged.
 __all__ = [
     "ORGANIZATION_GROUP_FOR_TENANT_ROLE",
     "ORGANIZATION_GROUP_ROLE_MAPPING_CONFIGURED_ATTRIBUTE",

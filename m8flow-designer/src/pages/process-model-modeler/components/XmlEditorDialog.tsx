@@ -1,5 +1,5 @@
 /**
- * M8F-524: the "View XML" dialog, editable. Previously a read-only <pre>.
+ * the "View XML" dialog, editable. Previously a read-only <pre>.
  *
  * Monaco rather than a <textarea>: `@monaco-editor/react` is already a
  * dependency used for the same job elsewhere in this modeler (TextFileCanvas
@@ -56,7 +56,7 @@ export type XmlEditorDialogProps = {
    * The in-progress edit, owned by the page. `null` means "untouched, show
    * `xml`". It lives above this component on purpose: held as local state
    * seeded from `xml`, any remount of this dialog silently restored the
-   * saved snapshot over the user's edits (M8F-524 follow-up — the editor
+   * saved snapshot over the user's edits (draft preservation — the editor
    * came back showing the original XML after "Keep editing"). The page does
    * not remount, so the draft survives whatever happens to the dialog.
    */

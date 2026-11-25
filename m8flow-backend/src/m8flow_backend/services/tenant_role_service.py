@@ -70,8 +70,7 @@ def _normalize_role_name(role_name: str) -> str:
 def _organization_for_tenant(tenant_id: str) -> tuple[Any, str]:
     """Resolve a local tenant to its Keycloak organization id.
 
-    Drained onto the capability surface (auth-provider-seam wayfinder map,
-    ticket 15): ``get_tenant`` already does the id-then-alias fallback this
+    Drained onto the capability surface: ``get_tenant`` already does the id-then-alias fallback this
     used to do by hand (``tenants.resolve_tenant_ref``, confirmed by reading
     it), so this is now a single capability call instead of two raw ones.
     """
@@ -117,12 +116,12 @@ def _role_lookup_key(value: str | None) -> str:
 def _organization_group_role_lookup(tenant_ref: TenantRef) -> dict[str, list[str]]:
     """Every group's mapped roles, keyed by normalized group name.
 
-    Drained (ticket 15, §2): the neutral ``Group`` model carries no
+    Drained: the neutral ``Group`` model carries no
     Keycloak-internal id, only ``identifier``/``path``, so the former
     ``by_group_id``/``by_group_name`` dual lookup collapses to name-keyed
     only. This does one ``roles_for_group`` Admin API call per group instead
     of the old single bulk fetch -- a deliberate, accepted tradeoff (tenant
-    group counts are small, and the cached admin token from ticket 08
+    group counts are small, and the cached admin token
     removes the expensive part of a repeated call).
     """
     roles_by_name: dict[str, list[str]] = {}
@@ -146,7 +145,7 @@ def _roles_for_group(
 def _serialize_member_group(group: Group) -> dict[str, Any] | None:
     if not group.identifier:
         return None
-    # "id" repurposed to hold the group's name (ticket 15, §4): the neutral
+    # "id" repurposed to hold the group's name: the neutral
     # Group model carries no vendor-specific id, and this was verified safe
     # against the m8flow-designer/m8flow-frontend consumers of this shape --
     # no code depends on it being a genuine Keycloak UUID.
@@ -292,7 +291,7 @@ def _tenant_member_roles_lookup(
 ) -> dict[str, list[str]]:
     # Keyed by member.subject (the Keycloak membership id every caller here
     # indexes by) but threaded via member.username -- list_member_groups
-    # needs a username, not the id (ticket 15, §3).
+    # needs a username, not the id.
     member_pairs = [
         (member.subject, member.username)
         for member in members
@@ -488,7 +487,7 @@ def _serialize_group(
         members.sort(key=lambda item: str(item.get("username") or ""))
 
     return {
-        # "id" repurposed to hold the group's name (ticket 15, §4) -- see
+        # "id" repurposed to hold the group's name  -- see
         # _serialize_member_group's docstring for the same repurposing and
         # the frontend verification behind it.
         "id": group.identifier,
@@ -1026,8 +1025,7 @@ def add_tenant_member(
     `SupportsRoleAdmin.assign_roles`, the same capability
     `assign_tenant_role` uses -- added so callers with roles in hand (e.g.
     `tenant_invitation_service.accept_invitation`) never need Keycloak's own
-    role-to-group-name mapping table directly (auth-provider-seam wayfinder
-    map, ticket 16)."""
+    role-to-group-name mapping table directly."""
     normalized_username = str(username or "").strip()
     if not normalized_username:
         raise ApiError(

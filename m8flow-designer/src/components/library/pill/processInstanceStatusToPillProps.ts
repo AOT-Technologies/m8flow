@@ -11,7 +11,7 @@ type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
  * `Pill` props, for the process-instance-shaped status strings used across
  * the home, task-review, process-instances, and process-model-detail pages.
  * Migrated per the `m8flow-designer component adoption` map's
- * StatusBadge→Pill consolidation ticket — `StatusBadge.tsx` is gone, this is
+ * StatusBadge→Pill consolidation — `StatusBadge.tsx` is gone, this is
  * the only place this status vocabulary is now encoded.
  *
  * One deliberate visual change from `StatusBadge`: `error` used to render a

@@ -778,7 +778,7 @@ def test_super_admin_catalog_write_still_requires_concrete_tenant(
     client, db_session, tmp_path, monkeypatch
 ):
     """Reads relax under All Tenants; catalog writes must not -- a create has
-    to land in exactly one tenant (M8F-479)."""
+    to land in exactly one tenant."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     _user, token = _login_user(
         client, db_session, username="super-admin-write", groups=["super-admin"], tenant_id="t1"
@@ -1679,7 +1679,7 @@ def test_v1_start_rejects_invalid_request_body(client, db_session, monkeypatch, 
 
 
 def test_start_is_refused_while_model_is_paused(client, db_session, tmp_path, monkeypatch):
-    """Pausing blocks new starts (M8F-508). Guarded in workflow.start, so the
+    """Pausing blocks new starts. Guarded in workflow.start, so the
     thin/MCP start path is covered by the same rule, not just this route."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     user, token = _login_user(
@@ -3218,10 +3218,10 @@ def test_super_admin_membership_scope_reverts_when_the_write_fails(
 def test_submitter_model_detail_hides_files_metrics_and_other_users_instances(
     client, db_session, tmp_path, monkeypatch
 ):
-    """M8F-534: a submitter's process-model detail carries no files and no
+    """a submitter's process-model detail carries no files and no
     tenant-wide run metrics, lists only their own recent instances, and file and
     script-unit-test reads are 404. Editor and viewer keep the files but, since
-    M8F-627, also see only their own instances and no tenant-wide metrics."""
+    also see only their own instances and no tenant-wide metrics."""
     from m8flow_backend.identity import import_yaml
 
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
@@ -3281,8 +3281,8 @@ def test_submitter_model_detail_hides_files_metrics_and_other_users_instances(
         assert get(unit_tests_url, token).status_code == 200
 
 
-def test_m8f_627_process_model_recent_instances_are_own_only_for_editor(client, db_session, tmp_path, monkeypatch):
-    """M8F-627: an editor's Recent Instances on the process model page lists only
+def test_process_model_recent_instances_are_own_only_for_editor(client, db_session, tmp_path, monkeypatch):
+    """an editor's Recent Instances on the process model page lists only
     instances they started and withholds tenant-wide run metrics; tenant-admin sees all."""
     _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
     admin, admin_token = _login_user(

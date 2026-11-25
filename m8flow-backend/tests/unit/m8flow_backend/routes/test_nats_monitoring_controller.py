@@ -1,7 +1,7 @@
 """Scoping and gating tests for the NATS monitoring controller, called directly.
 
 These stub the route-level YAML gate (``allow_uri``) so they exercise the controller's own
-logic: the gate as the only authority (M8F-700, no role check of its own), event-history
+logic: the gate as the only authority (no role check of its own), event-history
 tenant scoping, payload-inspection gating and parameter handling. The real super-admin-only
 YAML enforcement is covered end to end in test_nats_monitoring_permissions.py.
 """
@@ -124,7 +124,7 @@ def test_event_list_reports_whether_payload_inspection_is_enabled(app, monkeypat
 
 
 class TestTheGrantIsTheOnlyAuthority:
-    """The route gate decides; the controller adds no role check of its own (M8F-700)."""
+    """The route gate decides; the controller adds no role check of its own."""
 
     @pytest.mark.parametrize("name,call", ALL_ENDPOINTS, ids=[n for n, _ in ALL_ENDPOINTS])
     def test_403_when_the_gate_denies(self, app, monkeypatch, name, call):

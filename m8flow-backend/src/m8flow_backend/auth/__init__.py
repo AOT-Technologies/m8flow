@@ -179,8 +179,7 @@ def try_finalize_shared_realm_session(redirect_url: str):
         # decode_auth_token's Keycloak/OIDC branch already populates
         # g.verified_claims as a side effect (see _store_verified_payload) --
         # this is a defensive fallback for the rare case it didn't. Re-verify
-        # session_token through the port (never a direct adapter import,
-        # auth-provider-seam wayfinder map ticket 10) rather than hand-
+        # session_token through the port  rather than hand-
         # mapping the already-decoded payload; session_token is the exact
         # token decode_auth_token just verified above, so this is a repeat
         # of the same cryptographic check, not new trust.
@@ -274,7 +273,7 @@ def try_finalize_shared_realm_session(redirect_url: str):
     )
     session.flush()
 
-    # Option D (map ticket 08/10): make the Keycloak-minted token carry the
+    # Option D: make the Keycloak-minted token carry the
     # target org's claims. Record the active org on the user (RealmInfoMapper
     # reads m8flow_active_tenant), then re-mint via a plain refresh_token grant
     # -- Keycloak re-runs the mapper against the freshly-written attribute
@@ -403,8 +402,7 @@ def install_auth_middleware(app: Flask) -> None:
 
             from m8flow_backend.integrations.auth import get_auth_provider
 
-            # Typed VerifiedClaims is the contract (auth-provider-seam
-            # wayfinder map, ticket 10): decode_auth_token's Keycloak/OIDC
+            # Typed VerifiedClaims is the contract: decode_auth_token's Keycloak/OIDC
             # branch always populates g.verified_claims, so a raw payload
             # read is only ever needed for the HS256 local-token branch,
             # which builds no VerifiedClaims -- decoded stays the fallback
@@ -556,7 +554,7 @@ def sync_groups_from_token(
     # lane owners once, when the task materializes, and skips members it can't
     # place in the tenant then (e.g. a multi-org user whose active org was
     # another tenant). Their membership doesn't change when they return, so a
-    # change-gated reconcile would orphan the task for good (M8F-580). The core
+    # change-gated reconcile would orphan the task for good. The core
     # call is idempotent and only adds potential-owner rows, never claims.
     # ponytail: ~2 SELECTs + savepoint per authenticated request; if it shows in
     # profiles, cache a per-(user, tenant) "nothing to reconcile" result for N

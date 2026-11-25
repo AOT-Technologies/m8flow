@@ -20,9 +20,7 @@ export type RecentInstancesTableProps = {
 /**
  * Home "Recent process instances" table — Tenant / ID / Process / Started /
  * Status + a link to that instance's detail page. "View all" links to the
- * unfiltered Process Instances list (Process Instances + task-state map,
- * ticket 04 capstone — both were inert until that map's own
- * `/process-instances`(+`/:id`) routes existed).
+ * unfiltered Process Instances list through the `/process-instances` routes.
  */
 export function RecentInstancesTable({
   tenantId = null,
