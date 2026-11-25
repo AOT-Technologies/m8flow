@@ -675,9 +675,7 @@ class TemplateService:
             db.session.flush()
             return
 
-        can_hard_delete_draft = bool(
-            (username is not None and template.created_by == username) or is_template_admin
-        )
+        can_hard_delete_draft = TemplateAuthorizationService.is_owner(template, user) or is_template_admin
         if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
 

@@ -80,8 +80,8 @@ def _serialize_template(
     return result
 
 
-# Every route gates on the role grants for /m8flow/templates in m8flow.yml
-# (M8F-708); TemplateService then applies visibility and ownership on top.
+# Every route gates on the role grants for /m8flow/templates in m8flow.yml;
+# TemplateService then applies visibility and ownership on top.
 @require_permission()
 def template_list():
     latest_only = request.args.get("latest_only", "true").lower() != "false"

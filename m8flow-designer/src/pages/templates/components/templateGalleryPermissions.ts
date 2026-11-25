@@ -14,7 +14,7 @@ export type TemplateGalleryActor = {
   currentUsername: string | null;
 };
 
-/** A private template's creator manages it alongside the tenant-admin (M8F-712). */
+/** A private template's creator manages it alongside the tenant-admin. */
 function ownsPrivateTemplate(template: Template, actor: TemplateGalleryActor): boolean {
   return template.visibility === 'PRIVATE' && !!actor.currentUsername && template.createdBy === actor.currentUsername;
 }

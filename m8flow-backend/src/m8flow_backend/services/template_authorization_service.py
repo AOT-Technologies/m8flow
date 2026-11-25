@@ -50,14 +50,22 @@ class TemplateAuthorizationService:
         return cls._is_current_tenant_template(template) and cls.has_admin_permission(user, permission)
 
     @classmethod
-    def is_private_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
-        """Private templates are managed by their creator as well as the tenant-admin (M8F-712)."""
+    def is_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
+        """The caller created the template and is acting in its tenant.
+
+        A PUBLIC template is readable from other tenants; its creator manages it
+        only from the template's own tenant.
+        """
         return (
             user is not None
-            and template.is_private()
             and template.created_by == user.username
             and cls._is_current_tenant_template(template)
         )
+
+    @classmethod
+    def is_private_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
+        """Private templates are managed by their creator as well as the tenant-admin."""
+        return template.is_private() and cls.is_owner(template, user)
 
     @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:

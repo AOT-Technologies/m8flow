@@ -44,7 +44,7 @@ describe('templateGalleryPermissions', () => {
     expect(canRestoreGalleryTemplate(published, editor)).toBe(false);
   });
 
-  it('lets the creator delete and restore their own published private template (M8F-712)', () => {
+  it('lets the creator delete and restore their own published private template', () => {
     const editor = { isSuperAdmin: false, canManageTenant: false, currentUsername: 'editor' };
     const otherEditor = { ...editor, currentUsername: 'other' };
     const privatePublished: Template = { ...published, visibility: 'PRIVATE' };
