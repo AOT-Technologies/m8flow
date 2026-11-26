@@ -1068,7 +1068,7 @@ test.describe('Processes for a tenant with data', () => {
     ].map((c) => ({ ...c, saved: c.saved || c.name }));
     const results: string[] = [];
     for (const c of cases) {
-      const expectedId = c.id || `e2e-correlated-collaboration-${stamp}`;
+      const expectedId = c.id || `e2e-mixed-1-co-${stamp}`;
       created.models.push(`${active.groupId}:${expectedId}`);
       await page.goto(groupPage);
       await page.getByRole('button', { name: 'New process model', exact: true }).first().click();
