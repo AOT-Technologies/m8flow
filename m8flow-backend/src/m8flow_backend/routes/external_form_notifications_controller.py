@@ -27,6 +27,7 @@ responses carry recipient email addresses.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import flask.wrappers
@@ -92,7 +93,8 @@ def external_form_smtp_status() -> flask.wrappers.Response:
 def external_form_notification_list() -> flask.wrappers.Response:
     """Paginated notification tracking rows for the active tenant, newest first.
 
-    Rows are serialized with to_admin_dict(), which deliberately omits reference_id: that
+    Rows are serialized with ExternalFormService.admin_view() (to_admin_dict() plus the
+    derived status, resend and task fields), which deliberately omits reference_id: that
     token is the credential in the recipient's emailed link."""
     user = require_current_user()
     tenant_id = require_tenant_id(user)
@@ -101,13 +103,15 @@ def external_form_notification_list() -> flask.wrappers.Response:
     process_instance_id = _int_arg("process_instance_id", 0)
     status = (flask_request.args.get("status") or "").strip() or None
 
+    now = int(time.time())
     query = g.db_session.query(ExternalFormRequestModel).filter(
         ExternalFormRequestModel.m8f_tenant_id == tenant_id
     )
     if process_instance_id:
         query = query.filter(ExternalFormRequestModel.process_instance_id == process_instance_id)
     if status:
-        query = query.filter(ExternalFormRequestModel.status == status)
+        # Matches the effective_status each row reports, not only the stored status.
+        query = ExternalFormService.filter_by_effective_status(query, status, now)
 
     total = query.count()
     rows = (
@@ -120,7 +124,11 @@ def external_form_notification_list() -> flask.wrappers.Response:
         .all()
     )
 
-    results: list[dict[str, Any]] = [row.to_admin_dict() for row in rows]
+    work_items = ExternalFormService.work_items_for(rows)
+    results: list[dict[str, Any]] = [
+        ExternalFormService.admin_view(row, now, work_items.get((row.process_instance_id, row.task_guid)))
+        for row in rows
+    ]
     pages = (total + per_page - 1) // per_page
     return make_response(
         jsonify(

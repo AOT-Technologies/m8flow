@@ -264,3 +264,85 @@ def test_a_viewer_can_read_but_not_resend(client, db_session):
     assert resend.status_code == 403
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.smtp_unconfigured.value
+
+
+def test_notification_list_reports_derived_status_fields(client, db_session):
+    now = int(time.time())
+    expired = _request_row(db_session, reference_id="ref-exp", status="notified", notified_at=now - 10)
+    expired.expires_at_in_seconds = now - 1
+    stuck = _request_row(db_session, reference_id="ref-stuck", status="sending", notified_at=now - 3600)
+    done = _request_row(db_session, reference_id="ref-done", status="superseded")
+    db_session.commit()
+    _, headers = _login_user(client, db_session, username="admin9", groups=["t1:tenant-admin"])
+
+    body = client.get("/v1.0/m8flow/external-form-notifications", headers=headers).get_json()
+
+    by_id = {row["id"]: row for row in body["results"]}
+    assert by_id[expired.id]["status"] == "notified"
+    assert by_id[expired.id]["effective_status"] == "expired"
+    assert by_id[expired.id]["resendable"] is True
+    assert by_id[stuck.id]["stuck_sending"] is True
+    assert by_id[stuck.id]["resendable"] is True
+    assert by_id[done.id]["resendable"] is False
+    # No work item exists for these rows, so the task name is unknown rather than an error.
+    assert by_id[done.id]["task_name"] is None
+
+
+@pytest.mark.parametrize(
+    ("status", "notified_offset", "resendable", "stuck"),
+    [
+        ("pending", None, True, False),
+        ("sending", -5, False, False),
+        ("sending", -3600, True, True),
+        ("notified", -5, True, False),
+        ("failed", -5, True, False),
+        ("smtp_unconfigured", None, True, False),
+        ("expired", -5, True, False),
+        ("submitted", -5, False, False),
+        ("completed", -5, False, False),
+        ("superseded", -5, False, False),
+        ("cancelled", -5, False, False),
+    ],
+)
+def test_admin_view_resend_and_stuck_rules(status, notified_offset, resendable, stuck):
+    from types import SimpleNamespace
+
+    from m8flow_backend.services.external_form_service import ExternalFormService
+
+    now = 1_800_000_000
+    row = ExternalFormRequestModel(
+        id=1,
+        process_instance_id=7,
+        task_guid="g",
+        email="r@example.test",
+        status=status,
+        attempts=0,
+        notified_at_in_seconds=None if notified_offset is None else now + notified_offset,
+        expires_at_in_seconds=now + 60,
+    )
+    work_item = SimpleNamespace(task_name="Approve", task_title="Approve request")
+
+    view = ExternalFormService.admin_view(row, now, work_item)
+
+    assert view["resendable"] is resendable
+    assert view["stuck_sending"] is stuck
+    assert view["effective_status"] == status
+    assert view["task_title"] == "Approve request"
+
+
+def test_status_filter_matches_the_effective_status(client, db_session):
+    now = int(time.time())
+    lapsed = _request_row(db_session, reference_id="ref-lapsed", status="notified", notified_at=now - 10)
+    lapsed.expires_at_in_seconds = now - 1
+    live = _request_row(db_session, reference_id="ref-live", status="notified", notified_at=now - 10)
+    live.expires_at_in_seconds = now + 3600
+    stored = _request_row(db_session, reference_id="ref-stored", status="expired")
+    db_session.commit()
+    _, headers = _login_user(client, db_session, username="admin10", groups=["t1:tenant-admin"])
+
+    def ids(status):
+        body = client.get(f"/v1.0/m8flow/external-form-notifications?status={status}", headers=headers).get_json()
+        return {row["id"] for row in body["results"]}
+
+    assert ids("expired") == {lapsed.id, stored.id}
+    assert ids("notified") == {live.id}

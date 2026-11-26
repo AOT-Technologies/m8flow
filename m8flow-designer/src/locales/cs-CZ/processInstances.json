@@ -92,7 +92,8 @@
       "milestones": "Milníky",
       "events": "Události",
       "messages": "Zprávy",
-      "tasks": "Úlohy"
+      "tasks": "Úlohy",
+      "emails": "E-maily externích formulářů"
     },
     "terminateConfirm": {
       "title": "Ukončit instanci procesu?",
@@ -149,5 +150,39 @@
   },
   "diagram": {
     "renderError": "Diagram se nepodařilo vykreslit"
+  },
+  "emails": {
+    "loading": "Načítání e-mailů externích formulářů…",
+    "loadError": "E-maily externích formulářů se nepodařilo načíst",
+    "empty": "Pro tuto instanci procesu nebyly odeslány žádné e-maily externích formulářů.",
+    "truncated": "Zobrazuje se nejnovějších {{shown}} z {{total}} e-mailů.",
+    "cancelledNotice": "Zrušené odkazy již nefungují: instance procesu byla ukončena nebo byl úkol uzavřen.",
+    "stuckSending": "Odesílání trvá déle, než se čekalo. Bude automaticky zopakováno.",
+    "resend": "Odeslat znovu",
+    "resendSuccess": "Pro {{email}} byl vytvořen nový odkaz na formulář. Brzy bude odeslán e-mailem.",
+    "resendError": "Odkaz na formulář se nepodařilo znovu odeslat",
+    "resendConfirm": {
+      "title": "Znovu odeslat odkaz na formulář?",
+      "description": "Na adresu {{email}} bude odeslán nový odkaz. Dřívější odkazy tohoto požadavku přestanou fungovat."
+    },
+    "columns": {
+      "recipient": "Příjemce",
+      "task": "Úkol",
+      "status": "Stav",
+      "sent": "Odesláno",
+      "expires": "Platnost odkazu",
+      "error": "Chyba"
+    },
+    "status": {
+      "pending": "Čeká na odeslání",
+      "sending": "Odesílá se",
+      "notified": "Odesláno",
+      "failed": "Selhalo",
+      "smtpUnconfigured": "E-mail není nastaven",
+      "expired": "Platnost odkazu vypršela",
+      "cancelled": "Zrušeno",
+      "submitted": "Odesláno příjemcem",
+      "superseded": "Dokončil někdo jiný"
+    }
   }
 }

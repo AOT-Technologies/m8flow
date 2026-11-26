@@ -96,9 +96,12 @@ def test_an_email_that_was_not_sent_is_audited_as_a_failure(worker, db_session, 
     asyncio.run(worker.process_message(msg))
 
     db_session.expire_all()
-    row = db_session.scalars(select(NatsEventAuditModel)).one()
-    assert row.outcome == NatsEventOutcome.transient_error.value
-    assert row.error_message == f"12: {not_sent}"
+    rows = {row.event_id: row for row in db_session.scalars(select(NatsEventAuditModel))}
+    # One row per recipient: the sent email counts as sent, only the other as a failure.
+    assert set(rows) == {"extform-7-task-1:11", "extform-7-task-1:12"}
+    assert rows["extform-7-task-1:11"].outcome == NatsEventOutcome.instantiated.value
+    assert rows["extform-7-task-1:12"].outcome == NatsEventOutcome.transient_error.value
+    assert rows["extform-7-task-1:12"].error_message == not_sent
 
 
 def test_a_sent_email_is_audited_as_sent(worker, db_session, monkeypatch):
@@ -116,12 +119,19 @@ def test_a_sent_email_is_audited_as_sent(worker, db_session, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "result",
-    ["sent:unrecorded", "skipped:task_closed", "skipped:not_claimable", "skipped:unknown_request"],
+    ("result", "expected"),
+    [
+        ("sent:unrecorded", [NatsEventOutcome.instantiated.value]),
+        ("skipped:task_closed", []),
+        ("skipped:not_claimable", []),
+        ("skipped:unknown_request", []),
+    ],
 )
-def test_a_deliberate_skip_or_an_unrecorded_send_is_not_an_email_failure(worker, db_session, monkeypatch, result):
-    """Pins notify()'s return codes against the audit's failure test (PR #249 review): an
-    email that went out, or one rightly not sent, must not count as an email failure."""
+def test_a_deliberate_skip_or_an_unrecorded_send_is_not_an_email_failure(
+    worker, db_session, monkeypatch, result, expected
+):
+    """Pins notify()'s return codes against the audit: an email that went out counts as
+    sent; one rightly not sent attempted nothing, so it is neither sent nor a failure."""
     monkeypatch.setattr(worker, "_notify_one", lambda *_args: result)
     msg = _Message(
         "m8flow.notifications.acme.external-form",
@@ -132,7 +142,7 @@ def test_a_deliberate_skip_or_an_unrecorded_send_is_not_an_email_failure(worker,
     asyncio.run(worker.process_message(msg))
 
     db_session.expire_all()
-    assert db_session.scalars(select(NatsEventAuditModel)).one().outcome == NatsEventOutcome.instantiated.value
+    assert [row.outcome for row in db_session.scalars(select(NatsEventAuditModel))] == expected
 
 
 def test_a_requests_created_event_notifies_each_row_id(worker, db_session, monkeypatch):
@@ -276,7 +286,7 @@ def test_the_sweep_parks_a_tenant_without_smtp_by_row_id(worker, monkeypatch):
     monkeypatch.setattr(
         ExternalFormNotificationService,
         "mark_smtp_unconfigured",
-        classmethod(lambda cls, request_ids, reason: parked.append((request_ids, reason)) or len(request_ids)),
+        classmethod(lambda cls, request_ids, reason: parked.append((request_ids, reason)) or list(request_ids)),
     )
     monkeypatch.setattr(worker, "_notify_one", lambda *_args: pytest.fail("a parked tenant must not be emailed"))
 
@@ -301,3 +311,66 @@ def test_without_nats_the_worker_still_runs_the_email_sweep(worker, app, monkeyp
     asyncio.run(worker.main())
 
     assert swept == [True]
+
+
+def test_sweep_attempts_are_audited_per_email(worker, db_session, monkeypatch):
+    """Retries, revivals and resends go out through the sweep, not a NATS event; without
+    their own rows the NATS Tenants email counts missed them."""
+    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    results = {5: "sent", 6: "failed:Name or service not known", 7: "skipped:task_closed"}
+    monkeypatch.setattr(worker, "_revive_reconfigured_tenants", lambda: None)
+    monkeypatch.setattr(
+        ExternalFormNotificationService,
+        "sweep_candidates",
+        classmethod(lambda cls: [(5, "t1"), (6, "t1"), (7, "t1")]),
+    )
+    monkeypatch.setattr(
+        ExternalFormNotificationService,
+        "smtp_readiness",
+        classmethod(lambda cls, tenant_id=None: {"ok": True, "reason": None}),
+    )
+    monkeypatch.setattr(worker, "_notify_one", lambda _tenant_id, request_id: results[request_id])
+
+    worker._run_sweep()
+    worker._run_sweep()
+
+    db_session.expire_all()
+    rows = list(db_session.scalars(select(NatsEventAuditModel)))
+    # Two passes, two attempts each for 5 and 6 -- every attempt is its own row -- and
+    # nothing for the deliberately skipped 7.
+    assert sorted((row.event_id.rsplit(":", 1)[1], row.outcome) for row in rows) == [
+        ("5", NatsEventOutcome.instantiated.value),
+        ("5", NatsEventOutcome.instantiated.value),
+        ("6", NatsEventOutcome.transient_error.value),
+        ("6", NatsEventOutcome.transient_error.value),
+    ]
+    assert all(row.worker == NatsEventWorker.notification_worker.value for row in rows)
+
+
+def test_sweep_parking_is_audited_as_email_failures(worker, db_session, monkeypatch):
+    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    monkeypatch.setattr(worker, "_revive_reconfigured_tenants", lambda: None)
+    monkeypatch.setattr(
+        ExternalFormNotificationService, "sweep_candidates", classmethod(lambda cls: [(5, "t1"), (6, "t1")])
+    )
+    monkeypatch.setattr(
+        ExternalFormNotificationService,
+        "smtp_readiness",
+        classmethod(lambda cls, tenant_id=None: {"ok": False, "reason": "no SMTP"}),
+    )
+    monkeypatch.setattr(
+        ExternalFormNotificationService,
+        "mark_smtp_unconfigured",
+        # Request 6 was claimed by the event fast path meanwhile, so only 5 is parked.
+        classmethod(lambda cls, request_ids, reason: [5]),
+    )
+
+    worker._run_sweep()
+
+    db_session.expire_all()
+    rows = list(db_session.scalars(select(NatsEventAuditModel)))
+    assert [row.event_id.rsplit(":", 1)[1] for row in rows] == ["5"]
+    assert rows[0].outcome == NatsEventOutcome.transient_error.value
+    assert rows[0].error_message == "skipped:smtp_unconfigured"

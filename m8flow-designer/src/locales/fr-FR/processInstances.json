@@ -91,7 +91,8 @@
       "milestones": "Jalons",
       "events": "Événements",
       "messages": "Messages",
-      "tasks": "Tâches"
+      "tasks": "Tâches",
+      "emails": "E-mails de formulaires externes"
     },
     "terminateConfirm": {
       "title": "Arrêter l’instance de processus ?",
@@ -148,5 +149,39 @@
   },
   "diagram": {
     "renderError": "Impossible d’afficher le diagramme"
+  },
+  "emails": {
+    "loading": "Chargement des e-mails de formulaires externes…",
+    "loadError": "Échec du chargement des e-mails de formulaires externes",
+    "empty": "Aucun e-mail de formulaire externe n'a été envoyé pour cette instance de processus.",
+    "truncated": "Affichage des {{shown}} e-mails les plus récents sur {{total}}.",
+    "cancelledNotice": "Les liens annulés ne fonctionnent plus : l'instance de processus a été arrêtée ou la tâche a été fermée.",
+    "stuckSending": "L'envoi prend plus de temps que prévu. Il sera relancé automatiquement.",
+    "resend": "Renvoyer",
+    "resendSuccess": "Un nouveau lien de formulaire a été créé pour {{email}}. Il sera envoyé par e-mail sous peu.",
+    "resendError": "Échec du renvoi du lien du formulaire",
+    "resendConfirm": {
+      "title": "Renvoyer le lien du formulaire ?",
+      "description": "Un nouveau lien sera envoyé à {{email}}. Les liens précédents de cette demande ne fonctionneront plus."
+    },
+    "columns": {
+      "recipient": "Destinataire",
+      "task": "Tâche",
+      "status": "Statut",
+      "sent": "Envoyé",
+      "expires": "Expiration du lien",
+      "error": "Erreur"
+    },
+    "status": {
+      "pending": "En attente d'envoi",
+      "sending": "Envoi en cours",
+      "notified": "Envoyé",
+      "failed": "Échec",
+      "smtpUnconfigured": "E-mail non configuré",
+      "expired": "Lien expiré",
+      "cancelled": "Annulé",
+      "submitted": "Soumis",
+      "superseded": "Traité par quelqu'un d'autre"
+    }
   }
 }

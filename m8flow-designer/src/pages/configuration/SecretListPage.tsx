@@ -18,6 +18,7 @@ import {
 } from '@/lib/secretsApi';
 
 import { ConfigurationGate, useConfigurationContext } from './ConfigurationGate';
+import { SmtpConfigWarning } from './SmtpConfigWarning';
 
 const PER_PAGE = 10;
 
@@ -159,6 +160,7 @@ function SecretListBody() {
         ) : null}
       </div>
 
+      <SmtpConfigWarning tenantId={scopedTenantId} isSuperAdmin={isSuperAdmin} />
       {error ? (
         <Alert tone="error" className="mb-4" data-testid="secret-list-error">
           {error}

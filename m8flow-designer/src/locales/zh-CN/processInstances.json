@@ -90,7 +90,8 @@
       "milestones": "里程碑",
       "events": "事件",
       "messages": "消息",
-      "tasks": "任务"
+      "tasks": "任务",
+      "emails": "外部表单邮件"
     },
     "terminateConfirm": {
       "title": "终止流程实例？",
@@ -147,5 +148,39 @@
   },
   "diagram": {
     "renderError": "无法渲染图表"
+  },
+  "emails": {
+    "loading": "正在加载外部表单邮件…",
+    "loadError": "加载外部表单邮件失败",
+    "empty": "尚未为此流程实例发送外部表单邮件。",
+    "truncated": "显示最新的 {{shown}} 封邮件，共 {{total}} 封。",
+    "cancelledNotice": "已取消的链接不再有效：流程实例已终止或任务已关闭。",
+    "stuckSending": "发送时间超出预期，系统将自动重试。",
+    "resend": "重新发送",
+    "resendSuccess": "已为 {{email}} 生成新的表单链接，将很快通过邮件发送。",
+    "resendError": "重新发送表单链接失败",
+    "resendConfirm": {
+      "title": "重新发送表单链接？",
+      "description": "新链接将发送至 {{email}}。此请求之前的链接将失效。"
+    },
+    "columns": {
+      "recipient": "收件人",
+      "task": "任务",
+      "status": "状态",
+      "sent": "发送时间",
+      "expires": "链接到期",
+      "error": "错误"
+    },
+    "status": {
+      "pending": "等待发送",
+      "sending": "正在发送",
+      "notified": "已发送",
+      "failed": "失败",
+      "smtpUnconfigured": "未配置邮件",
+      "expired": "链接已过期",
+      "cancelled": "已取消",
+      "submitted": "已提交",
+      "superseded": "已由他人完成"
+    }
   }
 }

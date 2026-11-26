@@ -63,6 +63,41 @@ MAX_RECONNECTS = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 # result is not: "sent:unrecorded" did go out, and skipped:task_closed / not_claimable /
 # unknown_request are emails rightly not sent.
 _UNDELIVERED_RESULTS = ("failed:", "skipped:smtp_unconfigured", "skipped:unsafe_url")
+# "sent" and "sent:unrecorded": the email went out.
+_SENT_RESULT = "sent"
+
+
+def _audit_email(
+    tenant_id: str,
+    batch_id: str,
+    request_id: int,
+    result: str,
+    *,
+    stream_seq: int | None = None,
+    process_instance_id: int | None = None,
+) -> None:
+    """One audit row per email attempt, so the NATS Tenants email counts match what was
+    actually sent -- on the event fast path and on the sweep (retries, revivals, resends).
+
+    Keyed ``<batch_id>:<request_id>``: a NATS redelivery of the same event updates its row,
+    while every sweep pass gets a fresh batch id. A deliberate skip (task closed, already
+    claimed, unknown row) attempted no email, so it records nothing."""
+    from m8flow_backend.models.nats_event_audit import NatsEventOutcome
+
+    if result.startswith(_UNDELIVERED_RESULTS):
+        outcome, error = NatsEventOutcome.transient_error.value, result
+    elif result.startswith(_SENT_RESULT):
+        outcome, error = NatsEventOutcome.instantiated.value, None
+    else:
+        return
+    _record_audit(
+        tenant_id=tenant_id,
+        event_id=f"{batch_id}:{request_id}",
+        outcome=outcome,
+        error_message=error,
+        stream_seq=stream_seq,
+        process_instance_id=process_instance_id,
+    )
 
 running = True
 
@@ -170,6 +205,8 @@ def _run_sweep() -> None:
         by_tenant.setdefault(tenant_id, []).append(request_id)
 
     logger.info("Sweep found %s request(s) owed an email across %s tenant(s).", len(candidates), len(by_tenant))
+    # Audit key prefix for this pass; each pass's attempts are new rows (see _audit_email).
+    batch_id = f"sweep-{time.time_ns()}"
     for tenant_id, request_ids in by_tenant.items():
         try:
             readiness = _in_tenant_context(tenant_id, ExternalFormNotificationService.smtp_readiness)
@@ -190,12 +227,15 @@ def _run_sweep() -> None:
             except Exception:
                 logger.exception("Sweep could not park requests for tenant=%s", tenant_id)
                 continue
+            # Only rows actually parked: one claimed by the fast path meanwhile was not failed here.
+            for request_id in parked:
+                _audit_email(tenant_id, batch_id, request_id, "skipped:smtp_unconfigured")
             logger.error(
                 "Sweep: tenant=%s cannot send external form emails; parked %s request(s) as"
                 " smtp_unconfigured and stopped retrying them. %s"
                 " Fix this under Setup > Configuration > Secrets to resume delivery.",
                 tenant_id,
-                parked,
+                len(parked),
                 readiness["reason"],
             )
             continue
@@ -204,8 +244,10 @@ def _run_sweep() -> None:
             try:
                 result = _notify_one(tenant_id, request_id)
                 logger.info("Sweep notify request=%s: %s", request_id, result)
-            except Exception:
+            except Exception as e:
+                result = f"failed:{e}"
                 logger.exception("Sweep notify failed for request=%s (tenant=%s)", request_id, tenant_id)
+            _audit_email(tenant_id, batch_id, request_id, result)
 
 
 async def sweep_loop() -> None:
@@ -361,31 +403,30 @@ async def process_message(msg: Any) -> None:
                     data.get("process_instance_id"),
                     result,
                 )
-                if result.startswith(_UNDELIVERED_RESULTS):
-                    failures.append(f"{request_id}: {result}")
             except Exception as e:
-                failures.append(f"{request_id}: {e}")
+                result = f"failed:{e}"
                 logger.exception(
                     "Notify failed for request=%s (tenant=%s); the sweep will retry.",
                     request_id,
                     tenant_id,
                 )
+            if result.startswith(_UNDELIVERED_RESULTS):
+                failures.append(f"{request_id}: {result}")
+            # One row per recipient, so a partial failure shows exactly which email failed.
+            await asyncio.to_thread(
+                _audit_email,
+                tenant_id,
+                event_id or f"nats-{stream_seq}",
+                request_id,
+                result,
+                stream_seq=stream_seq,
+                process_instance_id=data.get("process_instance_id"),
+            )
 
-        # A partial failure is still a failure worth seeing: the sweep will retry, but
-        # without this row the only trace is a log line.
         outcome = (
             NatsEventOutcome.transient_error.value
             if failures
             else NatsEventOutcome.instantiated.value
-        )
-        await asyncio.to_thread(
-            _record_audit,
-            tenant_id=tenant_id,
-            event_id=event_id,
-            outcome=outcome,
-            error_message="; ".join(failures) if failures else None,
-            stream_seq=stream_seq,
-            process_instance_id=data.get("process_instance_id"),
         )
         if record_nats_processing is not None:
             record_nats_processing(

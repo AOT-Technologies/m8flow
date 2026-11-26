@@ -260,6 +260,17 @@ describe('ProcessInstanceDetailPage', () => {
     });
   });
 
+  it('shows the External form emails tab only with secrets read access', async () => {
+    vi.stubGlobal('fetch', stubFetches(mockDetail()));
+    const view = renderWithOutlet({ ...editorCtx, canReadSecrets: false });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Tasks' })).toBeInTheDocument());
+    expect(screen.queryByRole('tab', { name: 'External form emails' })).not.toBeInTheDocument();
+    view.unmount();
+
+    renderWithOutlet({ ...editorCtx, canReadSecrets: true });
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'External form emails' })).toBeInTheDocument());
+  });
+
   it('shows terminate and suspend for an editor on a waiting instance', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail()));
 

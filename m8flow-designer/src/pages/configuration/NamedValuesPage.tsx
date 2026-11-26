@@ -18,6 +18,7 @@ import { formatRelativeTimeVerbose } from '@/lib/relativeTime';
 import { ApiError } from '@/lib/api';
 
 import { NamedValuesAccessDenied, NamedValuesGate, useNamedValuesContext } from './NamedValuesGate';
+import { SmtpConfigWarning } from './SmtpConfigWarning';
 
 export default function NamedValuesPage() {
   const { t } = useTranslation();
@@ -171,6 +172,7 @@ function NamedValuesBody() {
         ) : null}
       </div>
 
+      <SmtpConfigWarning tenantId={tenantId} isSuperAdmin={isSuperAdmin} />
       {error ? <Alert tone="error" className="mb-4">{error}</Alert> : null}
       {actionError ? <Alert tone="error" className="mb-4">{actionError}</Alert> : null}
       {!error && <Card variant="bordered" className="overflow-hidden">

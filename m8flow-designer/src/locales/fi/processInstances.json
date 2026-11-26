@@ -90,7 +90,8 @@
       "milestones": "Virstanpylväät",
       "events": "Tapahtumat",
       "messages": "Viestit",
-      "tasks": "Tehtävät"
+      "tasks": "Tehtävät",
+      "emails": "Ulkoisen lomakkeen sähköpostit"
     },
     "terminateConfirm": {
       "title": "Lopetetaanko prosessi-instanssi?",
@@ -147,5 +148,39 @@
   },
   "diagram": {
     "renderError": "Kaavion piirtäminen epäonnistui"
+  },
+  "emails": {
+    "loading": "Ladataan ulkoisen lomakkeen sähköposteja…",
+    "loadError": "Ulkoisen lomakkeen sähköpostien lataus epäonnistui",
+    "empty": "Tälle prosessi-instanssille ei ole lähetetty ulkoisen lomakkeen sähköposteja.",
+    "truncated": "Näytetään uusimmat {{shown}}/{{total}} sähköpostia.",
+    "cancelledNotice": "Peruutetut linkit eivät enää toimi: prosessi-instanssi lopetettiin tai tehtävä suljettiin.",
+    "stuckSending": "Lähetys kestää odotettua kauemmin. Sitä yritetään uudelleen automaattisesti.",
+    "resend": "Lähetä uudelleen",
+    "resendSuccess": "Vastaanottajalle {{email}} luotiin uusi lomakelinkki. Se lähetetään sähköpostitse pian.",
+    "resendError": "Lomakelinkin uudelleenlähetys epäonnistui",
+    "resendConfirm": {
+      "title": "Lähetetäänkö lomakelinkki uudelleen?",
+      "description": "Uusi linkki lähetetään osoitteeseen {{email}}. Tämän pyynnön aiemmat linkit lakkaavat toimimasta."
+    },
+    "columns": {
+      "recipient": "Vastaanottaja",
+      "task": "Tehtävä",
+      "status": "Tila",
+      "sent": "Lähetetty",
+      "expires": "Linkki vanhenee",
+      "error": "Virhe"
+    },
+    "status": {
+      "pending": "Odottaa lähetystä",
+      "sending": "Lähetetään",
+      "notified": "Lähetetty",
+      "failed": "Epäonnistui",
+      "smtpUnconfigured": "Sähköpostia ei ole määritetty",
+      "expired": "Linkki vanhentunut",
+      "cancelled": "Peruutettu",
+      "submitted": "Lähetetty lomake",
+      "superseded": "Toinen henkilö teki tämän"
+    }
   }
 }
