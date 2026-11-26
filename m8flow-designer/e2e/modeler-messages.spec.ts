@@ -5,14 +5,15 @@ import {
   useSession,
 } from './helpers/auth';
 import { useSeededModelCopy } from './helpers/seedCatalog';
-import { openChangeElementMenu, openPropertiesPanelGroup, selectElement } from './helpers/diagram';
+import { openChangeElementMenu, openPropertiesPanelGroup } from './helpers/diagram';
 
 /**
  * Message events and process-level message models are dropped. Send/Receive
  * Task still keep the element-level `messages` group (catalog allows those
  * task types). Do not assert message-model persist, Add Message, or schema
  * Launch Editor for a message. The diagram is the seeded "E2E Travel Request"
- * template ("Send itinerary" send task).
+ * template. Convert its local notification script to a Send Task when checking
+ * element-level settings, without changing the runnable seed's behavior.
  */
 const SEND_TASK_FILE = 'travel-request.bpmn';
 const SEND_TASK_ID = 'send_itinerary';
@@ -44,7 +45,11 @@ test.describe('Process Modeler: Message settings', () => {
   });
 
   test('A Send Task still shows its Messages settings', async ({ page }) => {
-    await selectElement(page, SEND_TASK_ID);
+    const menu = await openChangeElementMenu(page, SEND_TASK_ID);
+    await menu.locator('[data-id="replace-with-send-task"]').click();
+    // Replacement keeps the task selected. Clicking it again toggles selection
+    // off and shows the collaboration's properties instead of the task's.
+    await expect(page.locator('.bio-properties-panel-header-type')).toHaveText('Send Task');
     const group = await openPropertiesPanelGroup(page, 'messages');
     await expect(group).toBeVisible();
     console.log('Send Task still shows its Messages settings.');

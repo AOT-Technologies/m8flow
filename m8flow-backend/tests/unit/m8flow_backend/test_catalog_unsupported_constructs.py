@@ -10,6 +10,48 @@ from m8flow_backend.catalog import _reject_unsupported_constructs
 from m8flow_backend.errors import ApiError
 
 
+@pytest.mark.parametrize("qualified", [False, True])
+def test_signal_catch_after_event_gateway_is_rejected_before_deployment(qualified):
+    prefix = "local:" if qualified else ""
+    xml = (
+        '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:local="urn:signals" targetNamespace="urn:signals">'
+        '<signal id="resolved" name="resolved"/><process id="process" isExecutable="true">'
+        '<eventBasedGateway id="wait"/><intermediateCatchEvent id="catch">'
+        '<signalEventDefinition signalRef="resolved"/></intermediateCatchEvent>'
+        f'<sequenceFlow id="flow" sourceRef="{prefix}wait" targetRef="{prefix}catch"/>'
+        '</process></definitions>'
+    )
+    with pytest.raises(ApiError, match="Signal catches after event-based gateways") as error:
+        _reject_unsupported_constructs(xml)
+    assert error.value.error_code == "unsupported_bpmn"
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize(("gateway", "catch", "references", "namespace", "reject"), [
+    ("wait", "catch", 'sourceRef="a:wait" targetRef="b:catch"', 'xmlns:a="urn:signals" xmlns:b="urn:signals"', True),
+    ("wait", "catch", 'sourceRef="other:wait" targetRef="other:catch"', 'xmlns:other="urn:other"', False),
+    ("wait", "catch", 'sourceRef="unknown:wait" targetRef="unknown:catch"', '', False),
+    ("literal:wait", "literal:catch", 'sourceRef="literal:wait" targetRef="literal:catch"', '', True),
+    ("wait", "catch", 'sourceRef="local:wait" targetRef="local:catch"', 'xmlns:local="urn:other"', False),
+])
+def test_signal_gateway_guard_respects_exact_ids_and_scoped_qnames(gateway, catch, references, namespace, reject):
+    xml = (
+        '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" '
+        'xmlns:local="urn:signals" targetNamespace="urn:signals">'
+        '<process id="process" isExecutable="true">'
+        f'<eventBasedGateway id="{gateway}"/><intermediateCatchEvent id="{catch}">'
+        '<signalEventDefinition signalRef="resolved"/></intermediateCatchEvent>'
+        f'<sequenceFlow id="flow" {references} {namespace}/>'
+        '</process></definitions>'
+    )
+    if reject:
+        with pytest.raises(ApiError, match="Signal catches after event-based gateways"):
+            _reject_unsupported_constructs(xml)
+    else:
+        _reject_unsupported_constructs(xml)
+
+
 @pytest.mark.parametrize(
     ("subprocess", "namespace_declarations"),
     [
@@ -119,7 +161,7 @@ def test_unsupported_construct_elements_are_rejected_regardless_of_prefix(elemen
         f"<bpmn:process id='process'>{element}</bpmn:process></bpmn:definitions>"
     )
 
-    with pytest.raises(ApiError, match="Unsupported BPMN construct"):
+    with pytest.raises(ApiError, match="Unsupported BPMN construct|Intermediate Message Catch"):
         _reject_unsupported_constructs(xml)
 
 

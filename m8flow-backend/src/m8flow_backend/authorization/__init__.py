@@ -34,6 +34,7 @@ _LIFECYCLE_COMMAND_KEYS = frozenset(
     {"process.suspend", "process.resume", "process.retry", "process.terminate"}
 )
 _PROCESS_START_COMMAND = "process.start"
+MESSAGE_CORRELATION_PATH = "/m8flow/messages/correlate"
 _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
 # their paths the same way here, or permissions-check reads POST as ``create`` and
@@ -114,6 +115,23 @@ class HostAuthorizationPolicy:
         user = session.get(UserModel, request.actor_user_id)
         if user is None:
             return api.DatabaseAuthorizationPolicy().authorize(session, request)
+        if request.command_key == "message.correlate":
+            if (
+                request.permission == "execute"
+                and request.resource_type == "tenant"
+                and request.resource_id == request.tenant_id
+            ):
+                decision = _host_yaml_decision(
+                    session,
+                    user,
+                    permission="execute",
+                    resource_type="tenant",
+                    resource_id=MESSAGE_CORRELATION_PATH,
+                    command=request.command_key,
+                )
+                if decision is not None:
+                    return decision
+            return api.AuthorizationDecision(allowed=False, reason="message_correlation_requires_execute")
         if request.command_key == "process_definition.import":
             decision = _host_yaml_decision(
                 session,
@@ -239,6 +257,7 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/mcp-tools",
     "/m8flow/tenant-management",
     "/m8flow/celery/",
+    MESSAGE_CORRELATION_PATH,
 )
 
 
@@ -256,7 +275,9 @@ def _normalize_authorization_path(path: str) -> str:
     placeholders use the same target. Trailing slashes are ignored on both
     public and canonical Task Review paths.
     """
-    path = _without_api_path_prefix(path)
+    # Proxies may collapse repeated slashes before routing. Apply the same
+    # normalization before removing the version prefix and selecting an action.
+    path = _without_api_path_prefix(re.sub(r"/+", "/", path))
     public_prefix = "/m8flow/task-review"
     target_prefix = "/m8flow/task-review-access"
     normalized = path.rstrip("/") or "/"
@@ -369,6 +390,8 @@ def allow_uri(
             db_session, user, _method_to_action(method), "tenant", path
         )
     action = _method_to_action(method)
+    if path == MESSAGE_CORRELATION_PATH and action == "create":
+        action = "execute"
     action, path = _process_model_version_permission(action, path)
     lifecycle_route = _LIFECYCLE_ROUTE.fullmatch(path)
     if lifecycle_route:

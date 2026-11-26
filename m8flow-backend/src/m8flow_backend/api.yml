@@ -2636,6 +2636,73 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /messages/correlate:
+    post:
+      summary: Deliver an external BPMN message
+      operationId: m8flow_backend.routes.messages_controller.correlate_message
+      tags:
+        - ProcessInstances
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [messageName, deliveryId, payload]
+              properties:
+                messageName:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                deliveryId:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                payload:
+                  type: object
+                  additionalProperties: true
+                processDefinitionId:
+                  type: integer
+                  minimum: 1
+                  maximum: 2147483647
+                processInstanceId:
+                  type: integer
+                  minimum: 1
+                  maximum: 2147483647
+      responses:
+        "200":
+          description: Committed delivery receipt, including identical retries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deliveryId, processInstanceId, taskGuid, deliveredAt, outcome]
+                properties:
+                  deliveryId:
+                    type: string
+                  processInstanceId:
+                    type: integer
+                  taskGuid:
+                    type: string
+                    format: uuid
+                  deliveredAt:
+                    type: string
+                    format: date-time
+                  outcome:
+                    type: string
+                    enum: [delivered, workflow_error]
+        "400":
+          description: Invalid message, payload, or target selector
+        "401":
+          description: Authentication required
+        "403":
+          description: Caller lacks the tenant's message correlation permission
+        "404":
+          description: No matching waiting subscription
+        "409":
+          description: Multiple matching subscriptions or conflicting delivery ID reuse
+
   /process-instances/{process_instance_id}/suspend:
     post:
       summary: Process instance detail — suspend

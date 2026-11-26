@@ -172,9 +172,10 @@ class Diagram:
         node.attrs, node.at = attrs, at  # type: ignore[attr-defined]
         return node
 
-    def container(self, nid, name, col, lane, row=0, *, tag="subProcess", span=3, **kw):
+    def container(self, nid, name, col, lane, row=0, *, tag="subProcess", span=3, height_rows=1, **kw):
         node = self._add(nid, tag, name, col, lane, row, **kw)
         node.span = span  # type: ignore[attr-defined]
+        node.height_rows = height_rows  # type: ignore[attr-defined]
         return node
 
     def data_object(self, ref_id: str, obj_id: str, name: str, col, lane, row=0, *, declare=True):
@@ -216,7 +217,7 @@ class Diagram:
             if n.kind == "container":
                 span = getattr(n, "span", 3)
                 left = X0 + n.col * COLW - 20
-                n.bounds = (left, top + n.row * RH + 10, span * COLW - 25, RH - 20)
+                n.bounds = (left, top + n.row * RH + 10, span * COLW - 25, getattr(n, "height_rows", 1) * RH - 20)
                 continue
             w, h = SIZES[n.kind]
             n.bounds = (cx - w / 2, cy - h / 2, w, h)

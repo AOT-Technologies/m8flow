@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:tns="urn:payment"
+             id="payment_definitions" targetNamespace="urn:payment">
+  <message id="payment_message" name="Payment received"/>
+  <correlationProperty id="case_number">
+    <correlationPropertyRetrievalExpression messageRef="tns:payment_message">
+      <messagePath>payment/caseNumber</messagePath>
+    </correlationPropertyRetrievalExpression>
+  </correlationProperty>
+  <correlationProperty id="region">
+    <correlationPropertyRetrievalExpression messageRef="tns:payment_message">
+      <messagePath>payment/region</messagePath>
+    </correlationPropertyRetrievalExpression>
+  </correlationProperty>
+  <collaboration id="payment_collaboration">
+    <participant id="sender" name="Payment system"/>
+    <participant id="receiver" processRef="wait_for_payment"/>
+    <messageFlow id="payment_flow" sourceRef="sender" targetRef="payment_catch"
+                 messageRef="tns:payment_message"/>
+    <correlationKey id="payment_key" name="Payment key">
+      <correlationPropertyRef>tns:case_number</correlationPropertyRef>
+      <correlationPropertyRef>tns:region</correlationPropertyRef>
+    </correlationKey>
+  </collaboration>
+  <process id="wait_for_payment" isExecutable="true">
+    <startEvent id="start"/>
+    <intermediateCatchEvent id="payment_catch">
+      <messageEventDefinition messageRef="tns:payment_message"/>
+    </intermediateCatchEvent>
+    <endEvent id="end"/>
+    <sequenceFlow id="to_payment" sourceRef="start" targetRef="payment_catch"/>
+    <sequenceFlow id="from_payment" sourceRef="payment_catch" targetRef="end"/>
+    <correlationSubscription correlationKeyRef="tns:payment_key">
+      <correlationPropertyBinding correlationPropertyRef="tns:case_number">
+        <dataPath>case_number</dataPath>
+      </correlationPropertyBinding>
+      <correlationPropertyBinding correlationPropertyRef="tns:region">
+        <dataPath>region</dataPath>
+      </correlationPropertyBinding>
+    </correlationSubscription>
+  </process>
+</definitions>

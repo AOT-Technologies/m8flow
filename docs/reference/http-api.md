@@ -159,3 +159,33 @@ instances also include `collaboration_correlation_key` in the response.
 
 - [Trigger processes from external systems](../how-to/trigger-processes-with-api-keys.md)
 - [About multi-tenancy and access control](../explanation/multi-tenancy-and-access.md)
+
+
+## External BPMN message delivery
+
+Call POST /v1.0/m8flow/messages/correlate with an m8flow bearer token and a
+concrete active tenant. The caller needs the tenant's message.correlate
+permission. The tenant-admin role grants it.
+
+```json
+{
+  "messageName": "Payment received",
+  "deliveryId": "payment-17-west",
+  "payload": {"payment": {"caseNumber": 17, "region": "west"}}
+}
+```
+
+Message names match the BPMN message declaration exactly. The model's
+retrieval paths determine which payload fields participate in correlation.
+Optional processDefinitionId and processInstanceId fields narrow the wait to
+a stored definition or instance within the active tenant.
+
+A 200 response includes deliveryId, processInstanceId, taskGuid, deliveredAt,
+and outcome. An outcome of workflow_error means the message was committed
+and a later workflow step failed. Use the process instance's retry operation
+to recover from that failure.
+
+Missing or invalid request fields return 400. A 404 means no eligible catch
+matches, and the sender can retry with the same delivery ID. Multiple matches
+or changing the inputs of a committed delivery ID return 409. Identical
+retries return the original receipt.

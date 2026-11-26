@@ -188,6 +188,11 @@ permissions:
     actions: [start]
     uri: PM:ALL
     command: process.start
+  correlate-messages:
+    groups: ["tenant-admin"]
+    actions: [execute]
+    uri: /m8flow/messages/correlate
+    command: message.correlate
   # Tenant-wide instance read: every user's instances, plus run metrics. A plain
   # route grant also matches every path below it, so /process-instances already
   # covers /process-instances/{id}. Only tenant-admin holds it: submitter,

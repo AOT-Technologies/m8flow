@@ -19,13 +19,16 @@ KNOWN_DIFFERENCES = {
     ("remove_index", "permission_target", ("resource_type", "resource_id", "<expr>")),
     # The host enforces one task completion event per tenant, instance, and task GUID.
     ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
+    # Host migration adds the tenant-scoped process run statistics index.
+    ("remove_index", "process_instance", ("m8f_tenant_id", "process_model_identifier", "started_at")),
+    # Host and core name the same unique process GUID constraint differently.
+    ("remove_constraint", "bpmn_process", ("guid",)),
+    ("add_constraint", "bpmn_process", ("guid",)),
     # Host keeps the pre-0.2.1 (username, service) uniqueness the core ORM omits.
     ("remove_constraint", "user", ("username", "service")),
     # Core declares UniqueConstraint(work_item_id, user_id); the host schema
     # enforces the same pair as the primary key (pk_work_item_user).
     ("add_constraint", "work_item_user", ("work_item_id", "user_id")),
-    # Host migration d1e2f3a4b5c6 prevents duplicate task-completed events.
-    ("remove_index", "process_instance_event", ("m8f_tenant_id", "process_instance_id", "task_guid")),
 }
 
 
@@ -61,20 +64,28 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
     with admin_engine.connect() as conn:
         context = MigrationContext.configure(conn, opts={"compare_type": True})
         diffs = compare_metadata(context, CoreBase.metadata)
+        ownership = sa.table(
+            "m8flow_message_schema_ownership", sa.column("table_name"), sa.column("creation_marker"),
+        )
+        creation_markers = {
+            name: marker for name, marker in conn.execute(sa.select(ownership)) if name in core_tables
+        }
 
+    # Upstream forward migrations converge journal foreign keys to the core
+    # contract, so no journal-specific schema differences are expected.
     known_differences = KNOWN_DIFFERENCES.copy()
-    if "collaboration_correlation_key" not in CoreBase.metadata.tables["process_instance"].c:
-        # Allow the additive host migration while CI still uses the pre-collaboration wheel.
-        known_differences.update({
-            ("remove_column", "process_instance", ("collaboration_correlation_key",)),
-            ("remove_index", "process_instance", (
-                "m8f_tenant_id", "bpmn_process_definition_id", "bpmn_version_id", "collaboration_correlation_key",
-            )),
-        })
+
     found = set()
+    found_creation_markers = set()
     unexplained = []
     for diff in diffs:
         for item in diff if isinstance(diff, list) else [diff]:
+            if item[0] == "remove_constraint" and isinstance(item[1], sa.CheckConstraint):
+                check = item[1]
+                if check.name == creation_markers.get(check.table.name):
+                    assert str(check.sqltext).replace("(", "").replace(")", "").strip() == "m8f_tenant_id IS NOT NULL"
+                    found_creation_markers.add(check.table.name)
+                    continue
             signature = _signature(item)
             if signature is None:
                 unexplained.append(repr(item))
@@ -89,6 +100,7 @@ def test_migrated_postgres_schema_matches_core_orm(admin_engine):
     assert unexplained == [], "core ORM and migrated schema differ:\n" + "\n".join(unexplained)
     # A known difference that disappears means the allowlist entry is stale.
     assert found == known_differences
+    assert found_creation_markers == creation_markers.keys()
 
 
 def test_runtime_role_cannot_bypass_rls(migrated_database):
@@ -105,4 +117,7 @@ def test_runtime_role_cannot_bypass_rls(migrated_database):
     finally:
         engine.dispose()
     assert (superuser, bypass) == (False, False)
-    assert {"process_instance", "work_item", "work_item_user", "task", "scheduler_job", "json_data"} <= rls_tables
+    assert {
+        "process_instance", "work_item", "work_item_user", "task", "scheduler_job", "json_data",
+        "signal_subscription", "compensation_record", "message_subscription", "message_delivery_receipt",
+    } <= rls_tables

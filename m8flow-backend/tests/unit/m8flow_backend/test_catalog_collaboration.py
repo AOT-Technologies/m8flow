@@ -102,6 +102,48 @@ def test_message_filter_accepts_supported_collaboration(collaboration_xml):
     _reject_unsupported_constructs(collaboration_xml)
 
 
+@pytest.mark.parametrize("element", ["correlationKey", "correlationProperty", "correlationSubscription"])
+@pytest.mark.parametrize("has_messages", [True, False])
+def test_collaboration_rejects_unvalidated_correlation_metadata(collaboration_xml, element, has_messages):
+    xml = collaboration_xml.replace("</bpmn:definitions>", f'<bpmn:{element} id="unsupported"/></bpmn:definitions>')
+    if not has_messages:
+        from xml.etree import ElementTree
+
+        root = ElementTree.fromstring(xml)
+        for parent in root.iter():
+            for child in list(parent):
+                if child.tag.endswith("}messageEventDefinition"):
+                    parent.remove(child)
+        xml = ElementTree.tostring(root, encoding="unicode")
+    with pytest.raises(ApiError, match=f"Unsupported BPMN construct: {element}") as error:
+        _reject_unsupported_constructs(xml)
+    assert error.value.status_code == 400
+
+
+@pytest.mark.parametrize("element", ["correlationKey", "correlationProperty", "correlationSubscription"])
+def test_ordinary_model_without_messages_rejects_correlation_metadata(element):
+    xml = (
+        '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL">'
+        f'<{element} id="unsupported"/><process id="plain" isExecutable="true"/>'
+        '</definitions>'
+    )
+    with pytest.raises(ApiError, match=f"Unsupported BPMN construct: {element}"):
+        _reject_unsupported_constructs(xml)
+
+
+def test_external_correlation_model_still_validates():
+    xml = (Path(__file__).resolve().parents[2] / "fixtures/message_waiting.bpmn").read_text(encoding="utf-8")
+    _reject_unsupported_constructs(xml)
+
+
+@pytest.mark.parametrize("name", ["malformed", "message-event", "compensation-event"])
+def test_refused_e2e_fixtures_are_rejected_before_storage(name):
+    source = Path(__file__).resolve().parents[4] / "m8flow-designer/e2e/seed/catalog/refused" / f"{name}.bpmn"
+    with pytest.raises(ApiError) as error:
+        _reject_unsupported_constructs(source.read_text(encoding="utf-8"))
+    assert error.value.status_code == 400
+
+
 @pytest.mark.parametrize("process_id", [None, "Order"])
 def test_versioned_collaboration_defers_participant_selection_until_start(collaboration_xml, process_id):
     from m8flow_backend.catalog import versioned, versions
