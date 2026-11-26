@@ -64,10 +64,12 @@ export type ProcessesModelsListProps = {
   error?: string | null;
   /** Active group filter id from `?group=`; null = all groups. */
   groupFilter?: string | null;
+  /** Owning tenant for a qualified All-Tenants group selection. */
+  groupTenantId?: string | null;
   /** Label for the active group (display name or id); used when it isn't in `groups`. */
   scopeLabel?: string;
   /** Options for the Group filter dropdown. */
-  groups?: { id: string; label: string }[];
+  groups?: { id: string; label: string; tenantId?: string }[];
   groupsLoading?: boolean;
   groupsError?: string | null;
   onRetryGroups?: () => void;
@@ -79,7 +81,7 @@ export type ProcessesModelsListProps = {
   totalUnfilteredCount?: number;
   onClearGroupFilter?: () => void;
   onOpenModel?: (model: ProcessModelListItem) => void;
-  onFilterByGroup?: (groupId: string) => void;
+  onFilterByGroup?: (groupId: string, tenantId?: string) => void;
   /** Starts an instance from the model; parent handles navigation. */
   onStartModel?: (model: ProcessModelListItem) => void;
   startPending?: boolean;
@@ -116,6 +118,7 @@ export function ProcessesModelsList({
   loading = false,
   error = null,
   groupFilter = null,
+  groupTenantId = null,
   scopeLabel,
   groups = [],
   groupsLoading = false,
@@ -236,12 +239,13 @@ export function ProcessesModelsList({
   const resultCount = t('processes.list.modelCount', { count: filtered.length });
   const totalForEmpty = totalUnfilteredCount ?? models.length;
   const groupFilterOn = Boolean(groupFilter);
-  const groupOptions = [
-    { value: '', label: t('processes.allGroups') },
-    ...groups.map((group) => ({ value: group.id, label: group.label })),
+  const groupValue = (id: string, tenantId?: string | null) => JSON.stringify([tenantId ?? null, id]);
+  const selectedGroupValue = groupFilter ? groupValue(groupFilter, groupTenantId) : '';
+  const groupChoices = [
+    ...groups.map((group) => ({ ...group, value: groupValue(group.id, group.tenantId) })),
     // Keep the trigger labelled when the active group isn't loaded (yet).
-    ...(groupFilter && !groups.some((group) => group.id === groupFilter)
-      ? [{ value: groupFilter, label: scopeLabel ?? groupFilter }]
+    ...(groupFilter && !groups.some((group) => groupValue(group.id, group.tenantId) === selectedGroupValue)
+      ? [{ id: groupFilter, tenantId: groupTenantId ?? undefined, value: selectedGroupValue, label: scopeLabel ?? groupFilter }]
       : []),
   ];
   const isEmpty = !loading && !error && filtered.length === 0;
@@ -284,7 +288,7 @@ export function ProcessesModelsList({
             type="button"
             onClick={(e) => {
               stopRowNav(e);
-              onFilterByGroup?.(model.group_id);
+              onFilterByGroup?.(model.group_id, showTenant ? model.tenant_id : undefined);
             }}
             className="mt-1 flex max-w-full items-center gap-1.5 text-left text-[12.5px] text-muted-foreground"
           >
@@ -467,9 +471,16 @@ export function ProcessesModelsList({
 
           <SortDropdown
             label={t('processes.list.group')}
-            options={groupOptions}
-            value={groupFilter ?? ''}
-            onChange={(value) => (value ? onFilterByGroup?.(value) : onClearGroupFilter?.())}
+            options={[{ value: '', label: t('processes.allGroups') }, ...groupChoices]}
+            value={selectedGroupValue}
+            onChange={(value) => {
+              if (!value) {
+                onClearGroupFilter?.();
+                return;
+              }
+              const group = groupChoices.find((choice) => choice.value === value);
+              if (group) onFilterByGroup?.(group.id, group.tenantId);
+            }}
             searchPlaceholder={t('processes.groups.searchLabel')}
             emptyLabel={t('processes.groups.noMatches')}
             className={cn('min-w-0 max-w-[280px]', groupFilterOn && 'border-nav-active/40 bg-nav-active/15')}
@@ -589,7 +600,7 @@ export function ProcessesModelsList({
             <DataTable
               columns={columns}
               rows={filtered}
-              getRowKey={(model) => model.id}
+              getRowKey={(model) => JSON.stringify([model.tenant_id, model.id])}
               onRowClick={(model) => onOpenModel?.(model)}
               minWidth={`${(showRunMetrics ? 1000 : 760) + (showTenant ? 156 : 0)}px`}
             />

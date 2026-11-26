@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import * as api from '@/lib/api';
@@ -21,6 +21,18 @@ vi.mock('@/components/session/hooks', () => ({
 }));
 import ProcessesPage from './ProcessesPage';
 
+function LocationProbe() {
+  const location = useLocation();
+  return <div data-testid="location">{location.pathname}{location.search}</div>;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 function renderWithOutlet(context: SessionFixtureContext, initial = '/processes') {
   mockUseActiveTenant.mockReturnValue(activeTenantFromContext(context));
   mockUseCapabilities.mockReturnValue(capabilitiesFromContext(context));
@@ -28,7 +40,7 @@ function renderWithOutlet(context: SessionFixtureContext, initial = '/processes'
     <MemoryRouter initialEntries={[initial]}>
       <Routes>
         <Route element={<Outlet context={session} />}>
-          <Route path="/processes" element={<ProcessesPage />} />
+          <Route path="/processes" element={<><ProcessesPage /><LocationProbe /></>} />
           <Route path="/process-instances/12" element={<p>Started instance 12</p>} />
         </Route>
       </Routes>
@@ -50,6 +62,155 @@ describe('ProcessesPage', () => {
     // Unmount before restoring: a late fetch would otherwise re-render the page against reset session-hook mocks.
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  const sharedModels: api.ProcessModelListItem[] = ['t1', 't2'].map((tenant_id, index) => ({
+    id: 'finance/invoice', tenant_id, tenant_name: `Tenant ${index + 1}`,
+    display_name: `Invoice ${index + 1}`, group_id: 'finance', group_display_name: 'Finance',
+    last_run_at: null, runs_30d: 0, status: 'published',
+  }));
+  const sharedGroups: api.ProcessGroupListItem[] = sharedModels.map((model) => ({
+    id: 'finance', tenant_id: model.tenant_id, tenant_name: model.tenant_name,
+    display_name: 'Finance', description: '', model_count: 1, last_run_at: null,
+  }));
+
+  function mockSharedCatalog() {
+    vi.spyOn(api, 'fetchProcessModels').mockResolvedValue(sharedModels);
+    vi.spyOn(api, 'fetchProcessGroups').mockResolvedValue(sharedGroups);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json([])));
+  }
+
+  it('distinguishes tenant group choices and row links without merging identical model IDs', async () => {
+    mockSharedCatalog();
+    const user = userEvent.setup();
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+    await screen.findByText('Invoice 1');
+    expect(screen.getByText('Invoice 2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Group: All groups' }));
+    expect(await screen.findByRole('menuitemradio', { name: 'Finance — Tenant 1 (t1)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('menuitemradio', { name: 'Finance — Tenant 2 (t2)' }));
+    await screen.findByRole('button', { name: 'Group: Finance — Tenant 2 (t2)' });
+    await waitFor(() => expect(screen.getByText('Invoice 2')).toBeInTheDocument());
+    expect(screen.queryByText('Invoice 1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/processes?group=finance&groupTenantId=t2');
+    await user.click(screen.getByRole('button', { name: 'Status: All' }));
+    expect(await screen.findByRole('menuitemradio', { name: 'All 1' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Clear' }));
+    await screen.findByText('Invoice 1');
+    expect(screen.getByText('Invoice 2')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/processes');
+    expect(screen.getByTestId('location')).not.toHaveTextContent('?');
+
+    await user.click(screen.getAllByRole('button', { name: 'Finance' })[0]);
+    await screen.findByRole('button', { name: 'Group: Finance — Tenant 1 (t1)' });
+    await waitFor(() => expect(screen.getByText('Invoice 1')).toBeInTheDocument());
+    expect(screen.queryByText('Invoice 2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('groupTenantId=t1');
+  });
+
+  it.each([
+    { initial: '/processes?group=finance&groupTenantId=t2', label: 'Finance — Tenant 2 (t2)', both: false },
+    { initial: '/processes?group=finance', label: 'Finance — All tenants', both: true },
+  ])('restores the group scope from $initial', async ({ initial, label, both }) => {
+    mockSharedCatalog();
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true }, initial);
+    await screen.findByRole('button', { name: `Group: ${label}` });
+    await screen.findByText('Invoice 2');
+    expect(Boolean(screen.queryByText('Invoice 1'))).toBe(both);
+  });
+
+  it('ignores a group tenant qualifier when a concrete tenant is active', async () => {
+    mockSharedCatalog();
+    vi.mocked(api.fetchProcessModels).mockResolvedValue([sharedModels[0]]);
+    vi.mocked(api.fetchProcessGroups).mockResolvedValue([sharedGroups[0]]);
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false },
+      '/processes?group=finance&groupTenantId=t2');
+    await screen.findByText('Invoice 1');
+    expect(screen.getByRole('button', { name: 'Group: Finance' })).toBeInTheDocument();
+    expect(api.fetchProcessModels).toHaveBeenCalledWith('t1', 'finance', null);
+  });
+
+  it.each([
+    { lateFails: false, currentFirst: false }, { lateFails: true, currentFirst: false },
+    { lateFails: false, currentFirst: true }, { lateFails: true, currentFirst: true },
+  ])('hides stale models during tenant switches (late failure: $lateFails, recovered: $currentFirst)', async ({ lateFails, currentFirst }) => {
+    const user = userEvent.setup();
+    const old = deferred<api.ProcessModelListItem[]>();
+    const current = deferred<api.ProcessModelListItem[]>();
+    vi.spyOn(api, 'fetchProcessModels').mockImplementation((tenantId) => {
+      if (tenantId === 't2') return old.promise;
+      if (tenantId === 't3') return current.promise;
+      return Promise.resolve([{ ...sharedModels[0], working_revision: 'r1' }]);
+    });
+    vi.spyOn(api, 'fetchProcessGroups').mockResolvedValue([]);
+    const permissions = vi.spyOn(api, 'checkPermissions').mockResolvedValue({});
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json([])));
+    const session = { scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false };
+    const view = renderWithOutlet(session);
+    await screen.findByText('Invoice 1');
+    await waitFor(() => expect(permissions).toHaveBeenCalledTimes(1));
+    view.rerenderWithContext({ ...session, scopedTenantId: 't2', selectedTenantId: 't2' });
+    expect(screen.queryByText('Invoice 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Finance')).not.toBeInTheDocument();
+    expect(screen.getByText('Loading process models…')).toBeInTheDocument();
+    expect(permissions).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Status: All' }));
+    expect(await screen.findByRole('menuitemradio', { name: 'All 0' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitemradio', { name: 'Published 0' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    view.rerenderWithContext({ ...session, scopedTenantId: 't3', selectedTenantId: 't3' });
+    const recover = async () => {
+      await act(async () => { current.resolve([{ ...sharedModels[1], tenant_id: 't3', display_name: 'Current invoice' }]); });
+      await screen.findByText('Current invoice');
+    };
+    if (currentFirst) await recover();
+    await act(async () => {
+      if (lateFails) old.reject(new Error('Previous tenant failed'));
+      else old.resolve([{ ...sharedModels[1], display_name: 'Stale invoice' }]);
+    });
+    expect(screen.queryByText('Stale invoice')).not.toBeInTheDocument();
+    expect(screen.queryByText('Previous tenant failed')).not.toBeInTheDocument();
+    if (currentFirst) expect(screen.getByText('Current invoice')).toBeInTheDocument();
+    else {
+      expect(screen.getByText('Loading process models…')).toBeInTheDocument();
+      await recover();
+    }
+    expect(permissions).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([null, 't1'])('hides model snapshots when switching from scope %s', async (initialTenant) => {
+    const pending = deferred<api.ProcessModelListItem[]>();
+    vi.spyOn(api, 'fetchProcessModels').mockImplementation((tenantId) =>
+      tenantId === initialTenant ? Promise.resolve(sharedModels) : pending.promise);
+    vi.spyOn(api, 'fetchProcessGroups').mockResolvedValue([]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json([])));
+    const session = { scopedTenantId: initialTenant, selectedTenantId: initialTenant, isSuperAdmin: true };
+    const view = renderWithOutlet(session);
+    await screen.findByText('Invoice 1');
+    const next = initialTenant ? null : 't1';
+    view.rerenderWithContext({ ...session, scopedTenantId: next, selectedTenantId: next });
+    expect(screen.queryByText('Invoice 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Invoice 2')).not.toBeInTheDocument();
+    await act(async () => { pending.resolve([]); });
+    await screen.findByText('No process models');
+  });
+
+  it('clears a previous tenant model error while the next tenant loads', async () => {
+    const pending = deferred<api.ProcessModelListItem[]>();
+    vi.spyOn(api, 'fetchProcessModels').mockImplementation((tenantId) => tenantId === 't1'
+      ? Promise.reject(new Error('Tenant one model error')) : pending.promise);
+    vi.spyOn(api, 'fetchProcessGroups').mockResolvedValue([]);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json([])));
+    const session = { scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false };
+    const view = renderWithOutlet(session);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Tenant one model error');
+    view.rerenderWithContext({ ...session, scopedTenantId: 't2', selectedTenantId: 't2' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await act(async () => { pending.resolve([]); });
+    await screen.findByText('No process models');
   });
 
   it('lists models across tenants for an All-Tenants super-admin', async () => {
@@ -524,7 +685,7 @@ describe('ProcessesPage', () => {
         ]));
       }
       if (url.includes('/process-models')) {
-        // Leave the previous tenant's models in state while the new list loads.
+        // Hold model responses pending while the group options load.
         if (!url.includes('tenantId=t1')) {
           return new Promise<Response>((resolve) => { finishModelRequests.push(resolve); });
         }

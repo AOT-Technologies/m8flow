@@ -11,6 +11,35 @@ const OPTIONS = [
 ];
 
 describe('SortDropdown', () => {
+  it('selects a filtered result with the keyboard when the current selection is hidden', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SortDropdown
+        label="Status"
+        options={OPTIONS}
+        value="published"
+        onChange={onChange}
+        searchPlaceholder="Search statuses"
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Status: Published' });
+    await user.click(trigger);
+    const search = await screen.findByRole('searchbox', { name: 'Search statuses' });
+    await user.type(search, 'draft');
+    expect(search).toHaveFocus();
+    expect(screen.queryByRole('menuitemradio', { name: /^Published/ })).not.toBeInTheDocument();
+    const draft = screen.getByRole('menuitemradio', { name: 'Draft 0' });
+    expect(draft).toHaveAttribute('aria-checked', 'false');
+    await user.keyboard('{ArrowDown}');
+    expect(draft).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('draft');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it('keeps counts out of the trigger and marks only the selected row checked', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
