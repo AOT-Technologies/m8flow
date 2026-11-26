@@ -17,6 +17,7 @@ import {
   canDeleteGalleryTemplate,
   canRestoreGalleryTemplate,
   deleteDisabledReason,
+  isActiveTenantTemplate,
   type TemplateGalleryActor,
   type TemplateGalleryMode,
 } from './templateGalleryPermissions';
@@ -322,7 +323,9 @@ function TemplateCard({
     ? t('templates.card.restoreTemplate')
     : actor.isSuperAdmin
       ? t('templates.notAvailableToSuperAdmin')
-      : t('templates.permissions.restore');
+      : !isActiveTenantTemplate(template, actor.activeTenantId)
+        ? t('templates.permissions.otherTenant')
+        : t('templates.permissions.restore');
 
   return (
     <Card

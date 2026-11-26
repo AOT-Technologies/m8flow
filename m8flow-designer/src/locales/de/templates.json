@@ -51,7 +51,8 @@
   "permissions": {
     "restore": "Unzureichende Berechtigungen zum Wiederherstellen gelöschter Vorlagen.",
     "deletePublished": "Unzureichende Berechtigungen zum Löschen veröffentlichter Vorlagen.",
-    "deleteDraft": "Nur der Ersteller der Vorlage oder ein Administrator kann diese Entwurfsvorlage löschen."
+    "deleteDraft": "Nur der Ersteller der Vorlage oder ein Administrator kann diese Entwurfsvorlage löschen.",
+    "otherTenant": "Vorlagen aus einem anderen Mandanten sind schreibgeschützt."
   },
   "deleteDialog": {
     "title": "Vorlage löschen?",

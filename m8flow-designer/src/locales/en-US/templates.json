@@ -51,7 +51,8 @@
   "permissions": {
     "restore": "Insufficient permissions to restore deleted templates.",
     "deletePublished": "Insufficient permissions to delete published templates.",
-    "deleteDraft": "Only the template creator or an admin can delete this draft template."
+    "deleteDraft": "Only the template creator or an admin can delete this draft template.",
+    "otherTenant": "Templates from another tenant are read-only."
   },
   "deleteDialog": {
     "title": "Delete template?",

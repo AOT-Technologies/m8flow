@@ -15,6 +15,7 @@ import { CreateProcessModelFromTemplateDialog } from './components/CreateProcess
 import { TemplateDetailsPanel } from './components/TemplateDetailsPanel';
 import { TemplateFileList } from './components/TemplateFileList';
 import { TemplateVersionSelector } from './components/TemplateVersionSelector';
+import { isActiveTenantTemplate } from './components/templateGalleryPermissions';
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
  * navigation (component-adoption map, ticket 11). */
@@ -34,9 +35,8 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 export default function TemplateModelerPage() {
   const { t } = useTranslation();
   const { templateId: templateIdParam } = useParams<{ templateId: string }>();
-  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  const { activeTenantId, scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   const { canUpdateTemplates, canCreateProcessModelsFromTemplates } = useCapabilities();
-  const canManage = canUpdateTemplates && !isSuperAdmin;
   const canCreateProcessModel = canCreateProcessModelsFromTemplates && !needsTenantForWrite;
   const navigate = useNavigate();
 
@@ -44,6 +44,8 @@ export default function TemplateModelerPage() {
   const validId = Number.isFinite(parsedId);
 
   const [template, setTemplate] = useState<Template | null>(null);
+  const canManage =
+    canUpdateTemplates && !isSuperAdmin && template !== null && isActiveTenantTemplate(template, activeTenantId);
   const [versions, setVersions] = useState<Template[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [loading, setLoading] = useState(validId);

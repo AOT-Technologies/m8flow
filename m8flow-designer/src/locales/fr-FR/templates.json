@@ -53,7 +53,8 @@
   "permissions": {
     "restore": "Autorisations insuffisantes pour restaurer des modèles supprimés.",
     "deletePublished": "Autorisations insuffisantes pour supprimer des modèles publiés.",
-    "deleteDraft": "Seul le créateur du modèle ou un administrateur peut supprimer ce modèle en brouillon."
+    "deleteDraft": "Seul le créateur du modèle ou un administrateur peut supprimer ce modèle en brouillon.",
+    "otherTenant": "Les modèles d'un autre locataire sont en lecture seule."
   },
   "deleteDialog": {
     "title": "Supprimer le modèle ?",

@@ -53,7 +53,8 @@
   "permissions": {
     "restore": "Permissões insuficientes para restaurar templates eliminados.",
     "deletePublished": "Permissões insuficientes para eliminar templates publicados.",
-    "deleteDraft": "Só o criador do template ou um administrador pode eliminar este template em rascunho."
+    "deleteDraft": "Só o criador do template ou um administrador pode eliminar este template em rascunho.",
+    "otherTenant": "Os modelos de outro inquilino são só de leitura."
   },
   "deleteDialog": {
     "title": "Eliminar o template?",

@@ -40,7 +40,7 @@ const SEARCH_DEBOUNCE_MS = 300;
  * rather than relying on that backend leniency.
  */
 export default function TemplatesPage() {
-  const { scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
+  const { activeTenantId, scopedTenantId, isSuperAdmin, needsTenantForWrite } = useActiveTenant();
   const {
     canAccessTenantManagement,
     canImportTemplates,
@@ -58,6 +58,7 @@ export default function TemplatesPage() {
     isSuperAdmin,
     canManageTenant: Boolean(canAccessTenantManagement) && !isSuperAdmin,
     currentUsername: getCurrentUser()?.username ?? null,
+    activeTenantId,
   };
 
   const [searchInput, setSearchInput] = useState('');

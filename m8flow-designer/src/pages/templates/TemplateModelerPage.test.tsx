@@ -26,6 +26,7 @@ function renderAt(
   context: SessionFixtureContext = {
     scopedTenantId: null,
     selectedTenantId: null,
+    activeTenantId: 't1',
     isSuperAdmin: false,
     canManageProcesses: true,
   },
@@ -225,6 +226,30 @@ describe('TemplateModelerPage', () => {
     expect(screen.getByText('PRIVATE')).toBeInTheDocument();
     const put = vi.mocked(fetch).mock.calls.find(([, init]) => init?.method === 'PUT');
     expect(JSON.parse(String(put?.[1]?.body))).toEqual({ is_published: true });
+  });
+
+  it('shows a public template from another tenant read-only', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubTemplateFetch({
+        3: { ...DOCS_ONLY, visibility: 'PUBLIC', files: [{ fileType: 'bpmn' as const, fileName: 'flow.bpmn' }] },
+      }),
+    );
+
+    renderAt('3', {
+      scopedTenantId: null,
+      selectedTenantId: null,
+      activeTenantId: 't2',
+      isSuperAdmin: false,
+      canManageProcesses: true,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Docs Only Template' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Publish' })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Edit file')).not.toBeInTheDocument();
+    expect(screen.getByTitle('View file')).toBeInTheDocument();
   });
 
   it('keeps publish and visibility mutate hidden for super-admin but allows create-from-template', async () => {

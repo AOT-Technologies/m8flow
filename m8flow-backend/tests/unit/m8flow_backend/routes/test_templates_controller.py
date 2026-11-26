@@ -750,3 +750,30 @@ def test_creator_cannot_delete_own_public_draft_from_another_tenant(client, db_s
 
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
     assert client.delete(f"/v1.0/m8flow/templates/{draft}", headers=headers).status_code == 200
+
+
+def test_creator_cannot_manage_own_private_template_from_another_tenant(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    """A private template is hidden outside its tenant, even from its multi-org creator, and stays unchanged."""
+    from m8flow_backend.models.template import TemplateModel
+
+    _template_storage(app, tmp_path, monkeypatch)
+    _login_user(client, db_session, username="editor-multi-p", groups=["t2:editor"], tenant_id="t2")
+    _creator, token = _login_user(client, db_session, username="editor-multi-p", groups=["t1:editor"], tenant_id="t1")
+    headers = _headers(token)
+    published = _create_template(
+        client, token, name="Multi Private", published=True, visibility="PRIVATE"
+    ).get_json()["id"]
+    deleted = _create_template(
+        client, token, name="Multi Private Deleted", published=True, visibility="PRIVATE"
+    ).get_json()["id"]
+    assert client.delete(f"/v1.0/m8flow/templates/{deleted}", headers=headers).status_code == 200
+
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+    assert client.delete(f"/v1.0/m8flow/templates/{published}", headers=headers).status_code == 404
+    assert client.post(f"/v1.0/m8flow/templates/{deleted}/restore", headers=headers).status_code == 404
+
+    db_session.expire_all()
+    assert db_session.get(TemplateModel, published).is_deleted is False
+    assert db_session.get(TemplateModel, deleted).is_deleted is True

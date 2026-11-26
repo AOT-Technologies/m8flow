@@ -55,7 +55,8 @@
   "permissions": {
     "restore": "Nedostatečná oprávnění k obnovení smazaných šablon.",
     "deletePublished": "Nedostatečná oprávnění ke smazání publikovaných šablon.",
-    "deleteDraft": "Tento koncept šablony může smazat pouze jeho autor nebo správce."
+    "deleteDraft": "Tento koncept šablony může smazat pouze jeho autor nebo správce.",
+    "otherTenant": "Šablony z jiného tenantu jsou jen pro čtení."
   },
   "deleteDialog": {
     "title": "Smazat šablonu?",

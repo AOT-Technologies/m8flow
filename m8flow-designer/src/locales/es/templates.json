@@ -53,7 +53,8 @@
   "permissions": {
     "restore": "Permisos insuficientes para restaurar plantillas eliminadas.",
     "deletePublished": "Permisos insuficientes para eliminar plantillas publicadas.",
-    "deleteDraft": "Solo el creador de la plantilla o un administrador puede eliminar esta plantilla en borrador."
+    "deleteDraft": "Solo el creador de la plantilla o un administrador puede eliminar esta plantilla en borrador.",
+    "otherTenant": "Las plantillas de otro inquilino son de solo lectura."
   },
   "deleteDialog": {
     "title": "¿Eliminar plantilla?",
