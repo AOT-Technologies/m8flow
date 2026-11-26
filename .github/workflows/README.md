@@ -66,7 +66,7 @@ exists on Docker Hub. If either check fails, the deploy doesn't run.
 
 The deploy patches the running workload's image (the backend's also patches
 the celery worker, flower, NATS consumer and notification worker), then checks it
-(`<host>` is `dev.m8flow.ai`, `staging.m8flow.ai` for qa, or `demo.m8flow.ai`):
+(`<host>` is `dev.m8flow.ai`, `qa.m8flow.ai` for qa, or `demo.m8flow.ai`):
 
 | Component | Health check after the deploy |
 |---|---|
