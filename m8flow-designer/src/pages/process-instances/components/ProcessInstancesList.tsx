@@ -152,10 +152,9 @@ export function ProcessInstancesList({
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
-  // The All-tenants view trades Involvement for the Tenant column so the table fits; keyed
-  // to the view (not the rows) so columns don't shift between pages.
-  const showInvolvement = !showTenant;
-
+  // All-tenants adds the Tenant column, so it tightens the other columns and drops Involvement to
+  // fit common screen widths (keyed to the view, not the rows, so columns don't shift between
+  // pages). The single-tenant view keeps its original widths.
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
     ...(showTenant
       ? [
@@ -183,32 +182,32 @@ export function ProcessInstancesList({
     {
       key: 'model',
       header: t('processInstances.list.columns.processModel'),
-      width: 'minmax(160px,2fr)',
+      width: showTenant ? 'minmax(160px,2fr)' : 'minmax(200px,2fr)',
       className: 'min-w-0 truncate text-[14px] font-medium text-foreground',
       render: (instance) => <TruncatedText text={instance.process_model_display_name} />,
     },
     {
       key: 'status',
       header: t('common.status'),
-      // Fits the widest pill ("User Input Required"); pills don't wrap or shrink.
+      // Fits the English "User Input Required" pill; longer translations truncate (full label on hover).
       width: '160px',
-      render: (instance) => <Pill {...processInstanceStatusToPillProps(instance.status)} />,
+      render: (instance) => <StatusPill status={instance.status} />,
     },
     {
       key: 'started',
       header: t('processInstances.fields.started'),
-      width: '110px',
+      width: showTenant ? '110px' : '120px',
       className: 'text-[13px] text-muted-foreground',
       render: (instance) => formatRelativeTime(instance.started_at),
     },
     {
       key: 'startedBy',
       header: t('processInstances.fields.startedBy'),
-      width: 'minmax(110px,1fr)',
+      width: showTenant ? 'minmax(110px,1fr)' : '130px',
       className: 'truncate text-[13px] text-muted-foreground',
       render: (instance) => <TruncatedText text={instance.started_by} />,
     },
-    ...(showInvolvement
+    ...(!showTenant
       ? [
           {
             key: 'involvement',
@@ -234,7 +233,7 @@ export function ProcessInstancesList({
     {
       key: 'duration',
       header: t('processInstances.list.columns.duration'),
-      width: '90px',
+      width: showTenant ? '90px' : '100px',
       className: 'text-right font-mono text-[13px] text-muted-foreground',
       render: (instance) =>
         instance.started_at != null && instance.ended_at != null
@@ -372,6 +371,16 @@ export function ProcessInstancesList({
         </Card>
       </div>
     </>
+  );
+}
+
+/** Status pill that truncates inside its column instead of spilling into the next one. */
+function StatusPill({ status }: { status: string }) {
+  const { children: label, ...pillProps } = processInstanceStatusToPillProps(status);
+  return (
+    <Pill {...pillProps} className="max-w-full" title={label}>
+      <span className="min-w-0 truncate">{label}</span>
+    </Pill>
   );
 }
 
