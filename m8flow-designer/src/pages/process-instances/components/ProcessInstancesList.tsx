@@ -152,16 +152,20 @@ export function ProcessInstancesList({
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
+  // Involvement only renders pills, so skip the column when no row on this page has any.
+  const showInvolvement = instances.some((instance) => instance.started_by_me || instance.assigned_to_me);
+
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
     ...(showTenant
       ? [
           {
             key: 'tenant',
             header: t('processInstances.list.columns.tenant'),
-            width: '140px',
+            width: 'minmax(100px,1fr)',
             className: 'truncate text-[13px] text-muted-foreground',
-            render: (instance: ProcessInstanceListItem) =>
-              instance.tenant_name || instance.tenant_id || '—',
+            render: (instance: ProcessInstanceListItem) => (
+              <TruncatedText text={instance.tenant_name || instance.tenant_id} />
+            ),
           } as DataTableColumn<ProcessInstanceListItem>,
         ]
       : []),
@@ -178,9 +182,9 @@ export function ProcessInstancesList({
     {
       key: 'model',
       header: t('processInstances.list.columns.processModel'),
-      width: 'minmax(200px,2fr)',
+      width: 'minmax(160px,2fr)',
       className: 'min-w-0 truncate text-[14px] font-medium text-foreground',
-      render: (instance) => instance.process_model_display_name,
+      render: (instance) => <TruncatedText text={instance.process_model_display_name} />,
     },
     {
       key: 'status',
@@ -191,40 +195,44 @@ export function ProcessInstancesList({
     {
       key: 'started',
       header: t('processInstances.fields.started'),
-      width: '120px',
+      width: '110px',
       className: 'text-[13px] text-muted-foreground',
       render: (instance) => formatRelativeTime(instance.started_at),
     },
     {
       key: 'startedBy',
       header: t('processInstances.fields.startedBy'),
-      width: '130px',
+      width: 'minmax(110px,1fr)',
       className: 'truncate text-[13px] text-muted-foreground',
-      render: (instance) => instance.started_by || '—',
+      render: (instance) => <TruncatedText text={instance.started_by} />,
     },
-    {
-      key: 'involvement',
-      header: t('processInstances.list.columns.involvement'),
-      width: '150px',
-      render: (instance) => (
-        <div className="flex flex-wrap gap-1">
-          {instance.started_by_me ? (
-            <Pill tone="info" dot={false}>
-              {t('processInstances.list.scope.started')}
-            </Pill>
-          ) : null}
-          {instance.assigned_to_me ? (
-            <Pill tone="muted" dot={false}>
-              {t('processInstances.list.scope.assigned')}
-            </Pill>
-          ) : null}
-        </div>
-      ),
-    },
+    ...(showInvolvement
+      ? [
+          {
+            key: 'involvement',
+            header: t('processInstances.list.columns.involvement'),
+            width: '150px',
+            render: (instance: ProcessInstanceListItem) => (
+              <div className="flex flex-wrap gap-1">
+                {instance.started_by_me ? (
+                  <Pill tone="info" dot={false}>
+                    {t('processInstances.list.scope.started')}
+                  </Pill>
+                ) : null}
+                {instance.assigned_to_me ? (
+                  <Pill tone="muted" dot={false}>
+                    {t('processInstances.list.scope.assigned')}
+                  </Pill>
+                ) : null}
+              </div>
+            ),
+          } as DataTableColumn<ProcessInstanceListItem>,
+        ]
+      : []),
     {
       key: 'duration',
       header: t('processInstances.list.columns.duration'),
-      width: '100px',
+      width: '90px',
       className: 'text-right font-mono text-[13px] text-muted-foreground',
       render: (instance) =>
         instance.started_at != null && instance.ended_at != null
@@ -363,6 +371,11 @@ export function ProcessInstancesList({
       </div>
     </>
   );
+}
+
+/** Cell text that shows its full value on hover when the column truncates it. */
+function TruncatedText({ text }: { text?: string | null }) {
+  return text ? <span title={text}>{text}</span> : <>—</>;
 }
 
 /** Read-only per-row overflow menu (Processes.dc.html row kebab). Lifecycle

@@ -97,6 +97,13 @@ describe('ProcessInstancesPage', () => {
     });
     expect(screen.getByText('Tenant Two')).toBeInTheDocument();
     expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Truncatable cells expose their full value on hover.
+    expect(screen.getByText('Tenant One')).toHaveAttribute('title', 'Tenant One');
+    expect(screen.getAllByText('Invoice Approval')[0]).toHaveAttribute('title', 'Invoice Approval');
+    // No row has involvement pills, so the column is dropped to give the others room.
+    expect(screen.queryByRole('columnheader', { name: 'Involvement' })).not.toBeInTheDocument();
+    // The flex-item page must be allowed to shrink so only the table scrolls, not the page.
+    expect(screen.getByRole('main')).toHaveClass('min-w-0');
     // All Tenants means "no tenant filter" -- the param must be omitted.
     expect(lastListUrl(fetchMock)).not.toContain('tenantId=');
   });
