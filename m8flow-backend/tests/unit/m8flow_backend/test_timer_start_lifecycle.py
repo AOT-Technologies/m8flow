@@ -648,4 +648,3 @@ def test_celery_timer_start_poll_is_tenant_isolated(
         ).all()
         assert len(instances) == 1
         assert instances[0].status == "user_input_required"
-

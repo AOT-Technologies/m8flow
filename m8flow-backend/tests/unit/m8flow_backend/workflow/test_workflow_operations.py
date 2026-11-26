@@ -1686,6 +1686,73 @@ def test_versioned_dmn_only_publish_keeps_previous_definition(db_session, tmp_pa
     assert first.bpmn_process_definition.source_dmn_xml == first_dmn
 
 
+@pytest.mark.parametrize("key", sorted(
+    path.parent.name for path in (
+        Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates"
+    ).glob("*/paths.json")
+))
+def test_seed_models_publish_with_released_core(db_session, tmp_path, monkeypatch, key):
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    folder = Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates" / key
+    files = {path.name: path.read_bytes() for path in folder.iterdir() if path.name != "paths.json"}
+    model = versioned.create(db_session, tenant.id, f"e2e-seed-catalog/{key}", name=key, files=files)
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    assert model.latest_version == 1
+    assert model.status == "published"
+
+
+@pytest.mark.parametrize("case_id", ["CMP-01", "CMP-02", "CMP-03", "CMP-04"])
+def test_seed_complaint_signal_paths_complete_with_released_core(db_session, tmp_path, monkeypatch, case_id):
+    from copy import deepcopy
+
+    from m8flow_core.models.task import TaskModel
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    identity.sync_groups(
+        db_session, user=user, tenant_id=tenant.id,
+        group_identifiers=[f"{tenant.id}:{role}" for role in ("editor", "submitter", "reviewer", "tenant-admin")],
+    )
+    identity.sync_lane_groups(
+        db_session, user=user, tenant_id=tenant.id,
+        lane_group_identifiers=["Submitters", "Approvers", "Administrators"],
+    )
+    folder = Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates/customer-complaint"
+    case = next(row for row in json.loads((folder / "paths.json").read_text())["paths"] if row["id"] == case_id)
+    answers = deepcopy(case["answers"])
+    files = {path.name: path.read_bytes() for path in folder.iterdir() if path.name != "paths.json"}
+    model = versioned.create(db_session, tenant.id, "complaints/signals", name="Complaints", files=files)
+    versioned.publish(db_session, model, user_id=user.id, username=user.username)
+    instance = workflow.start(
+        db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier=model.model_id,
+    )
+    for _ in range(20):
+        db_session.refresh(instance)
+        if instance.status == "complete":
+            break
+        pending = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
+        assert len(pending) == 1, (instance.status, [task.task_name for task in pending])
+        task, = pending
+        # Standard-loop work items expose their generated child suffix.
+        identifier = task.task_name.removesuffix(" [child]")
+        payload = answers.get(identifier, {})
+        if isinstance(payload, list):
+            payload = payload.pop(0)
+        workflow.claim(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id)
+        workflow.complete(db_session, tenant_id=tenant.id, work_item_id=task.id, user_id=user.id, task_payload=payload)
+    assert instance.status == "complete"
+    completed = {
+        task.task_definition.properties_json.get("__m8f_task_identifier", task.task_definition.bpmn_identifier)
+        for task in db_session.query(TaskModel).filter_by(process_instance_id=instance.id, state="COMPLETED")
+    }
+    assert set(case.get("expect_completed", [])) <= completed
+    assert not set(case.get("expect_not_reached", [])) & completed
+
+
 def test_versioned_timer_jobs_change_only_on_publish(db_session, tmp_path, monkeypatch):
     from datetime import UTC, timedelta
 
@@ -2574,6 +2641,10 @@ def test_delete_instance_uses_database_journal_foreign_keys(db_session, tmp_path
             sa.Column("process_instance_id", sa.ForeignKey("process_instance.id"), nullable=False),
             *extra_columns,
         )
+    # New core releases also create these tables through ORM metadata. Replace
+    # those empty tables with the migration-only FK layouts this test exercises.
+    for name in ("compensation_record", "compensation_run", "compensation_scope"):
+        connection.exec_driver_sql(f"DROP TABLE IF EXISTS {name}")
     for journal in journals.values():
         journal.create(connection)
 

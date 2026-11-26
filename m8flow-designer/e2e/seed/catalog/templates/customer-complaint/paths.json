@@ -37,14 +37,15 @@
       ],
       "expect_completed": [
         "classify",
-        "catch_resolved",
+        "b_resolved",
         "catch_ready",
         "refund"
       ],
       "expect_not_reached": [
         "supervisor_review",
         "approve_refund",
-        "request_info"
+        "request_info",
+        "b_escalated"
       ],
       "expect_data": {
         "at": "end_closed",
@@ -90,11 +91,12 @@
         "end_investigated_escalated"
       ],
       "expect_completed": [
-        "catch_escalated"
+        "b_escalated"
       ],
       "expect_not_reached": [
         "confirm_customer",
-        "approve_refund"
+        "approve_refund",
+        "b_resolved"
       ],
       "expect_data": {
         "at": "end_closed",
@@ -153,7 +155,13 @@
           "info_complete": true,
           "details": "Parcel arrived two weeks late and the box was damaged"
         }
-      }
+      },
+      "expect_completed": [
+        "b_resolved"
+      ],
+      "expect_not_reached": [
+        "b_escalated"
+      ]
     },
     {
       "id": "CMP-04",
@@ -197,7 +205,13 @@
           "refund_approved": true,
           "refund_limit": 500
         }
-      }
+      },
+      "expect_completed": [
+        "b_resolved"
+      ],
+      "expect_not_reached": [
+        "b_escalated"
+      ]
     }
   ]
 }

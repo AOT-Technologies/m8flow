@@ -52,13 +52,10 @@ def travel_request():
     d = Diagram("e2e_travel_request", "E2E Travel Request", [("Submitters", 2), ("Approvers", 3), ("Administrators", 1)],
                 documentation="An employee requests a business trip. A decision table sets the approval level; the "
                               "manager is reminded and the request goes to finance when it is overdue. Approved trips "
-                              "are booked while the budget hold is recorded in the database, then an itinerary is sent.")
+                              "are booked while the budget hold is recorded in the database, then a local itinerary "
+                              "notification is recorded. External delivery is outside this test fixture.")
     S, A, F = "Submitters", "Approvers", "Administrators"
-    d.root_xml.append('<bpmn:message id="Message_itinerary" name="itinerary" />')
-    # Keep this as a single-process model. The current m8flow-core collaboration
-    # deployment contract requires at least two executable participants; a
-    # black-box participant is not enough. The modeler Messages E2E only needs
-    # the Send Task and its message reference, not a cross-pool message flow.
+    d.root_xml.append("<!-- E2E notifications are recorded locally; no external delivery. -->")
 
     d.start("start_trip", "Trip needed", 0, S)
     d.user("submit_trip", "Submit travel request", 1, S, form="trip-request",
@@ -92,7 +89,7 @@ def travel_request():
                         "[destination, estimated_cost]", fetch=True),
               post="hold_id = hold['command_response']['body']['body'][0][0]")
     d.gateway("gw_join", None, 13, S, kind="parallel")
-    d.send("send_itinerary", "Send itinerary", 14, S, message="Message_itinerary")
+    d.script("send_itinerary", "Record itinerary notification", 14, S, code="itinerary_notification_recorded = True")
     d.end("end_booked", "Trip booked", 15, S)
 
     for a, b in [("start_trip", "submit_trip"), ("submit_trip", "decide_route"), ("decide_route", "gw_route"),
@@ -150,6 +147,8 @@ def customer_complaint():
     S, A, F = "Submitters", "Approvers", "Administrators"
     d.root_xml += ['<bpmn:signal id="Signal_resolved" name="complaint_resolved" />',
                    '<bpmn:signal id="Signal_escalated" name="complaint_escalated" />',
+                   '<bpmn:error id="Error_resolved_outcome" errorCode="RESOLVED_OUTCOME" />',
+                   '<bpmn:error id="Error_escalated_outcome" errorCode="ESCALATED_OUTCOME" />',
                    '<bpmn:error id="Error_refund_limit" name="Refund over limit" errorCode="REFUND_LIMIT" />']
 
     d.start("start_complaint", "Complaint received", 0, S)
@@ -171,9 +170,24 @@ def customer_complaint():
     d.end("end_investigated", "Investigation done", 11, A)
     d.throw("throw_escalated", "Escalated", 10, A, 1, definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
     d.end("end_investigated_escalated", "Investigation escalated", 11, A, 1)
-    d.gateway("gw_wait", "Resolved or escalated?", 8, S, kind="eventBased")
-    d.catch("catch_resolved", "Resolved", 9, S, definition='<bpmn:signalEventDefinition signalRef="Signal_resolved" />')
-    d.catch("catch_escalated", "Escalated", 9, S, 1, definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
+    # Core 1.1.0b1 does not register signal catches behind an event-based
+    # gateway. Keep real signal events, using an interruptible wait scope so
+    # the winning signal cancels the other catch before leaving the scope.
+    d.container("wait_for_outcome", "Await investigation signal", 8, S, span=4, height_rows=2)
+    d.start("wait_start", None, 8, S, 0.5, parent="wait_for_outcome")
+    d.gateway("wait_fork", None, 9, S, 0.5, kind="parallel", parent="wait_for_outcome")
+    d.catch("catch_resolved", "Resolved", 10, S, parent="wait_for_outcome",
+            definition='<bpmn:signalEventDefinition signalRef="Signal_resolved" />')
+    d.catch("catch_escalated", "Escalated", 10, S, 1, parent="wait_for_outcome",
+            definition='<bpmn:signalEventDefinition signalRef="Signal_escalated" />')
+    d.end("resolved_outcome", "Resolved outcome", 11, S, parent="wait_for_outcome",
+          definition='<bpmn:errorEventDefinition errorRef="Error_resolved_outcome" />')
+    d.end("escalated_outcome", "Escalated outcome", 11, S, 1, parent="wait_for_outcome",
+          definition='<bpmn:errorEventDefinition errorRef="Error_escalated_outcome" />')
+    d.boundary("b_resolved", "Resolved", "wait_for_outcome", at=0.2,
+               definition='<bpmn:errorEventDefinition errorRef="Error_resolved_outcome" />')
+    d.boundary("b_escalated", "Escalated", "wait_for_outcome", at=0.8,
+               definition='<bpmn:errorEventDefinition errorRef="Error_escalated_outcome" />')
     d.user("confirm_customer", "Confirm with customer", 10, S, form="confirmation")
     d.user("supervisor_review", "Supervisor review", 12, A, 2, form="supervisor-review",
            instructions="Escalated: {{ details }}. Set the refund (0 for none).")
@@ -199,10 +213,11 @@ def customer_complaint():
 
     for a, b in [("start_complaint", "log_complaint"), ("log_complaint", "classify"), ("classify", "ack_complaint"),
                  ("ack_complaint", "gw_details"), ("request_info", "gw_details_done"), ("gw_details_done", "gw_fork"),
-                 ("gw_fork", "investigate"), ("gw_fork", "gw_wait"), ("investigate", "gw_outcome"),
+                 ("gw_fork", "investigate"), ("gw_fork", "wait_for_outcome"), ("investigate", "gw_outcome"),
                  ("throw_resolved", "end_investigated"), ("throw_escalated", "end_investigated_escalated"),
-                 ("gw_wait", "catch_resolved"), ("gw_wait", "catch_escalated"), ("catch_resolved", "confirm_customer"),
-                 ("catch_escalated", "supervisor_review"), ("confirm_customer", "gw_resolution"),
+                 ("wait_start", "wait_fork"), ("wait_fork", "catch_resolved"), ("wait_fork", "catch_escalated"),
+                 ("catch_resolved", "resolved_outcome"), ("catch_escalated", "escalated_outcome"),
+                 ("b_resolved", "confirm_customer"), ("b_escalated", "supervisor_review"), ("confirm_customer", "gw_resolution"),
                  ("supervisor_review", "gw_resolution"), ("gw_resolution", "mark_ready"), ("mark_ready", "catch_ready"),
                  ("catch_ready", "refund"), ("refund_start", "check_limit"), ("check_limit", "gw_refund"),
                  ("b_over_limit", "approve_refund"), ("approve_refund", "gw_refund_done"), ("refund", "gw_refund_done"),
@@ -214,8 +229,12 @@ def customer_complaint():
     d.flow("gw_outcome", "throw_resolved", "resolved")
     d.flow("gw_refund", "refund_over", "over limit", "over_limit == True")
     d.flow("gw_refund", "refund_ok", "ok")
-    d.annotate("note_signals", "The supervisor's outcome is signalled to the agent's event gateway",
-               "gw_wait", 6.3, S, 1)
+    d.annotate("note_signals", "The first signal interrupts the wait scope and cancels the other catch",
+               "wait_for_outcome", 6.3, S, 1)
+    for node in d.nodes.values():
+        if node.parent == "refund" or (node.parent is None and node.col >= 13):
+            node.col += 3
+    d.nodes["confirm_customer"].col = 13
 
     routing = dmn("complaint_routing", "Complaint routing",
                   [("Severity", "severity", "string"), ("Category", "category", "string")],
@@ -450,12 +469,10 @@ def content_publishing():
     d = Diagram("e2e_content_publishing", "E2E Content Publishing", [("Submitters", 2), ("Approvers", 1), ("Administrators", 1)],
                 documentation="An author drafts an article; the words are counted and the editor reviews it, and "
                               "sends it back until it is ready. The publisher schedules it; at that time it goes to "
-                              "the chosen channels and sends a notification.")
+                              "the chosen channels and a local subscriber notification is recorded. External delivery "
+                              "is outside this test fixture.")
     S, A, F = "Submitters", "Approvers", "Administrators"
-    d.root_xml.append('<bpmn:message id="Message_new_article" name="new_article" />')
-    # Keep this a single-process model. Current m8flow-core requires at least
-    # two executable participants for collaboration deployment; the seed only
-    # needs the Send Task and its message reference.
+    d.root_xml.append("<!-- E2E notifications are recorded locally; no external delivery. -->")
     d.start("start_article", "Article idea", 0, S)
     d.user("draft_article", "Draft article", 1, S, form="article")
     d.gateway("gw_review_entry", None, 2, S)
@@ -477,7 +494,7 @@ def content_publishing():
     d.gateway("gw_channels_join", None, 11, S, kind="inclusive")
     d.catch("cool_down", "Wait 5 s", 12, S,
             definition='<bpmn:timerEventDefinition><bpmn:timeDuration xsi:type="bpmn:tFormalExpression">"PT5S"</bpmn:timeDuration></bpmn:timerEventDefinition>')
-    d.send("notify_subscribers", "Notify subscribers", 13, S, message="Message_new_article")
+    d.script("notify_subscribers", "Record subscriber notification", 13, S, code="subscriber_notification_recorded = True")
     d.end("end_published", "Article published", 14, S)
     for a, b in [("start_article", "draft_article"), ("draft_article", "gw_review_entry"), ("gw_review_entry", "count_words"),
                  ("count_words", "editorial_review"), ("editorial_review", "gw_changes"),

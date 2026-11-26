@@ -36,7 +36,8 @@ GLOBAL_GROUP = "super-admin"
 # Version 7 lets editors open and submit tasks assigned to them (M8F-647).
 # Version 8 lets tenant admins read tenant-scoped named configuration values.
 # Version 9 lets submitters read task data of their own instances (M8F-678).
-TENANT_PERMISSION_SEED_VERSION = 9
+# Version 10 adds the tenant-admin message correlation grant.
+TENANT_PERMISSION_SEED_VERSION = 10
 
 # Permission-target URI macros used in config/permissions/m8flow.yml, expanded
 # to the same wildcard targets m8flow-core seeds. Kept in sync with the

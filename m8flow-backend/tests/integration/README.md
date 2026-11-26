@@ -72,6 +72,9 @@ with that core. The existing scheduler poller delivers collaboration messages.
 | `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it (M8F-665) |
 | `test_multi_instance_bpmn.py` | Sequential and parallel multi-instance loops: collection and cardinality inputs, output mapping errors, completion conditions, and a parallel review through claim and complete in which each iteration keeps its own data (M8F-640) |
 | `test_schema_matches_core.py` | The migrated schema matches core's ORM; the runtime role is subject to RLS |
+| `test_message_correlation.py` | HTTP delivery, replay, ambiguous or missing matches, tenant isolation, and upgrades from both previous host heads |
+| `test_collaboration.py` | Modeled collaboration messages and delivery across isolated tenants |
+| `test_seed_complaint.py` | All four complaint paths with real signal events, losing-branch cancellation, separate role users, and tenant RLS |
 
 `tests/unit/m8flow_backend/test_core_contract.py` is the fast companion: it
 checks the core imports, attributes, call signatures, and string protocols the
