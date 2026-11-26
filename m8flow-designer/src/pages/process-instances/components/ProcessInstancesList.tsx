@@ -152,8 +152,9 @@ export function ProcessInstancesList({
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
-  // Involvement only renders pills, so skip the column when no row on this page has any.
-  const showInvolvement = instances.some((instance) => instance.started_by_me || instance.assigned_to_me);
+  // The All-tenants view trades Involvement for the Tenant column so the table fits; keyed
+  // to the view (not the rows) so columns don't shift between pages.
+  const showInvolvement = !showTenant;
 
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
     ...(showTenant
@@ -189,7 +190,8 @@ export function ProcessInstancesList({
     {
       key: 'status',
       header: t('common.status'),
-      width: '130px',
+      // Fits the widest pill ("User Input Required"); pills don't wrap or shrink.
+      width: '160px',
       render: (instance) => <Pill {...processInstanceStatusToPillProps(instance.status)} />,
     },
     {

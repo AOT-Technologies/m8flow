@@ -84,7 +84,7 @@ describe('ProcessInstancesPage', () => {
   it('lists across tenants for an All-Tenants super-admin, with a tenant column', async () => {
     const fetchMock = stubFetch({
       results: [
-        mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One' }),
+        mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One', started_by_me: true }),
         mockInstance({ id: 2, tenant_id: 't2', tenant_name: 'Tenant Two' }),
       ],
       pagination: { count: 2, total: 2, pages: 1 },
@@ -100,7 +100,7 @@ describe('ProcessInstancesPage', () => {
     // Truncatable cells expose their full value on hover.
     expect(screen.getByText('Tenant One')).toHaveAttribute('title', 'Tenant One');
     expect(screen.getAllByText('Invoice Approval')[0]).toHaveAttribute('title', 'Invoice Approval');
-    // No row has involvement pills, so the column is dropped to give the others room.
+    // All-tenants drops Involvement (even when a row has some) so the Tenant column fits.
     expect(screen.queryByRole('columnheader', { name: 'Involvement' })).not.toBeInTheDocument();
     // The flex-item page must be allowed to shrink so only the table scrolls, not the page.
     expect(screen.getByRole('main')).toHaveClass('min-w-0');
