@@ -20,7 +20,7 @@ const PER_PAGE_DEFAULT = 25;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Process Instances list — wired to GET /v1.0/m8flow/process-instances
+ * Process Instances list — wired to GET /m8flow/process-instances
  * (Process Instances + task-state map, ticket 02 —
  * `.scratch/process-instances-task-state/`). Same tenant-gating posture as
  * Processes/Templates: super-admin must pick a concrete tenant, no merged

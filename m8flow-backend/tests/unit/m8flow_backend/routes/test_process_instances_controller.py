@@ -515,7 +515,7 @@ def test_called_child_diagram_follows_file_read_on_the_child_model(client, db_se
     assert response.status_code == 200
     assert seen["bpmn_process_identifier"] == "Child"
     # File-read on the parent does not unlock the child's logic.
-    assert "/v1.0/process-model-files/finance/child" in checked
+    assert "/process-model-files/finance/child" in checked
     assert "secret_total" not in response.get_json()["bpmn_xml"]
 
 

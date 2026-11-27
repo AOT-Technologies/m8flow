@@ -36,8 +36,9 @@ const EMPTY_GROUPS: ProcessGroupListItem[] = [];
 const EMPTY_MODELS: ProcessModelListItem[] = [];
 
 /**
- * Processes models list — wired to GET /v1.0/m8flow/process-models.
- * All-Tenants reads retain each model's owning tenant.
+ * Process model catalog. The shared API client supplies the configured API
+ * version. All-Tenants reads retain each model's owning tenant, while writes
+ * remain scoped to a concrete tenant.
  */
 export default function ProcessesPage() {
   const { t } = useTranslation();

@@ -1,4 +1,5 @@
 import { API_BASE_URL, ApiError, toNetworkError } from './api';
+import { apiVersionPath } from './apiVersion';
 
 export type InvitationValidation = {
   email: string;
@@ -29,7 +30,7 @@ async function readServerMessage(response: Response): Promise<string | undefined
 async function publicJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${apiVersionPath(path)}`, {
     ...init,
     headers,
     credentials: 'include',
@@ -57,7 +58,7 @@ export function invitationErrorMessage(error: unknown, fallback: string): string
 
 export function validateInvitation(token: string): Promise<InvitationValidation> {
   return publicJson<InvitationValidation>(
-    `/v1.0/m8flow/invitations/validate?token=${encodeURIComponent(token)}`,
+    `/m8flow/invitations/validate?token=${encodeURIComponent(token)}`,
   );
 }
 
@@ -65,7 +66,7 @@ export function acceptInvitation(
   token: string,
   password: string,
 ): Promise<AcceptInvitationResult> {
-  return publicJson<AcceptInvitationResult>('/v1.0/m8flow/invitations/accept', {
+  return publicJson<AcceptInvitationResult>('/m8flow/invitations/accept', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ token, password }),

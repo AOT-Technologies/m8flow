@@ -6,13 +6,19 @@ from sqlalchemy.exc import OperationalError
 
 
 def test_readyz_and_status_return_200_when_db_is_up(client):
-    for path in ("/v1.0/readyz", "/v1.0/status"):
+    for path, api_version in (
+        ("/v1.0/readyz", "1.0"),
+        ("/v1.0/status", "1.0"),
+        ("/v2.0/readyz", "2.0"),
+        ("/v2.0/status", "2.0"),
+    ):
         response = client.get(path)
         assert response.status_code == 200
         body = response.get_json()
         assert body["ok"] is True
         assert body["healthy"] is True
         assert body["status"] == "ok"
+        assert body["api_version"] == api_version
 
 
 def test_ping_and_healthy_stay_liveness_when_db_is_down(client, monkeypatch):
@@ -34,9 +40,15 @@ def test_readyz_and_status_return_503_when_db_unreachable(client, monkeypatch):
             raise OperationalError("SELECT 1", {}, Exception("refused"))
 
     monkeypatch.setattr("m8flow_backend.db.get_engine", lambda: _DeadEngine())
-    for path in ("/v1.0/readyz", "/v1.0/status"):
+    for path, api_version in (
+        ("/v1.0/readyz", "1.0"),
+        ("/v1.0/status", "1.0"),
+        ("/v2.0/readyz", "2.0"),
+        ("/v2.0/status", "2.0"),
+    ):
         response = client.get(path)
         assert response.status_code == 503
         body = response.get_json()
         assert body["ok"] is False
         assert body["healthy"] is False
+        assert body["api_version"] == api_version

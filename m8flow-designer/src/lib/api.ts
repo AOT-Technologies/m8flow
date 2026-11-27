@@ -5,6 +5,9 @@ import {
   type OrganizationMembership,
   resumeLoginAfterLogout,
 } from './auth';
+import { apiVersionPath } from './apiVersion';
+
+export { API_VERSION, API_VERSION_PREFIX } from './apiVersion';
 
 /**
  * Absolute backend for direct calls; empty string = same-origin Vite proxy.
@@ -121,14 +124,15 @@ async function readServerError(
 }
 
 // Deduped across concurrent 401s: several in-flight requests hitting an
-// expired access token at once should trigger one /v1.0/refresh call, not
-// one each (same pattern as m8flow-frontend's HttpService). Cleared once
+// expired access token at once should trigger one refresh call for the
+// configured API version, not one per request (same pattern as
+// m8flow-frontend's HttpService). Cleared once
 // that call settles so the next expiry tries again.
 let refreshInFlight: Promise<boolean> | null = null;
 
 function attemptSilentRefresh(): Promise<boolean> {
   if (!refreshInFlight) {
-    refreshInFlight = fetch(`${API_BASE_URL}/v1.0/refresh`, {
+    refreshInFlight = fetch(`${API_BASE_URL}${apiVersionPath('/refresh')}`, {
       method: 'POST',
       credentials: 'include',
     })
@@ -156,9 +160,9 @@ function redirectToLoginAfterFailedRefresh(): void {
 
 /**
  * Shared authenticated fetch — attaches the bearer token, and on a 401
- * transparently tries POST /v1.0/refresh (see login_controller.py) and
- * retries the request once with the refreshed access_token cookie before
- * giving up. This is what makes an expired access token invisible to the
+ * transparently tries POST to the configured API version's refresh endpoint
+ * (see login_controller.py), then retries once with the refreshed access_token
+ * cookie before giving up. This is what makes an expired access token invisible to the
  * user instead of surfacing as a raw "not_authenticated" error; only when
  * the refresh itself fails (or the retried request is still 401) does this
  * fall back to a full Keycloak login redirect. Mirrors m8flow-frontend's
@@ -174,7 +178,7 @@ async function fetchWithAuthRetry(
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${apiVersionPath(path)}`, {
     ...init,
     headers,
     credentials: 'include',
@@ -259,7 +263,7 @@ export async function apiGet<T>(path: string): Promise<T> {
   return request;
 }
 
-const ORGANIZATION_MEMBERSHIPS_PATH = '/v1.0/m8flow/organization-memberships';
+const ORGANIZATION_MEMBERSHIPS_PATH = '/m8flow/organization-memberships';
 
 function asMembership(value: unknown): OrganizationMembership | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -290,7 +294,7 @@ export async function fetchOrganizationMemberships(): Promise<OrganizationMember
 }
 
 export function homeStatsPath(tenantId: string | null | undefined): string {
-  const base = '/v1.0/m8flow/home-stats';
+  const base = '/m8flow/home-stats';
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -302,7 +306,7 @@ export function fetchHomeStats(tenantId: string | null | undefined): Promise<Hom
 }
 
 export function fetchTenants(): Promise<TenantSummary[]> {
-  return apiGet<TenantSummary[]>('/v1.0/m8flow/tenants');
+  return apiGet<TenantSummary[]>('/m8flow/tenants');
 }
 
 export type Capabilities = {
@@ -326,16 +330,20 @@ export type Capabilities = {
  * same allow_uri gate the routes enforce). Used to show/hide Start/Delete on
  * Processes without parsing Keycloak token claims. */
 export function fetchCapabilities(): Promise<Capabilities> {
-  return apiGet<Capabilities>('/v1.0/m8flow/capabilities');
+  return apiGet<Capabilities>('/m8flow/capabilities');
 }
 
 export type PermissionCheckResult = Record<string, Record<string, boolean>>;
 
-/** Ask the backend's compatibility permission-check endpoint for UI actions. */
+/**
+ * Ask the backend's compatibility permission-check endpoint for UI actions.
+ * The endpoint path is versioned by apiFetch; the URIs in the payload identify
+ * RBAC resources and must remain version-neutral.
+ */
 export function checkPermissions(
   requestsToCheck: Record<string, string[]>,
 ): Promise<PermissionCheckResult> {
-  return apiPost<{ results: PermissionCheckResult }>('/v1.0/permissions-check', {
+  return apiPost<{ results: PermissionCheckResult }>('/permissions-check', {
     requests_to_check: requestsToCheck,
   }).then((response) => response.results ?? {});
 }
@@ -350,7 +358,7 @@ export type HomeRecentInstance = {
 };
 
 export function homeRecentInstancesPath(tenantId: string | null | undefined): string {
-  const base = '/v1.0/m8flow/home-recent-instances';
+  const base = '/m8flow/home-recent-instances';
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -375,7 +383,7 @@ export type HomeMyTask = {
 };
 
 export function homeMyTasksPath(tenantId: string | null | undefined): string {
-  const base = '/v1.0/m8flow/home-my-tasks';
+  const base = '/m8flow/home-my-tasks';
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -442,7 +450,7 @@ export function processModelsPath(
     params.set('started_by_id', String(startedById));
   }
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/process-models?${qs}` : '/v1.0/m8flow/process-models';
+  return qs ? `/m8flow/process-models?${qs}` : '/m8flow/process-models';
 }
 
 export function fetchProcessModels(
@@ -469,7 +477,7 @@ export function processGroupsPath(tenantId: string | null | undefined): string {
     params.set('tenantId', tenantId);
   }
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/process-groups?${qs}` : '/v1.0/m8flow/process-groups';
+  return qs ? `/m8flow/process-groups?${qs}` : '/m8flow/process-groups';
 }
 
 export function fetchProcessGroups(
@@ -486,7 +494,7 @@ export type ProcessGroupWriteInput = {
 
 function processGroupWritePath(groupId: string, tenantId?: string | null): string {
   const encodedId = groupId.split('/').map(encodeURIComponent).join(':');
-  const base = `/v1.0/m8flow/process-groups/${encodedId}`;
+  const base = `/m8flow/process-groups/${encodedId}`;
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -498,7 +506,7 @@ export async function createProcessGroup(
   tenantId?: string | null,
 ): Promise<ProcessGroupListItem> {
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-groups${suffix}`;
+  const path = `/m8flow/process-groups${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -550,7 +558,7 @@ export async function createProcessModel(
   tenantId?: string | null,
 ): Promise<ProcessModelIdentity> {
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models${suffix}`;
+  const path = `/m8flow/process-models${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -586,7 +594,7 @@ export async function copyProcessModel(
 ): Promise<ProcessModelIdentity> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/copy${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/copy${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -614,7 +622,7 @@ export async function runProcessModelTests(
 ): Promise<ProcessModelTestRunResult> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/tests/run${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/tests/run${suffix}`;
   const response = await apiFetch(path, { method: 'POST' });
   return (await response.json()) as ProcessModelTestRunResult;
 }
@@ -630,7 +638,7 @@ export async function fetchScriptUnitTests(
 ): Promise<ScriptUnitTest[]> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
   const response = await apiFetch(path);
   const body = (await response.json()) as { tests?: ScriptUnitTest[] };
   return Array.isArray(body.tests) ? body.tests : [];
@@ -648,7 +656,7 @@ export async function createScriptUnitTest(
 ): Promise<ProcessModelVersionState & { ok: boolean; id: string }> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/script-unit-tests${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
@@ -671,7 +679,7 @@ export async function runScriptUnitTest(
 ): Promise<ScriptUnitTestRunResult> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/script-unit-tests/run${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/script-unit-tests/run${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -727,7 +735,7 @@ export function processModelDetailPath(
   // Keep `:` as the slash stand-in. encodeURIComponent would turn it into %3A
   // and the backend path converter would look up a non-existent id.
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
-  const base = `/v1.0/m8flow/process-models/${encodedId}`;
+  const base = `/m8flow/process-models/${encodedId}`;
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -786,7 +794,7 @@ export function processModelFilePath(
   tenantId?: string | null,
 ): string {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
-  const base = `/v1.0/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
+  const base = `/m8flow/process-models/${encodedId}/files/${encodeURIComponent(fileName)}`;
   if (tenantId) {
     return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
   }
@@ -849,7 +857,7 @@ export async function createProcessModelFile(
 ): Promise<ProcessModelFileSaveResult> {
   const encodedId = modifiedId.split(':').map(encodeURIComponent).join(':');
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${encodedId}/files${suffix}`;
+  const path = `/m8flow/process-models/${encodedId}/files${suffix}`;
   const response = await apiFetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...revisionHeader(revision) },
@@ -902,7 +910,7 @@ export async function deleteProcessModel(
   tenantId?: string | null,
 ): Promise<void> {
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  const path = `/v1.0/m8flow/process-models/${modifiedId}${suffix}`;
+  const path = `/m8flow/process-models/${modifiedId}${suffix}`;
   await apiFetch(path, { method: 'DELETE' });
 }
 
@@ -938,5 +946,5 @@ export type ConnectorGroup = {
 
 /** Not tenant-scoped — connectors are platform-level, same as the Connectors page. */
 export function fetchConnectorsGrouped(): Promise<ConnectorGroup[]> {
-  return apiGet<ConnectorGroup[]>('/v1.0/m8flow/connectors-grouped');
+  return apiGet<ConnectorGroup[]>('/m8flow/connectors-grouped');
 }

@@ -488,6 +488,65 @@ def test_tenant_admin_lists_models_with_run_stats(client, db_session, tmp_path, 
     assert hire["status"] == "draft"
 
 
+def test_connexion_process_model_list_grant_is_version_and_tenant_scoped(
+    client, db_session, tmp_path, monkeypatch
+):
+    """The Connexion operation honors real tenant grants through both API versions.
+
+    The user is a member of both tenants but only has the editor grant in t1.
+    This distinguishes tenant-scoped authorization from mere membership and
+    verifies V1/V2 path normalization reaches the same permission resource.
+    """
+    from m8flow_backend.identity import import_yaml
+
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t1")
+    _seed_catalog(tmp_path, monkeypatch, tenant_id="t2")
+    user, token = _login_user(
+        client,
+        db_session,
+        username="versioned-connexion-editor",
+        groups=["t1:editor"],
+        tenant_id="t1",
+        seed_permissions=True,
+    )
+    tenant_t2 = ensure_tenant(db_session, tenant_id="t2", slug="t2")
+    ensure_membership(db_session, user, tenant_t2)
+    # The tenant-qualified group establishes t2 membership, but has no grant
+    # to list models in t2. Materialize t2's real permission rows as well.
+    sync_groups(
+        db_session,
+        user=user,
+        group_identifiers=["t2:unprivileged"],
+        tenant_id="t2",
+    )
+    import_yaml(db_session, tenant_id="t2")
+    db_session.commit()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    results = {}
+    for version_prefix in ("/v1.0", "/v2.0"):
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+        allowed = client.get(
+            f"{version_prefix}/m8flow/process-models", headers=headers
+        )
+        assert allowed.status_code == 200, allowed.get_json()
+        assert {model["tenant_id"] for model in allowed.get_json()} == {"t1"}
+        assert {model["id"] for model in allowed.get_json()} == {
+            "finance/invoice-approval",
+            "onboarding/new-hire",
+        }
+
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
+        denied = client.get(
+            f"{version_prefix}/m8flow/process-models", headers=headers
+        )
+        assert denied.status_code == 200, denied.get_json()
+        assert denied.get_json() == []
+        results[version_prefix] = (allowed.get_json(), denied.get_json())
+
+    assert results["/v1.0"] == results["/v2.0"]
+
+
 def test_process_models_can_filter_by_process_initiator(
     client, db_session, tmp_path, monkeypatch
 ):
@@ -1782,7 +1841,7 @@ def test_update_process_model_rejects_invalid_status_transition(
     assert bad.status_code == 400
     assert bad.get_json()["error_code"] == "invalid_status_transition"
 
-    # An unknown status is rejected by the api.yml enum before it reaches the
+    # An unknown status is rejected by the versioned OpenAPI enum before it reaches the
     # catalog; catalog's own invalid_status check still covers direct/MCP
     # callers that don't go through the schema (see the catalog status tests).
     unknown = client.put(

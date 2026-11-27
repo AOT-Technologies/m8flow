@@ -71,7 +71,7 @@ curl http://localhost:6840/v1.0/status
 The output is similar to the following:
 
 ```json
-{ "healthy": true, "ok": true, "status": "ok" }
+{ "healthy": true, "ok": true, "status": "ok", "api_version": "1.0" }
 ```
 
 ## Step 3: Sign in as a designer

@@ -14,7 +14,7 @@ import { ChevronLeft } from 'lucide-react';
 import i18n from '@/i18n';
 
 /**
- * Process-model overview. Fetches GET /v1.0/m8flow/process-models/{id}
+ * Process-model overview. Fetches GET /m8flow/process-models/{id}
  * and renders the mockup layout. Route ids use `:` for `/`.
  */
 export default function ProcessModelDetailPage() {

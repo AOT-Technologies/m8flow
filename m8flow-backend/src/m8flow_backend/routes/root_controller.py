@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from flask import Response, current_app, jsonify, request
 
+from m8flow_backend.api_versions import DEFAULT_API_VERSION_PREFIX
+
 _API_PATH_PREFIX_CONFIG_KEY = "SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX"
-_DEFAULT_API_PATH_PREFIX = "/v1.0"
+_DEFAULT_API_PATH_PREFIX = DEFAULT_API_VERSION_PREFIX
 
 _LANDING_PAGE_TEMPLATE = """<!doctype html>
 <html lang="en">

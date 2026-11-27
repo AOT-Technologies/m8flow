@@ -1686,7 +1686,7 @@ def _model_file_path(tenant_id: str, path: str) -> Path:
     caller didn't pass an explicit file_name. Prefers process_model.json's
     primary_file_name (the real on-disk name for template-created models);
     falls back to {leaf-of-path}.bpmn only when no metadata exists yet, e.g.
-    a genuinely new model created via POST /v1.0/process-models."""
+    a genuinely new model created through the process-model API."""
     meta = _tenant_json(tenant_id, path, "process_model.json", **_MODEL_PATH_ERROR)
     primary = meta.get("primary_file_name")
     if isinstance(primary, str) and primary.strip():

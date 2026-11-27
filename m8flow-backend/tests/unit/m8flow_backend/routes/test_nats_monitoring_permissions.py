@@ -28,18 +28,19 @@ def _permissions() -> dict:
     return yaml.safe_load((_SRC / "config" / "permissions" / "m8flow.yml").read_text(encoding="utf-8"))["permissions"]
 
 
-def _nats_routes() -> list[str]:
-    spec = yaml.safe_load((_SRC / "api.yml").read_text(encoding="utf-8"))
+def _nats_routes(spec_file: str) -> list[str]:
+    spec = yaml.safe_load((_SRC / spec_file).read_text(encoding="utf-8"))
     return sorted(
         "/v1.0/m8flow" + re.sub(r"\{[^}]+\}", "1", path) for path in spec["paths"] if path.startswith("/nats/")
     )
 
 
-NATS_ROUTES = _nats_routes()
+NATS_ROUTES = _nats_routes("api-v1.yml")
 
 
-def test_all_seven_monitoring_routes_are_declared():
-    assert len(NATS_ROUTES) == 7
+@pytest.mark.parametrize("spec_file", ["api-v1.yml", "api-v2.yml"])
+def test_all_seven_monitoring_routes_are_declared(spec_file):
+    assert len(_nats_routes(spec_file)) == 7
 
 
 def test_nats_monitoring_is_one_super_admin_grant():

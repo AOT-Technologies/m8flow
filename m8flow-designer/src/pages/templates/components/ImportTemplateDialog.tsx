@@ -22,7 +22,7 @@ export type ImportTemplateDialogProps = {
 
 /**
  * "Import" (Template modeler map, ticket 04) — `POST
- * /v1.0/m8flow/templates/import`, a zip previously produced by Export.
+ * /m8flow/templates/import`, a zip previously produced by Export.
  * `template_key` is auto-slugged from `name` (same slug as Save as
  * template) until the user edits the key; clearing it resumes auto-fill.
  */

@@ -68,11 +68,11 @@ function tenantQuery(tenantId: string | null | undefined): string {
 }
 
 export function secretsListPath(filters: SecretListFilters = {}): string {
-  return `/v1.0/secrets${secretsQuery(filters)}`;
+  return `/secrets${secretsQuery(filters)}`;
 }
 
 export function secretItemPath(key: string, tenantId?: string | null): string {
-  return `/v1.0/secrets/${encodeURIComponent(key)}${tenantQuery(tenantId)}`;
+  return `/secrets/${encodeURIComponent(key)}${tenantQuery(tenantId)}`;
 }
 
 export function secretsErrorMessage(error: unknown, fallback: string): string {
@@ -120,7 +120,7 @@ export async function createSecret(
   value: string,
   tenantId?: string | null,
 ): Promise<Secret> {
-  const response = await apiFetch(`/v1.0/secrets${tenantQuery(tenantId)}`, {
+  const response = await apiFetch(`/secrets${tenantQuery(tenantId)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ key, value }),
@@ -128,7 +128,7 @@ export async function createSecret(
   const secret = omitValue(await response.json());
   if (!secret) {
     throw new ApiError(
-      `/v1.0/secrets${tenantQuery(tenantId)}`,
+      `/secrets${tenantQuery(tenantId)}`,
       201,
       'POST',
       i18n.t('configuration.errors.metadataUnreadable'),

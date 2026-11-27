@@ -25,12 +25,12 @@ import {
 
 describe('connectorsApi paths', () => {
   it('encodes the template type', () => {
-    expect(connectorTemplatePath('http')).toBe('/v1.0/m8flow/connector-templates/http');
+    expect(connectorTemplatePath('http')).toBe('/m8flow/connector-templates/http');
   });
 
   it('lists with connector_type and tenant, and omits include_inactive unless false', () => {
     expect(connectorProfilesPath({ connectorType: 'http', tenantId: 't1' })).toBe(
-      '/v1.0/m8flow/connector-profiles?tenantId=t1&connector_type=http',
+      '/m8flow/connector-profiles?tenantId=t1&connector_type=http',
     );
     expect(
       connectorProfilesPath({
@@ -39,13 +39,13 @@ describe('connectorsApi paths', () => {
         tenantId: 't1',
       }),
     ).toBe(
-      '/v1.0/m8flow/connector-profiles?tenantId=t1&connector_type=http&include_inactive=false',
+      '/m8flow/connector-profiles?tenantId=t1&connector_type=http&include_inactive=false',
     );
   });
 
   it('hard-deletes with hard=true', () => {
     expect(connectorProfileItemPath(7, 't1', { hard: 'true' })).toBe(
-      '/v1.0/m8flow/connector-profiles/7?tenantId=t1&hard=true',
+      '/m8flow/connector-profiles/7?tenantId=t1&hard=true',
     );
   });
 

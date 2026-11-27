@@ -117,8 +117,8 @@ EXPECTED_CELERY_ROUTE_SPECS = {
 }
 
 
-def _spec() -> dict:
-    return yaml.safe_load((_SRC / "api.yml").read_text(encoding="utf-8"))
+def _spec(spec_file: str = "api-v1.yml") -> dict:
+    return yaml.safe_load((_SRC / spec_file).read_text(encoding="utf-8"))
 
 
 def _celery_routes() -> list[tuple[str, str]]:
@@ -152,20 +152,22 @@ def _call(client, method: str, path: str, **kwargs):
     return client.get(path, **kwargs)
 
 
-def test_api_yml_celery_routes_exact_match_contract():
-    """Assert api.yml contains all expected Celery paths and no undocumented ones."""
-    spec_paths = {p for p in _spec()["paths"] if "celery" in p}
+@pytest.mark.parametrize("spec_file", ["api-v1.yml", "api-v2.yml"])
+def test_versioned_api_specs_celery_routes_exact_match_contract(spec_file):
+    """Each versioned spec declares exactly the expected Celery paths."""
+    spec_paths = {p for p in _spec(spec_file)["paths"] if "celery" in p}
     expected_paths = set(EXPECTED_CELERY_ROUTE_SPECS.keys())
-    assert spec_paths == expected_paths, f"api.yml celery paths mismatch: {spec_paths ^ expected_paths}"
+    assert spec_paths == expected_paths, f"{spec_file} celery paths mismatch: {spec_paths ^ expected_paths}"
 
 
-def test_route_level_security_in_api_yml_for_all_celery_operations():
+@pytest.mark.parametrize("spec_file", ["api-v1.yml", "api-v2.yml"])
+def test_route_level_security_in_each_api_spec_for_all_celery_operations(spec_file):
     """Explicitly validate route-level security, methods, 401/403 responses,
     and operationId bindings for every /celery/* and /celery/control/* path.
     """
-    spec = _spec()
+    spec = _spec(spec_file)
     for path, expected in EXPECTED_CELERY_ROUTE_SPECS.items():
-        assert path in spec["paths"], f"Route {path} missing from api.yml"
+        assert path in spec["paths"], f"Route {path} missing from {spec_file}"
         path_item = spec["paths"][path]
 
         declared_methods = {
@@ -183,8 +185,8 @@ def test_route_level_security_in_api_yml_for_all_celery_operations():
         )
 
         responses = op.get("responses", {})
-        assert "401" in responses, f"Route {path} {expected['method']} missing 401 response in api.yml"
-        assert "403" in responses, f"Route {path} {expected['method']} missing 403 response in api.yml"
+        assert "401" in responses, f"Route {path} {expected['method']} missing 401 response in {spec_file}"
+        assert "403" in responses, f"Route {path} {expected['method']} missing 403 response in {spec_file}"
 
         assert op.get("operationId") == expected["operation_id"], (
             f"Route {path} operationId mismatch: got {op.get('operationId')}, expected {expected['operation_id']}"
@@ -250,7 +252,7 @@ def test_every_celery_route_maps_to_expected_permissions_yaml():
 def test_controller_handlers_have_strict_gate_decorator_and_super_admin_check():
     """Verify in the controller AST that:
     1. _gate is initialized as require_permission(group_fallback=False).
-    2. Every handler referenced by api.yml operationId is decorated with @_gate.
+    2. Every handler referenced by the versioned OpenAPI operationIds is decorated with @_gate.
     3. Every handler calls _require_super_admin().
     """
     controller_path = _SRC / "routes" / "celery_monitoring_controller.py"

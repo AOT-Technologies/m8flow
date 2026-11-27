@@ -1,11 +1,11 @@
 import { apiFetch, apiGet } from './api';
 
 /**
- * Client for m8flow-backend's `/v1.0/m8flow/task-review*` routes (the Task
+ * Client for m8flow-backend's `/m8flow/task-review*` routes (the Task
  * Review inbox + composite detail + submit). Response shapes read directly
  * from `routes/task_review_controller.py` and the frozen contract
  * (`.scratch/task-review/assets/03-api-contract.md`), snake_case like the
- * app's other `/v1.0/m8flow/*` clients. Timestamps are UTC ISO-8601 values; the
+ * app's other `/m8flow/*` clients. Timestamps are UTC ISO-8601 values; the
  * backend resolves user ids to display names (never leaks ids) and returns
  * raw `event_type` enums — this app owns the wording/formatting.
  */
@@ -59,7 +59,7 @@ export function taskReviewListPath(filters: TaskReviewListFilters = {}): string 
   if (filters.tenantId) params.set('tenantId', filters.tenantId);
   if (filters.sort) params.set('sort', filters.sort);
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/task-review?${qs}` : '/v1.0/m8flow/task-review';
+  return qs ? `/m8flow/task-review?${qs}` : '/m8flow/task-review';
 }
 
 export function fetchTaskReviewList(
@@ -155,7 +155,7 @@ export type TaskReviewDetail = {
  * `tenantId` query param, unlike the list); a super-admin with no cookie reads
  * the task in its own tenant. */
 export function taskReviewDetailPath(taskId: number): string {
-  return `/v1.0/m8flow/task-review/${taskId}`;
+  return `/m8flow/task-review/${taskId}`;
 }
 
 export function fetchTaskReviewDetail(taskId: number): Promise<TaskReviewDetail> {
@@ -185,7 +185,7 @@ export type SubmitTaskReviewResponse = {
 };
 
 export function taskReviewSubmitPath(taskId: number): string {
-  return `/v1.0/m8flow/task-review/${taskId}/submit`;
+  return `/m8flow/task-review/${taskId}/submit`;
 }
 
 export async function submitTaskReview(

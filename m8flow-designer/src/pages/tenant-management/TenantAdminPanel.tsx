@@ -66,7 +66,7 @@ export type TenantAdminPanelProps = {
   /**
    * Alias/status for the header — carried from `TenantsPage`'s registry row
    * via router state (super-admin only; see `TenantManagementPage.tsx`).
-   * `undefined` on the tenant-admin's own-tenant path: `/v1.0/m8flow/tenants`
+   * `undefined` on the tenant-admin's own-tenant path: `/m8flow/tenants`
    * is registry-scoped, so there's no second fetch to fall back to. The
    * header omits whichever piece it doesn't have rather than fabricating one.
    */

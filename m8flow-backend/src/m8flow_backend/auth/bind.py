@@ -21,6 +21,7 @@ from flask import Flask, g, has_request_context, request
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from m8flow_backend.api_versions import paths_for_supported_versions
 from m8flow_backend.errors import ApiError
 from m8flow_backend.auth.tenant_context import (
     SELECTED_TENANT_COOKIE_NAME,
@@ -43,59 +44,71 @@ _AFTER_BEGIN_REGISTERED = threading.Event()
 # prefix + each path so both prefixed and unprefixed deployments work.
 _WSGI_PATH_PREFIX = os.getenv("SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX", "").strip()
 
-# Base (unprefixed) paths that are exempt from tenant context resolution.
-_BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
-    "/.well-known",
-    "/favicon.ico",
-    "/v1.0/ping",
-    "/v1.0/m8flow/ping",
-    "/v1.0/healthy",
-    "/v1.0/status",
-    "/v1.0/readyz",
-    "/v1.0/openapi.json",
-    "/v1.0/openapi.yaml",
+# Version-neutral suffixes whose routes do not require tenant-context binding.
+_VERSIONED_TENANT_CONTEXT_EXEMPT_SUFFIXES: tuple[str, ...] = (
+    "/ping",
+    "/m8flow/ping",
+    "/healthy",
+    "/status",
+    "/readyz",
+    "/openapi.json",
     "/openapi.yaml",
-    "/v1.0/ui",
-    "/v1.0/static",
-    # Connexion serves the spec + Swagger UI under the api base path.
-    "/v1.0/m8flow/openapi.json",
-    "/v1.0/m8flow/openapi.yaml",
-    "/v1.0/m8flow/ui",
-    "/v1.0/logout",
-    "/v1.0/authentication-options",
-    "/v1.0/login",
-    "/v1.0/refresh",
-    "/v1.0/tenants/check",
-    "/v1.0/m8flow/tenant-login-url",
-    "/v1.0/m8flow/organization-memberships",
-    "/v1.0/m8flow/tenant-realms",
-    "/v1.0/m8flow/create-tenant",
-    "/m8flow/create-tenant",
+    "/ui",
+    "/static",
+    # Connexion serves the spec + Swagger UI under the API base path.
+    "/m8flow/openapi.json",
+    "/m8flow/openapi.yaml",
+    "/m8flow/ui",
+    "/logout",
+    "/authentication-options",
+    "/login",
+    "/refresh",
+    "/tenants/check",
+    "/m8flow/tenant-login-url",
     "/m8flow/organization-memberships",
-    # Neutral session description (authProvider-analysis redesign): authenticated, not tenant-scoped.
-    "/v1.0/m8flow/session",
+    "/m8flow/tenant-realms",
+    "/m8flow/create-tenant",
     "/m8flow/session",
-    # Global tenant-management endpoints are authenticated, but they do not belong to a tenant realm.
-    "/v1.0/m8flow/tenants",
     "/m8flow/tenants",
-    # Public invitation accept/validate endpoints: unauthenticated and not tenant-scoped at the
-    # request level (the invitation row carries its own tenant id).
-    "/v1.0/m8flow/invitations",
     "/m8flow/invitations",
 )
 
-# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
-TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
-    _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
-    + (
-        tuple(f"{_WSGI_PATH_PREFIX}{p}" for p in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES)
-        if _WSGI_PATH_PREFIX
-        else ()
-    )
+_UNVERSIONED_TENANT_CONTEXT_EXEMPT_PATHS: tuple[str, ...] = (
+    "/.well-known",
+    "/favicon.ico",
+    "/openapi.yaml",
+    "/m8flow/create-tenant",
+    "/m8flow/organization-memberships",
+    "/m8flow/session",
+    "/m8flow/tenants",
+    "/m8flow/invitations",
 )
 
-# Path suffixes for pre-login tenant selection (no tenant context required). Also included in
-# TENANT_CONTEXT_EXEMPT_PATH_PREFIXES above with /v1.0 prefix.
+# Keep paths that are exposed outside the versioned API, then generate every
+# versioned exemption from the shared API version registry.
+_BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
+    paths_for_supported_versions(_VERSIONED_TENANT_CONTEXT_EXEMPT_SUFFIXES)
+    + _UNVERSIONED_TENANT_CONTEXT_EXEMPT_PATHS
+)
+
+def tenant_context_exempt_path_prefixes(wsgi_path_prefix: str | None) -> tuple[str, ...]:
+    """Build exempt paths for stripped and prefix-preserving ingress modes."""
+    prefix = (wsgi_path_prefix or "").strip().rstrip("/")
+    if prefix and not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    if not prefix:
+        return _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+    return _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES + tuple(
+        f"{prefix}{path}" for path in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+    )
+
+
+# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = tenant_context_exempt_path_prefixes(
+    _WSGI_PATH_PREFIX
+)
+
+# Path suffixes for pre-login tenant selection (no tenant context required).
 PRE_LOGIN_TENANT_SELECTION_PATH_PREFIXES: tuple[str, ...] = ("/tenants/check", "/m8flow/tenant-login-url")
 
 # Backward-compatible aliases while call sites migrate to clearer naming.
@@ -107,8 +120,8 @@ def path_matches_prefix(path: str, prefix: str) -> bool:
     """
     True when path is exactly prefix or is a child path of prefix.
 
-    This avoids prefix-collision bugs like `/v1.0/login_return` matching
-    `/v1.0/login`.
+    This avoids prefix-collision bugs like a login callback matching the login
+    route just because it shares the same initial characters.
     """
     if path == prefix:
         return True

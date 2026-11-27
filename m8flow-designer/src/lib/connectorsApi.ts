@@ -136,7 +136,7 @@ export function connectorsErrorMessage(error: unknown, fallback: string): string
 }
 
 export function connectorTemplatePath(connectorType: string): string {
-  return `/v1.0/m8flow/connector-templates/${encodeURIComponent(connectorType)}`;
+  return `/m8flow/connector-templates/${encodeURIComponent(connectorType)}`;
 }
 
 export function connectorProfilesPath(filters: ConnectorProfileListFilters = {}): string {
@@ -147,7 +147,7 @@ export function connectorProfilesPath(filters: ConnectorProfileListFilters = {})
   if (filters.includeInactive === false) {
     params.set('include_inactive', 'false');
   }
-  return withQuery('/v1.0/m8flow/connector-profiles', params);
+  return withQuery('/m8flow/connector-profiles', params);
 }
 
 export function connectorProfileItemPath(
@@ -161,7 +161,7 @@ export function connectorProfileItemPath(
       params.set(key, value);
     }
   }
-  return withQuery(`/v1.0/m8flow/connector-profiles/${profileId}`, params);
+  return withQuery(`/m8flow/connector-profiles/${profileId}`, params);
 }
 
 export async function fetchConnectorTemplate(connectorType: string): Promise<ConnectorTemplate> {

@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from m8flow_core import api
+from m8flow_backend.api_versions import strip_api_version_prefix
 from m8flow_core.models.permission_assignment import PermissionAssignmentModel
 from m8flow_core.models.principal import PrincipalModel
 from m8flow_core.models.user import UserModel
@@ -17,11 +18,9 @@ from m8flow_backend.integrations.auth.base.roles import SUPER_ADMIN_ROLE
 from m8flow_backend.auth.canonicalize import current_tenant_identifiers, request_memo
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
-# m8flow.yml's permission uris are written without this prefix (`/tasks`, not
-# `/v1.0/tasks`); every real caller passes the actual route path, prefix and
-# all. Without stripping it here, _uri_permitted's DB-backed grant check can
-# never match any real request -- see architecture review finding C5.
-_API_PATH_PREFIX = "/v1.0"
+# m8flow.yml permission URIs are version-neutral (`/tasks`, not
+# a versioned `/tasks` route). Normalize every supported URL version to that same resource
+# path before evaluating a tenant grant.
 # GET here is tenant-wide instance read (M8F-534/M8F-627): instance_initiator_scope
 # tests it, and the editor role-name fallback must never stand in for it.
 _TENANT_WIDE_INSTANCE_READ_PATH = "/process-instances"
@@ -39,10 +38,12 @@ _TASK_COMMAND_KEYS = frozenset({"task.claim", "task.complete"})
 # Lifecycle routes are POSTs that authorize as ``execute`` on the instance. Map
 # their paths the same way here, or permissions-check reads POST as ``create`` and
 # the submitter's start grant (create /process-instances*) reports them allowed.
-# The regex accepts an optional API version prefix (such as /v1.0) and optional
-# trailing slash so versioned and unversioned checks normalize identically.
+# ``allow_uri`` removes supported API prefixes before this route mapping, so
+# this matcher operates only on canonical resource paths. Keeping versions out
+# of the pattern also prevents unsupported prefixes from being treated as API
+# aliases by permission checks.
 _LIFECYCLE_ROUTE = re.compile(
-    r"(?:/v\d+(?:\.\d+)?)?(/process-instances/[^/]+)/(?:suspend|resume|terminate|retry)/?"
+    r"(/process-instances/[^/]+)/(?:suspend|resume|terminate|retry)/?"
 )
 _PROCESS_MODEL_VERSION_ROUTE = re.compile(
     r"/m8flow/process-models/([^/]+)/(versions|publish|working-version|start)"
@@ -87,7 +88,7 @@ def _normalize_route_resource_id(resource_id: object, path_prefix: str | None) -
 
     Core normally supplies an integer or UUID for ``resource_id``. During
     rolling upgrades, callers may instead provide an already formatted route,
-    a route without its leading slash, or the full ``/v1.0`` API path. Accept
+    a route without its leading slash, or a full versioned API path. Accept
     those equivalent representations without changing direct typed-resource
     matching or broadening the route prefix beyond the caller's explicit
     ``path_prefix``.
@@ -262,10 +263,7 @@ _NO_GROUP_FALLBACK_PREFIXES = (
 
 
 def _without_api_path_prefix(path: str) -> str:
-    cleaned = path if path.startswith("/") else f"/{path}"
-    if cleaned.startswith(_API_PATH_PREFIX):
-        return cleaned[len(_API_PATH_PREFIX):] or "/"
-    return path
+    return strip_api_version_prefix(path)
 
 
 def _normalize_authorization_path(path: str) -> str:

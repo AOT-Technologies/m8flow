@@ -246,6 +246,7 @@ $backendPort = if ($PSBoundParameters.ContainsKey('Port')) {
 } else {
   $defaultBackendPort
 }
+$apiVersion = if ($env:M8FLOW_API_VERSION) { $env:M8FLOW_API_VERSION } else { '1.0' }
 
 Write-LauncherStatus ("Preparing backend startup (port={0}, reload={1}, uv_runner={2})" -f $backendPort, [bool]$Reload, $script:UseUvRunner)
 if ($Reload) {
@@ -275,5 +276,5 @@ if ($Reload) {
   $uvicornArgs += @('--reload-exclude', '.git/**')
 }
 
-Write-LauncherStatus "Starting Uvicorn. The backend is ready once '/v1.0/status' returns 200."
+Write-LauncherStatus "Starting Uvicorn. The backend is ready once '/v$apiVersion/status' returns 200."
 Invoke-BackendPython $uvicornArgs

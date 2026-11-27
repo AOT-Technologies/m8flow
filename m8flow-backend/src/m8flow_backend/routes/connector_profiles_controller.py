@@ -24,7 +24,7 @@ from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 
 # Show's config prefill check and the PUT/DELETE gate share this URI so they
 # can't drift apart.
-_PROFILE_URI = "/v1.0/m8flow/connector-profiles/{profile_id}"
+_PROFILE_URI = "/m8flow/connector-profiles/{profile_id}"
 _manage_profile = require_permission(
     uri=_PROFILE_URI,
     forbidden_message="Not allowed to manage connector profiles",
@@ -61,7 +61,7 @@ def connector_template_list() -> flask.wrappers.Response:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/connector-templates/{connector_type}",
+    uri="/m8flow/connector-templates/{connector_type}",
     forbidden_message="Not allowed to read connector templates",
 )
 def connector_template_show(connector_type: str) -> flask.wrappers.Response:

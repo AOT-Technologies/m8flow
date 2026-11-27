@@ -213,7 +213,7 @@ def app(connexion_app):
 
 @pytest.fixture
 def client(connexion_app):
-    # Connexion's ASGI test client reaches both the api.yml operations and the
+    # Connexion's ASGI test client reaches both versioned OpenAPI operations and the
     # plain-Flask v1/root routes (fall-through). follow_redirects=False matches
     # the Flask test client the suite expects (login tests assert 302s).
     return _ClientShim(connexion_app.test_client(follow_redirects=False))

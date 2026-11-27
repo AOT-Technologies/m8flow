@@ -37,7 +37,7 @@ type InvitationListQuery = {
 };
 
 function invitationsPath(tenantId: string, suffix = ''): string {
-  return `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}/invitations${suffix}`;
+  return `/m8flow/tenants/${encodeURIComponent(tenantId)}/invitations${suffix}`;
 }
 
 function withQuery(path: string, query: InvitationListQuery = {}): string {

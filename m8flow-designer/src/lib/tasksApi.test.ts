@@ -24,30 +24,30 @@ beforeEach(() => {
 
 describe('taskReviewListPath', () => {
   it('builds the bare path with no filters', () => {
-    expect(taskReviewListPath()).toBe('/v1.0/m8flow/task-review');
-    expect(taskReviewListPath({})).toBe('/v1.0/m8flow/task-review');
+    expect(taskReviewListPath()).toBe('/m8flow/task-review');
+    expect(taskReviewListPath({})).toBe('/m8flow/task-review');
   });
 
   it('appends page / per_page / tenantId', () => {
     expect(taskReviewListPath({ page: 2, perPage: 20, tenantId: 't1' })).toBe(
-      '/v1.0/m8flow/task-review?page=2&per_page=20&tenantId=t1',
+      '/m8flow/task-review?page=2&per_page=20&tenantId=t1',
     );
   });
 
   it('omits unset filters and a null tenantId', () => {
     expect(taskReviewListPath({ page: 1, tenantId: null })).toBe(
-      '/v1.0/m8flow/task-review?page=1',
+      '/m8flow/task-review?page=1',
     );
   });
 });
 
 describe('detail + submit paths', () => {
   it('builds the detail path (no tenant query — cookie-scoped)', () => {
-    expect(taskReviewDetailPath(42)).toBe('/v1.0/m8flow/task-review/42');
+    expect(taskReviewDetailPath(42)).toBe('/m8flow/task-review/42');
   });
 
   it('builds the submit path', () => {
-    expect(taskReviewSubmitPath(42)).toBe('/v1.0/m8flow/task-review/42/submit');
+    expect(taskReviewSubmitPath(42)).toBe('/m8flow/task-review/42/submit');
   });
 });
 
@@ -56,7 +56,7 @@ describe('fetchTaskReviewList', () => {
     const payload = { results: [], pagination: { page: 1, per_page: 20, total: 0 } };
     mockApiGet.mockResolvedValue(payload);
     const out = await fetchTaskReviewList({ page: 1, perPage: 20 });
-    expect(mockApiGet).toHaveBeenCalledWith('/v1.0/m8flow/task-review?page=1&per_page=20');
+    expect(mockApiGet).toHaveBeenCalledWith('/m8flow/task-review?page=1&per_page=20');
     expect(out).toBe(payload);
   });
 });
@@ -65,7 +65,7 @@ describe('fetchTaskReviewDetail', () => {
   it('calls apiGet with the detail path', async () => {
     mockApiGet.mockResolvedValue({ task: { id: 42 } });
     await fetchTaskReviewDetail(42);
-    expect(mockApiGet).toHaveBeenCalledWith('/v1.0/m8flow/task-review/42');
+    expect(mockApiGet).toHaveBeenCalledWith('/m8flow/task-review/42');
   });
 });
 
@@ -83,7 +83,7 @@ describe('submitTaskReview', () => {
       wfh_date: '2026-09-01',
       reason: 'Focus time',
     });
-    expect(mockApiFetch).toHaveBeenCalledWith('/v1.0/m8flow/task-review/42/submit', {
+    expect(mockApiFetch).toHaveBeenCalledWith('/m8flow/task-review/42/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ outcome: 'approve', wfh_date: '2026-09-01', reason: 'Focus time' }),
@@ -101,7 +101,7 @@ describe('submitTaskReview', () => {
       }),
     });
     await submitTaskReview(7);
-    expect(mockApiFetch).toHaveBeenCalledWith('/v1.0/m8flow/task-review/7/submit', {
+    expect(mockApiFetch).toHaveBeenCalledWith('/m8flow/task-review/7/submit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',

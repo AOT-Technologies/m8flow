@@ -25,7 +25,7 @@ class ApiError(Exception):
         process_instance_id: int | None = None,
     ) -> None:
         super().__init__(message)
-        # api.yml ErrorData.errors is `additionalProperties: string`; checked here
+        # Versioned ErrorData schemas define `additionalProperties: string`; checked here
         # so no endpoint can return a shape the contract doesn't allow.
         if errors is not None and not (
             isinstance(errors, dict)

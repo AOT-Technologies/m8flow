@@ -31,9 +31,9 @@ The backend source is in `m8flow-backend/src/m8flow_backend/`:
 | Path | Contents |
 |---|---|
 | `app.py` | Builds the ASGI app: middleware, error handlers, routes, and the OpenAPI mount |
-| `api.yml` | OpenAPI spec for every `/v1.0/m8flow/` endpoint |
+| `api-v1.yml`, `api-v2.yml` | Independent OpenAPI contracts mounted under their matching `/v1.0/m8flow/` and `/v2.0/m8flow/` prefixes |
 | `workflow/`, `catalog/`, `human_task/`, `scheduler/`, `identity/`, `auth/`, `authorization/`, `secrets/` | The eight host modules |
-| `routes/` | Route handlers. `v1.py` registers the `/v1.0/` routes. |
+| `routes/` | Route handlers. `v1.py` registers Flask routes; supported URL versions share these handlers unless an endpoint's contract diverges. |
 | `integrations/auth/` | The auth provider seam and the Keycloak provider |
 | `connectors/` | Connector catalog, profiles, and run-time parameter filling |
 | `services/` | Supporting services: templates, invitations, NATS, email, and tenants |

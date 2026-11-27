@@ -38,7 +38,7 @@ The compatibility promise covers the following:
 
 | Surface | Where it's defined |
 |---|---|
-| HTTP API under `/v1.0/` and `/v1.0/m8flow/`: paths, methods, request and response fields, and status codes | [`api.yml`](../../m8flow-backend/src/m8flow_backend/api.yml) and the [HTTP API reference](http-api.md) |
+| Versioned HTTP API under `/v{version}/` and `/v{version}/m8flow/`: paths, methods, request and response fields, and status codes | [`api-v1.yml`](../../m8flow-backend/src/m8flow_backend/api-v1.yml), [`api-v2.yml`](../../m8flow-backend/src/m8flow_backend/api-v2.yml), and the [HTTP API reference](http-api.md) |
 | Configuration: documented environment variables, their defaults, and their meaning | [Configuration](configuration.md) and [`sample.env`](../../sample.env) |
 | Process models: the BPMN and DMN elements m8flow runs, its BPMN extension attributes, and the `M8FLOW_SECRET:<key>` reference syntax | [BPMN support](bpmn-support.md) |
 | Roles and permissions: the seven role names and what each allows | [Roles and permissions](roles-and-permissions.md) |
@@ -46,6 +46,17 @@ The compatibility promise covers the following:
 | MCP server: tool names and their arguments | [Set up the MCP server and the MCP Tools page](../how-to/set-up-mcp-tools.md) |
 | Auth provider interface for other identity providers | [Write an auth provider](../auth-provider/writing-a-provider.md) |
 | Stored data: an upgrade within a major version keeps your process models, instances, tasks, tenants, and secrets | [Upgrade m8flow](../how-to/upgrade.md) |
+
+### HTTP API versions
+
+The URL selects the API version. The currently supported prefixes are `/v1.0/`
+and `/v2.0/`; requests that use the original `/v1.0/` prefix keep their
+existing behavior. Each version has an independent OpenAPI contract in its own
+file: `api-v1.yml` or `api-v2.yml`. The contracts currently describe the same
+operations and payloads. A contract change for one version must be made only
+in that version's spec; handlers may be shared while their behavior remains
+the same. When behavior diverges, use a version-specific handler and keep the
+other version's contract and behavior unchanged.
 
 ## Not covered
 
@@ -70,7 +81,7 @@ A public feature is removed only in a major version. Before that:
 
 1. The feature is marked **deprecated** in a minor release, in the changelog
    and in its documentation. Deprecated HTTP operations are marked
-   `deprecated: true` in `api.yml`.
+   `deprecated: true` in the relevant versioned OpenAPI spec.
 2. The deprecated feature keeps working for the rest of that major version.
 3. The major release that removes it lists the removal under **Breaking** in
    the changelog, with what to use instead.

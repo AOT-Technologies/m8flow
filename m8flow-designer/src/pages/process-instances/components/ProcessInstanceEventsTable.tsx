@@ -55,7 +55,7 @@ function options(values: string[], anyLabel: string) {
 
 /**
  * Events tab body for process instance detail. Fetches
- * GET /v1.0/m8flow/process-instances/{id}/events (paged, filterable).
+ * GET /m8flow/process-instances/{id}/events (paged, filterable).
  * Task-completion/failure timestamps link to `?to_task_guid=` (the page
  * re-renders the diagram as of that task); failed events open their
  * recorded error.

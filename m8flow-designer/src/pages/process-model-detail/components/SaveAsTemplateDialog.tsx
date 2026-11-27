@@ -68,7 +68,7 @@ function validateName(name: string): string | null {
 
 /**
  * Save as template — packs a process model's .bpmn / .json / .dmn / .md files
- * into a new draft via POST /v1.0/m8flow/templates (multipart). Same field
+ * into a new draft via POST /m8flow/templates (multipart). Same field
  * set as the old product modal; layout matches Import template.
  */
 export function SaveAsTemplateDialog({

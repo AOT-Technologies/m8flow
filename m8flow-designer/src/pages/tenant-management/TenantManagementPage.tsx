@@ -15,7 +15,7 @@ type TenantManagementLocationState = {
    * second fetch. Absent on the tenant-admin's own-tenant path (bare
    * `/tenant-management`) and on direct navigation to a super-admin URL —
    * `TenantAdminPanel` renders without them rather than fetching, since
-   * `/v1.0/m8flow/tenants` is registry-scoped (super-admin only).
+   * `/m8flow/tenants` is registry-scoped (super-admin only).
    */
   tenantSlug?: string;
   tenantStatus?: TenantStatus;

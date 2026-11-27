@@ -21,7 +21,7 @@ export type TenantSwitcherProps = {
  * with >=2 org memberships (Sidebar renders the read-only chip below that).
  *
  * The switch reuses the same backend finalization hop the "Select a tenant"
- * gate uses (`finalizeTenantLogin` -> GET /v1.0/login?...&tenant=X&
+ * gate uses (`finalizeTenantLogin` -> GET /login?...&tenant=X&
  * tenant_finalization=1): the backend records the active org, refresh-remints a
  * Keycloak token carrying the target tenant's claims, updates the
  * m8flow_selected_tenant cookie, and redirects back here -- so the page reloads

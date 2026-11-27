@@ -19,12 +19,12 @@ describe('templateErrorMessage', () => {
   const fallback = 'Failed to import template';
 
   it("returns the backend's message from an ApiError", () => {
-    const err = new ApiError('/v1.0/m8flow/templates/import', 400, 'POST', 'Zip must contain at least one .bpmn file');
+    const err = new ApiError('/m8flow/templates/import', 400, 'POST', 'Zip must contain at least one .bpmn file');
     expect(templateErrorMessage(err, fallback)).toBe('Zip must contain at least one .bpmn file');
   });
 
   it('returns the fallback, not "POST … failed: 413", when the ApiError has no server message', () => {
-    const err = new ApiError('/v1.0/m8flow/templates/import', 413, 'POST');
+    const err = new ApiError('/m8flow/templates/import', 413, 'POST');
     expect(templateErrorMessage(err, fallback)).toBe(fallback);
   });
 
@@ -40,8 +40,8 @@ describe('templateErrorMessage', () => {
 
 describe('templatesPath', () => {
   it('builds the bare path with no filters', () => {
-    expect(templatesPath()).toBe('/v1.0/m8flow/templates');
-    expect(templatesPath({})).toBe('/v1.0/m8flow/templates');
+    expect(templatesPath()).toBe('/m8flow/templates');
+    expect(templatesPath({})).toBe('/m8flow/templates');
   });
 
   it('translates camelCase filters to the backend\'s snake_case query params', () => {
@@ -64,7 +64,7 @@ describe('templatesPath', () => {
         tenantId: 't1',
       }),
     ).toBe(
-      '/v1.0/m8flow/templates?latest_only=false&category=finance&tag=approval&owner=editor' +
+      '/m8flow/templates?latest_only=false&category=finance&tag=approval&owner=editor' +
         '&visibility=PUBLIC&search=invoice&template_key=invoice-v1&published_only=true' +
         '&include_deleted=true&deleted_only=false&sort_by=name&order=asc&page=2&per_page=25' +
         '&tenantId=t1',
@@ -73,22 +73,22 @@ describe('templatesPath', () => {
 
   it('omits falsy string filters but keeps explicit booleans/numbers', () => {
     expect(templatesPath({ category: '', page: 1, deletedOnly: false })).toBe(
-      '/v1.0/m8flow/templates?deleted_only=false&page=1',
+      '/m8flow/templates?deleted_only=false&page=1',
     );
   });
 });
 
 describe('templatePath', () => {
   it('builds the bare path with no options', () => {
-    expect(templatePath(7)).toBe('/v1.0/m8flow/templates/7');
+    expect(templatePath(7)).toBe('/m8flow/templates/7');
   });
 
   it('appends include_contents and include_deleted when set', () => {
     expect(templatePath(7, { includeContents: false })).toBe(
-      '/v1.0/m8flow/templates/7?include_contents=false',
+      '/m8flow/templates/7?include_contents=false',
     );
     expect(templatePath(7, { includeContents: true, includeDeleted: true })).toBe(
-      '/v1.0/m8flow/templates/7?include_contents=true&include_deleted=true',
+      '/m8flow/templates/7?include_contents=true&include_deleted=true',
     );
   });
 });

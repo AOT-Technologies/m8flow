@@ -6,7 +6,7 @@ import { apiGet, apiPost } from './api';
  * The backend caches one inspect round for a few seconds, so the live calls a refresh
  * makes cost the broker one broadcast round.
  */
-const BASE_PATH = '/v1.0/m8flow/celery';
+const BASE_PATH = '/m8flow/celery';
 
 export type CeleryQueue = {
   name: string;

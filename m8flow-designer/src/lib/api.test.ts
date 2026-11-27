@@ -31,8 +31,8 @@ describe('apiGet', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const [a, b] = await Promise.all([
-      apiGet('/v1.0/m8flow/home-stats'),
-      apiGet('/v1.0/m8flow/home-stats'),
+      apiGet('/m8flow/home-stats'),
+      apiGet('/m8flow/home-stats'),
     ]);
 
     expect(a).toEqual({ n: 1 });
@@ -51,8 +51,8 @@ describe('apiGet', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const [stats, tasks] = await Promise.all([
-      apiGet<{ kind: string }>('/v1.0/m8flow/home-stats'),
-      apiGet<{ kind: string }>('/v1.0/m8flow/home-my-tasks'),
+      apiGet<{ kind: string }>('/m8flow/home-stats'),
+      apiGet<{ kind: string }>('/m8flow/home-my-tasks'),
     ]);
 
     expect(stats).toEqual({ kind: 'stats' });
@@ -67,8 +67,8 @@ describe('apiGet', () => {
       .mockResolvedValueOnce(makeResponse({ ok: true, status: 200, body: { n: 2 } }));
     vi.stubGlobal('fetch', fetchMock);
 
-    expect(await apiGet('/v1.0/m8flow/home-stats')).toEqual({ n: 1 });
-    expect(await apiGet('/v1.0/m8flow/home-stats')).toEqual({ n: 2 });
+    expect(await apiGet('/m8flow/home-stats')).toEqual({ n: 1 });
+    expect(await apiGet('/m8flow/home-stats')).toEqual({ n: 2 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -76,7 +76,7 @@ describe('apiGet', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(makeResponse({ ok: false, status: 404 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(apiGet('/v1.0/m8flow/process-models')).rejects.toBeInstanceOf(ApiError);
+    await expect(apiGet('/m8flow/process-models')).rejects.toBeInstanceOf(ApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -97,7 +97,7 @@ describe('apiGet', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      await apiGet('/v1.0/m8flow/process-models');
+      await apiGet('/m8flow/process-models');
       throw new Error('Expected apiGet to fail');
     } catch (error) {
       expect(error).toBeInstanceOf(ApiError);
@@ -112,7 +112,7 @@ describe('apiGet', () => {
   it('turns a dropped connection into a NetworkError with a user-facing message', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
 
-    const error = await apiGet('/v1.0/tasks').catch((e: unknown) => e);
+    const error = await apiGet('/tasks').catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(NetworkError);
     expect((error as Error).message).toBe('Unable to connect. Please check your internet connection.');
@@ -122,14 +122,14 @@ describe('apiGet', () => {
     const abort = new DOMException('aborted', 'AbortError');
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abort));
 
-    await expect(apiGet('/v1.0/tasks')).rejects.toBe(abort);
+    await expect(apiGet('/tasks')).rejects.toBe(abort);
   });
 
   it.each(['Invalid URL', 'Request with GET/HEAD method cannot have body.'])(
     'preserves non-network fetch TypeErrors (%s)', async (message) => {
       const error = new TypeError(message);
       vi.stubGlobal('fetch', vi.fn().mockRejectedValue(error));
-      await expect(apiGet('/v1.0/tasks')).rejects.toBe(error);
+      await expect(apiGet('/tasks')).rejects.toBe(error);
     },
   );
 });

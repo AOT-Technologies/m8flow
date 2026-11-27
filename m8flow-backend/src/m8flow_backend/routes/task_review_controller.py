@@ -98,7 +98,7 @@ def require_task_candidate(session: Any, user: UserModel, task: WorkItemModel) -
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/task-review-access",
+    uri="/m8flow/task-review-access",
     group_fallback=False,
 )
 def list_task_review():
@@ -193,7 +193,7 @@ def list_task_review():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/task-review-access/{work_item_id}",
+    uri="/m8flow/task-review-access/{work_item_id}",
     forbidden_message="Not allowed to view this task",
     group_fallback=False,
 )
@@ -243,7 +243,7 @@ def get_task_review(work_item_id: int):
     # started or have a task in (M8F-534/M8F-653), which includes this one.
     can_open_instance = (
         instance is not None
-        and user_has_permission(user, "GET", "/v1.0/process-instances/for-me", session=session)
+        and user_has_permission(user, "GET", "/process-instances/for-me", session=session)
         and (
             instance_initiator_scope(user, session=session) is None
             or any(
@@ -294,7 +294,7 @@ def get_task_review(work_item_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/m8flow/task-review-access/{work_item_id}/submit",
+    uri="/m8flow/task-review-access/{work_item_id}/submit",
     forbidden_message="Not allowed to submit this task",
     group_fallback=False,
 )

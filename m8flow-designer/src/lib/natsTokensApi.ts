@@ -28,7 +28,7 @@ export type NatsApiKeyCreateInput = {
 /** The one response that carries the raw key — it can never be fetched again. */
 export type CreatedNatsApiKey = NatsApiKey & { token: string };
 
-const BASE = '/v1.0/m8flow/nats-tokens';
+const BASE = '/m8flow/nats-tokens';
 
 /** Super-admins pick the tenant via `tenantId`; everyone else is cookie-scoped. */
 function tenantQuery(tenantId: string | null | undefined): string {

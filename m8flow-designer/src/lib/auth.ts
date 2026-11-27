@@ -1,10 +1,12 @@
+import { API_VERSION_PREFIX } from './apiVersion';
+
 /**
  * Login for m8flow-designer piggybacks on the same backend-mediated Keycloak
  * flow m8flow-frontend uses (see UserService.ts there): the browser is sent to
- * the host backend's `/v1.0/login` route, which redirects to Keycloak's hosted
+ * the host backend's configured versioned `/login` route, which redirects to Keycloak's hosted
  * login page (the "Keycloak login page" referred to here — it is served by
  * Keycloak/the backend, not by any frontend React component). Keycloak then
- * redirects to the backend's `/v1.0/login_return`, which exchanges the code
+ * redirects to the matching versioned `/login_return` route, which exchanges the code
  * for tokens and sets non-httpOnly `access_token` / `id_token` cookies on
  * this shared `localhost` host before finally redirecting back here.
  *
@@ -237,7 +239,7 @@ function membershipsFromPayload(decoded: Record<string, unknown>): OrganizationM
 
 /**
  * Shared-realm organizations from the current JWT. Names may be missing;
- * load display names from GET /v1.0/m8flow/organization-memberships when needed.
+ * load display names from GET /m8flow/organization-memberships when needed.
  */
 export function getOrganizationMemberships(): OrganizationMembership[] {
   for (const token of [readCookie('id_token'), getAccessToken()]) {
@@ -340,7 +342,7 @@ export function login(options?: {
   if (!options?.tenantFinalization && (options?.promptLogin || fromLogout)) {
     params.set('prompt', 'login');
   }
-  window.location.href = `${BACKEND_BASE_URL}/v1.0/login?${params.toString()}`;
+  window.location.href = `${BACKEND_BASE_URL}${API_VERSION_PREFIX}/login?${params.toString()}`;
 }
 
 /** Master-realm platform admin login (Keycloak `super-admin` role). Lands on the tenant registry. */
@@ -404,5 +406,5 @@ export function logout(): void {
   if (authId) {
     params.set('authentication_identifier', authId);
   }
-  window.location.href = `${BACKEND_BASE_URL}/v1.0/logout?${params.toString()}`;
+  window.location.href = `${BACKEND_BASE_URL}${API_VERSION_PREFIX}/logout?${params.toString()}`;
 }

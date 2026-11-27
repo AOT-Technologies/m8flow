@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import m8flow_backend.authorization as authorization
+from m8flow_backend.api_versions import API_VERSION_PREFIXES
 
 
 @pytest.fixture
@@ -241,16 +242,9 @@ def test_task_review_submit_shapes_use_canonical_target_and_no_group_fallback(
         ("/process-instances/42/resume", "/process-instances/42"),
         ("/process-instances/42/terminate", "/process-instances/42"),
         ("/process-instances/42/terminate/", "/process-instances/42"),
-        ("/v1.0/process-instances/{id}/suspend", "/process-instances/{id}"),
-        ("/v1.0/process-instances/{id}/resume", "/process-instances/{id}"),
-        ("/v1.0/process-instances/{id}/terminate", "/process-instances/{id}"),
-        ("/v1.0/process-instances/42/suspend", "/process-instances/42"),
-        ("/v1.0/process-instances/42/resume", "/process-instances/42"),
-        ("/v1.0/process-instances/42/terminate", "/process-instances/42"),
-        ("/v1.0/process-instances/42/terminate/", "/process-instances/42"),
     ],
 )
-def test_lifecycle_route_regex_matches_versioned_and_unversioned(path, expected_instance):
+def test_lifecycle_route_regex_matches_canonical_paths(path, expected_instance):
     match = authorization._LIFECYCLE_ROUTE.fullmatch(path)
     assert match is not None
     assert match.group(1) == expected_instance
@@ -260,22 +254,35 @@ def test_lifecycle_route_regex_matches_versioned_and_unversioned(path, expected_
     "path",
     [
         "/process-instances",
-        "/v1.0/process-instances",
         "/process-instances/",
-        "/v1.0/process-instances/",
         "/process-instances/42",
-        "/v1.0/process-instances/42",
         "/process-instances/for-me",
-        "/v1.0/process-instances/for-me",
         "/process-instances/42/events",
-        "/v1.0/process-instances/42/events",
         "/process-instances/42/unknown",
         "/process-instances/42/suspend/extra",
-        "/v1.0/process-instances/42/suspend/extra",
+        "/v3.0/process-instances/42/suspend",
     ],
 )
 def test_lifecycle_route_regex_does_not_match_other_instance_routes(path):
     assert authorization._LIFECYCLE_ROUTE.fullmatch(path) is None
+
+
+@pytest.mark.parametrize("version_prefix", API_VERSION_PREFIXES)
+@pytest.mark.parametrize(
+    ("suffix", "expected_instance"),
+    [
+        ("/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/process-instances/42/retry", "/process-instances/42"),
+    ],
+)
+def test_supported_versioned_lifecycle_routes_normalize_before_matching(
+    version_prefix, suffix, expected_instance
+):
+    normalized = authorization._normalize_authorization_path(f"{version_prefix}{suffix}")
+    match = authorization._LIFECYCLE_ROUTE.fullmatch(normalized)
+
+    assert match is not None
+    assert match.group(1) == expected_instance
 
 
 @pytest.mark.parametrize(
@@ -288,13 +295,13 @@ def test_lifecycle_route_regex_does_not_match_other_instance_routes(path):
         ("/process-instances/42/resume", "/process-instances/42"),
         ("/process-instances/42/terminate", "/process-instances/42"),
         ("/process-instances/42/terminate/", "/process-instances/42"),
-        ("/v1.0/process-instances/{id}/suspend", "/process-instances/{id}"),
-        ("/v1.0/process-instances/{id}/resume", "/process-instances/{id}"),
-        ("/v1.0/process-instances/{id}/terminate", "/process-instances/{id}"),
-        ("/v1.0/process-instances/42/suspend", "/process-instances/42"),
-        ("/v1.0/process-instances/42/resume", "/process-instances/42"),
-        ("/v1.0/process-instances/42/terminate", "/process-instances/42"),
-        ("/v1.0/process-instances/42/terminate/", "/process-instances/42"),
+        ("/v2.0/process-instances/{id}/suspend", "/process-instances/{id}"),
+        ("/v2.0/process-instances/{id}/resume", "/process-instances/{id}"),
+        ("/v2.0/process-instances/{id}/terminate", "/process-instances/{id}"),
+        ("/v2.0/process-instances/42/suspend", "/process-instances/42"),
+        ("/v2.0/process-instances/42/resume", "/process-instances/42"),
+        ("/v2.0/process-instances/42/terminate", "/process-instances/42"),
+        ("/v2.0/process-instances/42/terminate/", "/process-instances/42"),
     ],
 )
 def test_allow_uri_remaps_lifecycle_post_to_execute_for_versioned_and_unversioned(

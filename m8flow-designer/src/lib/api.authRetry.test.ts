@@ -26,10 +26,10 @@ describe('session refresh recovery', () => {
       .mockResolvedValueOnce(response(200, { tasks: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(apiGet('/v1.0/onboarding')).rejects.toBeInstanceOf(NetworkError);
+    await expect(apiGet('/onboarding')).rejects.toBeInstanceOf(NetworkError);
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
-    await expect(apiGet('/v1.0/onboarding')).resolves.toEqual({ user: 'editor' });
-    await expect(apiGet('/v1.0/tasks')).resolves.toEqual({ tasks: [] });
+    await expect(apiGet('/onboarding')).resolves.toEqual({ user: 'editor' });
+    await expect(apiGet('/tasks')).resolves.toEqual({ tasks: [] });
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/refresh'))).toHaveLength(2);
     for (const [url, init] of fetchMock.mock.calls) {
@@ -47,7 +47,7 @@ describe('session refresh recovery', () => {
     const fetchMock = vi.fn((url: string) => String(url).endsWith('/refresh')
       ? refresh : Promise.resolve(response(401)));
     vi.stubGlobal('fetch', fetchMock);
-    const results = Promise.allSettled([apiGet('/v1.0/onboarding'), apiGet('/v1.0/tasks')]);
+    const results = Promise.allSettled([apiGet('/onboarding'), apiGet('/tasks')]);
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     failRefresh(new TypeError('Load failed'));
     const settled = await results;
@@ -57,7 +57,7 @@ describe('session refresh recovery', () => {
     }
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
     fetchMock.mockImplementation(() => Promise.resolve(response(200, { recovered: true })));
-    await expect(apiGet('/v1.0/tasks')).resolves.toEqual({ recovered: true });
+    await expect(apiGet('/tasks')).resolves.toEqual({ recovered: true });
   });
 
   it('refreshes successfully and retries a request once', async () => {
@@ -67,7 +67,7 @@ describe('session refresh recovery', () => {
       .mockResolvedValueOnce(response(200))
       .mockResolvedValueOnce(response(200, { ok: true }));
     vi.stubGlobal('fetch', fetchMock);
-    await expect(apiGet('/v1.0/tasks')).resolves.toEqual({ ok: true });
+    await expect(apiGet('/tasks')).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
   });
@@ -75,7 +75,7 @@ describe('session refresh recovery', () => {
   it('retains the login redirect for an explicit authentication failure', async () => {
     const { apiGet, ApiError } = await import('./api');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(401)));
-    await expect(apiGet('/v1.0/tasks')).rejects.toBeInstanceOf(ApiError);
+    await expect(apiGet('/tasks')).rejects.toBeInstanceOf(ApiError);
     expect(resumeLoginAfterLogout).toHaveBeenCalledTimes(1);
   });
 
@@ -83,7 +83,7 @@ describe('session refresh recovery', () => {
     const { apiGet } = await import('./api');
     const error = new TypeError('Invalid URL');
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(response(401)).mockRejectedValueOnce(error));
-    await expect(apiGet('/v1.0/tasks')).rejects.toBe(error);
+    await expect(apiGet('/tasks')).rejects.toBe(error);
     expect(resumeLoginAfterLogout).not.toHaveBeenCalled();
   });
 });

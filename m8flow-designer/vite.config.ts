@@ -6,6 +6,7 @@ import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import m8flowBpmnVitePlugin from 'm8flow-bpmn/vite';
+import { resolveApiVersionBuildConfig } from './src/lib/apiVersionConfig';
 
 const m8flowBpmn = m8flowBpmnVitePlugin();
 
@@ -64,6 +65,16 @@ const backendBaseUrl =
   process.env.VITE_BACKEND_BASE_URL ??
   rootEnv.M8FLOW_FRONTEND_BACKEND_BASE_URL ??
   `http://localhost:${backendPort}`;
+const apiVersionBuildConfig = resolveApiVersionBuildConfig({
+  VITE_API_VERSION: process.env.VITE_API_VERSION ?? rootEnv.VITE_API_VERSION,
+  M8FLOW_API_VERSION: process.env.M8FLOW_API_VERSION ?? rootEnv.M8FLOW_API_VERSION,
+});
+const apiVersionProxy = Object.fromEntries(
+  apiVersionBuildConfig.proxyPaths.map((proxyPath) => [
+    proxyPath,
+    { target: backendBaseUrl, changeOrigin: true, secure: false },
+  ]),
+);
 const mcpServerUrl = process.env.VITE_MCP_SERVER_URL ?? rootEnv.M8FLOW_MCP_SERVER_URL ?? '';
 const celeryFlowerUrl =
   process.env.VITE_M8FLOW_CELERY_FLOWER_URL ?? rootEnv.M8FLOW_CELERY_FLOWER_URL ?? '';
@@ -127,18 +138,13 @@ export default defineConfig({
     // Same pattern as m8flow-frontend: proxy API so Home fetches are same-origin
     // (avoids cross-port CORS + credentials issues). Login/logout still use the
     // absolute backend URL so Keycloak redirect_uri stays on :6840.
-    proxy: {
-      '/v1.0': {
-        target: backendBaseUrl,
-        changeOrigin: true,
-        secure: false,
-      },
-    },
+    proxy: apiVersionProxy,
     fs: {
       allow: [path.resolve(__dirname), path.resolve(__dirname, '..', 'm8flow-bpmn')],
     },
   },
   define: {
+    'import.meta.env.VITE_API_VERSION': apiVersionBuildConfig.defineValue,
     'import.meta.env.VITE_BACKEND_BASE_URL': JSON.stringify(backendBaseUrl),
     // Empty = same-origin relative paths through the Vite proxy above.
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(

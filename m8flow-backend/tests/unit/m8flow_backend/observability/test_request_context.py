@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from m8flow_backend.observability.request_context import REQUEST_ID_HEADER
 
 
@@ -40,9 +42,10 @@ def test_request_completed_log_includes_duration_ms(client, caplog):
     assert records[-1].sql_duration_ms >= 0
 
 
-def test_status_probe_does_not_emit_request_completed_log(client, caplog):
+@pytest.mark.parametrize("path", ["/v1.0/status", "/v2.0/status", "/status"])
+def test_status_probe_does_not_emit_request_completed_log(client, caplog, path):
     caplog.set_level(logging.INFO, logger="m8flow_backend.observability.request_context")
-    client.get("/v1.0/status")
+    client.get(path)
     assert not [
         record
         for record in caplog.records

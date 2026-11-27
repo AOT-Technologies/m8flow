@@ -82,7 +82,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 
 /**
  * Process Modeler — one file inside a process model per URL.
- * Fetches GET /v1.0/m8flow/process-models/{id}/files/{fileName} and mounts
+ * Fetches GET /m8flow/process-models/{id}/files/{fileName} and mounts
  * BpmnCanvas (.bpmn), DmnCanvas (.dmn), or TextFileCanvas (.json / .md).
  * Manual save (Cmd/Ctrl+S or the Save button) PUTs the current contents
  * back; the RBAC gap logged on the backend-endpoints ticket (a .bpmn save
