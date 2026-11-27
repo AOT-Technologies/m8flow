@@ -20,9 +20,11 @@ export type ExternalFormEmail = {
   task_name: string | null;
   task_title: string | null;
   email: string;
-  status: ExternalFormEmailStatus;
+  // `(string & {})` keeps autocomplete for the known statuses while admitting ones a newer
+  // backend adds; the table shows an unknown status as-is.
+  status: ExternalFormEmailStatus | (string & {});
   /** `status`, except a delivered link past its expiry reads `expired`. Drive the UI from this. */
-  effective_status: ExternalFormEmailStatus;
+  effective_status: ExternalFormEmailStatus | (string & {});
   /** Still `sending` after the worker's send lease ran out. */
   stuck_sending: boolean;
   /** Resend would be accepted on status alone; the backend still re-checks the task. */

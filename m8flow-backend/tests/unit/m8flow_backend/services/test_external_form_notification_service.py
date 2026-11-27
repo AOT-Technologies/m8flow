@@ -573,3 +573,42 @@ def test_named_values_stored_as_json_numbers_and_booleans_read_as_text(app, db_s
 
     assert settings["port"] == 465
     assert settings["ssl"] is True
+
+
+def test_a_named_value_wins_over_a_legacy_secret_of_the_same_name(app, db_session, _tenant_smtp_secrets):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.secrets.named_values import create_named_value
+
+    ensure_tenant(db_session, tenant_id=TENANT, slug=TENANT, name=TENANT)
+    create_named_value(
+        db_session,
+        tenant_id=TENANT,
+        body={"name": "NATS_SMTP_HOST", "value": "smtp.named.test"},
+        user_id=_tenant_smtp_secrets.id,
+    )
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+
+    # Host comes from the named value; the rest still fall back to the legacy secrets.
+    assert settings["host"] == "smtp.named.test"
+    assert settings["from_email"] == "noreply@example.test"
+    assert settings["port"] == 2525
+
+
+def test_configured_named_value_names_match_case_insensitively(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import configured_named_value_names, create_named_value
+
+    tenant = "case-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(db_session, username="dev", service="https://example.test/realms/m8flow", service_id="dev")
+    create_named_value(db_session, tenant_id=tenant, body={"name": "nats_smtp_host", "value": "h"}, user_id=user.id)
+    db_session.commit()
+
+    found = configured_named_value_names(
+        db_session, tenant_id=tenant, names={"NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"}
+    )
+
+    assert found == {"NATS_SMTP_HOST"}

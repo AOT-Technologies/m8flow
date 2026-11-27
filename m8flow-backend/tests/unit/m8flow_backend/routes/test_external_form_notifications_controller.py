@@ -346,3 +346,27 @@ def test_status_filter_matches_the_effective_status(client, db_session):
 
     assert ids("expired") == {lapsed.id, stored.id}
     assert ids("notified") == {live.id}
+
+
+def test_a_link_is_not_expired_during_its_expiry_second(db_session):
+    """admin_view and the status filter share the public link check's rule
+    (`expires_at < now`), so a link stays valid through its expiry second."""
+    from m8flow_backend.services.external_form_service import ExternalFormService
+
+    now = 1_800_000_000
+    at_expiry = _request_row(db_session, reference_id="ref-edge", status="notified", notified_at=now - 10)
+    at_expiry.expires_at_in_seconds = now
+    lapsed = _request_row(db_session, reference_id="ref-lapsed-edge", status="failed", notified_at=now - 10)
+    lapsed.expires_at_in_seconds = now - 1
+    db_session.commit()
+
+    assert ExternalFormService.admin_view(at_expiry, now)["effective_status"] == "notified"
+    assert ExternalFormService.admin_view(lapsed, now)["effective_status"] == "expired"
+
+    def filtered(status):
+        query = db_session.query(ExternalFormRequestModel)
+        return {row.id for row in ExternalFormService.filter_by_effective_status(query, status, now)}
+
+    assert filtered("notified") == {at_expiry.id}
+    assert filtered("expired") == {lapsed.id}
+    assert filtered("failed") == set()

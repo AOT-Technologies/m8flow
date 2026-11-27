@@ -130,7 +130,7 @@ describe('ProcessInstanceExternalFormEmailsTable', () => {
     fetchExternalFormEmails.mockResolvedValue(
       list([
         row({ id: 1, status: 'sending', effective_status: 'sending', notified_at_in_seconds: 1_783_380_927 }),
-        row({ id: 2, email: 'bob@example.test', effective_status: 'bounced' as ExternalFormEmail['effective_status'] }),
+        row({ id: 2, email: 'bob@example.test', effective_status: 'bounced' }),
       ]),
     );
 

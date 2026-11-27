@@ -374,3 +374,46 @@ def test_sweep_parking_is_audited_as_email_failures(worker, db_session, monkeypa
     assert [row.event_id.rsplit(":", 1)[1] for row in rows] == ["5"]
     assert rows[0].outcome == NatsEventOutcome.transient_error.value
     assert rows[0].error_message == "skipped:smtp_unconfigured"
+
+
+def _raise(*_args):
+    raise RuntimeError("smtp exploded")
+
+
+def test_a_notify_that_raises_is_audited_as_a_failure_on_the_event_path(worker, db_session, monkeypatch):
+    """`result` must be set on the exception path too, or the audit write would hit an
+    UnboundLocalError inside the worker loop."""
+    monkeypatch.setattr(worker, "_notify_one", _raise)
+    msg = _Message(
+        "m8flow.notifications.acme.external-form",
+        {"tenant_id": "t1", "tenant_slug": "acme", "process_instance_id": 9, "task_guid": "t", "request_ids": [4]},
+        seq=8,
+    )
+
+    asyncio.run(worker.process_message(msg))
+
+    db_session.expire_all()
+    row = db_session.scalars(select(NatsEventAuditModel)).one()
+    assert row.outcome == NatsEventOutcome.transient_error.value
+    assert row.error_message.startswith("failed:")
+    assert msg.acked
+
+
+def test_a_notify_that_raises_is_audited_as_a_failure_on_the_sweep(worker, db_session, monkeypatch):
+    from m8flow_backend.services.external_form_notification_service import ExternalFormNotificationService
+
+    monkeypatch.setattr(worker, "_revive_reconfigured_tenants", lambda: None)
+    monkeypatch.setattr(ExternalFormNotificationService, "sweep_candidates", classmethod(lambda cls: [(4, "t1")]))
+    monkeypatch.setattr(
+        ExternalFormNotificationService,
+        "smtp_readiness",
+        classmethod(lambda cls, tenant_id=None: {"ok": True, "reason": None}),
+    )
+    monkeypatch.setattr(worker, "_notify_one", _raise)
+
+    worker._run_sweep()
+
+    db_session.expire_all()
+    row = db_session.scalars(select(NatsEventAuditModel)).one()
+    assert row.outcome == NatsEventOutcome.transient_error.value
+    assert row.error_message.startswith("failed:")
