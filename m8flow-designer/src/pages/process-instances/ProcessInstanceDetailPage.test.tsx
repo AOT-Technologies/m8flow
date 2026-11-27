@@ -81,6 +81,12 @@ function stubFetches(detail: Record<string, unknown> | { errorStatus: number }) 
         json: async () => ({ completed_by_me: [], all_completed: [] }),
       });
     }
+    if (path.includes('/external-form-notifications')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ results: [], pagination: { count: 0, total: 0, pages: 0, page: 1 } }),
+      });
+    }
     if (path.includes('/events') || path.includes('/milestones')) {
       return Promise.resolve({ ok: true, json: async () => emptyList() });
     }
@@ -269,6 +275,29 @@ describe('ProcessInstanceDetailPage', () => {
 
     renderWithOutlet({ ...editorCtx, canReadSecrets: true });
     await waitFor(() => expect(screen.getByRole('tab', { name: 'External form emails' })).toBeInTheDocument());
+  });
+
+  it("scopes the emails tab to the instance's own tenant for a super-admin on All tenants", async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubFetches(mockDetail({ tenant_id: 't9' }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      isSuperAdmin: true,
+      canReadSecrets: true,
+    });
+
+    await user.click(await screen.findByRole('tab', { name: 'External form emails' }));
+
+    await waitFor(() => {
+      const emailCalls = fetchMock.mock.calls
+        .map(([url]) => String(url))
+        .filter((url) => url.includes('/external-form-notifications'));
+      expect(emailCalls).toHaveLength(1);
+      expect(emailCalls[0]).toContain('process_instance_id=7');
+      expect(emailCalls[0]).toContain('tenantId=t9');
+    });
   });
 
   it('shows terminate and suspend for an editor on a waiting instance', async () => {

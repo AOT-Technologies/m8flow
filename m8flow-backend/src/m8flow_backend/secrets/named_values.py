@@ -131,7 +131,7 @@ def _as_text(value: Any) -> str | None:
         return str(int(value))
     if isinstance(value, int | float):
         return str(value)
-    return json.dumps(value)
+    return json.dumps(value, sort_keys=True)
 
 
 def create_named_value(

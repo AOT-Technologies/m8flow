@@ -370,3 +370,31 @@ def test_a_link_is_not_expired_during_its_expiry_second(db_session):
     assert filtered("notified") == {at_expiry.id}
     assert filtered("expired") == {lapsed.id}
     assert filtered("failed") == set()
+
+
+def test_status_filter_pages_over_the_effective_status(client, db_session):
+    """`total` and `pages` count the same rows the filter returns, across page boundaries."""
+    now = int(time.time())
+    expected = set()
+    for index in range(3):
+        lapsed = _request_row(
+            db_session, reference_id=f"ref-lapsed-{index}", status="notified", notified_at=now - 10, created_at=10 + index
+        )
+        lapsed.expires_at_in_seconds = now - 1
+        expected.add(lapsed.id)
+    expected.add(_request_row(db_session, reference_id="ref-stored-exp", status="expired", created_at=20).id)
+    live = _request_row(db_session, reference_id="ref-still-live", status="notified", notified_at=now - 10)
+    live.expires_at_in_seconds = now + 3600
+    db_session.commit()
+    _, headers = _login_user(client, db_session, username="admin11", groups=["t1:tenant-admin"])
+
+    seen = set()
+    for page in (1, 2):
+        body = client.get(
+            f"/v1.0/m8flow/external-form-notifications?status=expired&per_page=2&page={page}", headers=headers
+        ).get_json()
+        assert (body["pagination"]["total"], body["pagination"]["pages"]) == (4, 2)
+        assert len(body["results"]) == 2
+        seen |= {row["id"] for row in body["results"]}
+
+    assert seen == expected

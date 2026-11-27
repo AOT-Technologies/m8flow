@@ -612,3 +612,49 @@ def test_configured_named_value_names_match_case_insensitively(app, db_session):
     )
 
     assert found == {"NATS_SMTP_HOST"}
+
+
+def test_parking_returns_only_the_rows_it_parked(app, db_session):
+    """Portable without UPDATE ... RETURNING: a row another worker is sending, or one
+    already delivered, is neither parked nor reported as parked."""
+    import time
+
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    owed = _request_row(db_session, status=ExternalFormRequestStatus.pending.value)
+    in_flight = _request_row(
+        db_session, status=ExternalFormRequestStatus.sending.value, notified_at=int(time.time())
+    )
+    delivered = _request_row(db_session, status=ExternalFormRequestStatus.notified.value, notified_at=5)
+
+    with app.app_context():
+        g.db_session = db_session
+        parked = ExternalFormNotificationService.mark_smtp_unconfigured(
+            [owed.id, in_flight.id, delivered.id], "no SMTP"
+        )
+        assert ExternalFormNotificationService.mark_smtp_unconfigured([], "no SMTP") == []
+
+    assert parked == [owed.id]
+    db_session.expire_all()
+    assert owed.status == ExternalFormRequestStatus.smtp_unconfigured.value
+    assert in_flight.status == ExternalFormRequestStatus.sending.value
+    assert delivered.status == ExternalFormRequestStatus.notified.value
+
+
+def test_a_sensitive_named_value_resolves_whatever_case_it_was_saved_in(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import create_named_value, resolve_named_value
+
+    tenant = "sensitive-case-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(db_session, username="eve", service="https://example.test/realms/m8flow", service_id="eve")
+    create_named_value(
+        db_session,
+        tenant_id=tenant,
+        body={"name": "Nats_Smtp_Password", "value": "s3cret", "is_sensitive": True},
+        user_id=user.id,
+    )
+    db_session.commit()
+
+    with app.app_context():
+        assert resolve_named_value(db_session, tenant_id=tenant, name="NATS_SMTP_PASSWORD") == "s3cret"

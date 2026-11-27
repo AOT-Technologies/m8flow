@@ -13,6 +13,7 @@ from urllib.parse import urlunsplit
 
 from sqlalchemy import and_
 from sqlalchemy import or_
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from m8flow_backend.db import db
@@ -421,22 +422,30 @@ class ExternalFormNotificationService:
         if not request_ids:
             return []
         now = int(time.time())
-        result = db.session.execute(
-            sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id.in_(request_ids),
-                _claimable(now),
+        # Lock the eligible rows, then update exactly those: portable where UPDATE ...
+        # RETURNING is not (MySQL), and the lock keeps a concurrent claim from slipping in
+        # between the two statements on databases that support it.
+        parked = list(
+            db.session.scalars(
+                select(ExternalFormRequestModel.id)
+                .where(ExternalFormRequestModel.id.in_(request_ids), _claimable(now))
+                .with_for_update()
             )
+        )
+        if not parked:
+            db.session.commit()
+            return []
+        db.session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(ExternalFormRequestModel.id.in_(parked))
             .values(
                 status=ExternalFormRequestStatus.smtp_unconfigured.value,
                 notified_at_in_seconds=None,
                 updated_at=datetime.fromtimestamp(now, timezone.utc),
                 last_error=truncate_last_error(reason),
             )
-            .returning(ExternalFormRequestModel.id)
             .execution_options(synchronize_session=False)
         )
-        parked = list(result.scalars())
         db.session.commit()
         return parked
 
