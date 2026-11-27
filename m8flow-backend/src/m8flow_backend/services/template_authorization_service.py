@@ -83,6 +83,10 @@ class TemplateAuthorizationService:
         if cls._is_super_admin_request(user=user):
             return True
 
+        # A deleted template stays visible only inside its own tenant, for restore.
+        if template.is_deleted and not cls._is_current_tenant_template(template):
+            return False
+
         if template.is_public():
             return True
 

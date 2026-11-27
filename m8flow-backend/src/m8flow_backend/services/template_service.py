@@ -260,6 +260,13 @@ class TemplateService:
                     TemplateModel.visibility == TemplateVisibility.public.value,
                 )
             )
+        if not is_super_admin and (include_deleted or deleted_only):
+            # Deleted templates are listed only inside their own tenant.
+            query = query.filter(
+                or_(TemplateModel.is_deleted.is_(False), TemplateModel.m8f_tenant_id == tenant)
+                if tenant
+                else TemplateModel.is_deleted.is_(False)
+            )
 
         # Super-admin tenant filter: mirror regular tenant scoping (tenant-owned OR PUBLIC).
         if is_super_admin and filter_tenant_id:

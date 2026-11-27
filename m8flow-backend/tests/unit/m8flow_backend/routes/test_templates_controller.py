@@ -728,12 +728,41 @@ def test_tenant_admin_cannot_delete_or_restore_another_tenants_public_template(
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
     assert client.delete(f"/v1.0/m8flow/templates/{published}", headers=_headers(owner_token)).status_code == 200
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t2")
-    assert client.post(f"/v1.0/m8flow/templates/{published}/restore", headers=other).status_code == 403
+    # Once deleted, the template is hidden outside its tenant.
+    assert client.post(f"/v1.0/m8flow/templates/{published}/restore", headers=other).status_code == 404
 
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
     owner = _headers(owner_token)
     assert client.post(f"/v1.0/m8flow/templates/{published}/restore", headers=owner).status_code == 200
     assert client.delete(f"/v1.0/m8flow/templates/{draft}", headers=owner).status_code == 200
+
+
+def test_deleted_public_template_is_hidden_from_other_tenants(client, db_session, app, tmp_path, monkeypatch):
+    """Once deleted, a PUBLIC template is visible only inside its own tenant (for restore)."""
+    _template_storage(app, tmp_path, monkeypatch)
+    _owner, owner_token = _login_user(
+        client, db_session, username="tenant-admin-del1", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    owner = _headers(owner_token)
+    template_id = _create_template(
+        client, owner_token, name="Deleted Public", published=True, visibility="PUBLIC"
+    ).get_json()["id"]
+    assert client.delete(f"/v1.0/m8flow/templates/{template_id}", headers=owner).status_code == 200
+
+    _other, other_token = _login_user(
+        client, db_session, username="editor-del2", groups=["t2:editor"], tenant_id="t2"
+    )
+    other = _headers(other_token)
+    file_url = f"/v1.0/m8flow/templates/{template_id}/files/diagram.bpmn"
+    assert client.get(file_url, headers=other).status_code == 404
+    assert client.get(f"/v1.0/m8flow/templates/{template_id}?include_deleted=true", headers=other).status_code == 404
+    listed = client.get("/v1.0/m8flow/templates?deleted_only=true", headers=other).get_json()
+    assert template_id not in [t["id"] for t in listed["results"]]
+
+    client.set_cookie(SELECTED_TENANT_COOKIE_NAME, "t1")
+    assert client.get(file_url, headers=owner).status_code == 200
+    listed = client.get("/v1.0/m8flow/templates?deleted_only=true", headers=owner).get_json()
+    assert template_id in [t["id"] for t in listed["results"]]
 
 
 def test_creator_cannot_delete_own_public_draft_from_another_tenant(client, db_session, app, tmp_path, monkeypatch):
