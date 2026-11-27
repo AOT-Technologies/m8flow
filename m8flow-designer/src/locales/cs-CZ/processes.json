@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Procesy",
-    "showing": "Zobrazeno",
     "clear": "Vymazat",
+    "group": "Skupina",
     "searchPlaceholder": "Hledat modely procesů",
     "owner": "Vlastník",
     "filterAll": "Vše",
@@ -56,17 +56,18 @@
     }
   },
   "groups": {
-    "title": "Skupiny procesů",
+    "title": "Spravovat skupiny",
     "editTitle": "Upravit skupinu procesů",
     "deleteTitle": "Smazat skupinu procesů",
     "subtitle": {
-      "list": "Vyberte skupinu pro filtrování seznamu modelů, nebo zde spravujte skupiny.",
+      "list": "Vytvářejte, přejmenovávejte nebo mažte skupiny procesů v tomto tenantovi.",
       "create": "ID se generuje ze zobrazovaného názvu. Úpravou jej můžete vnořit ve tvaru parent/child.",
       "edit": "Pouze zobrazovaný název a popis – ID se nemění.",
       "delete": "Modely v této skupině budou odebrány z katalogu, pokud žádný z nich nemá instance."
     },
     "searchPlaceholder": "Hledat ve skupinách ({{total}})",
     "searchLabel": "Hledat skupiny",
+    "noMatches": "Žádné odpovídající skupiny",
     "noRunsYet": "Zatím žádné běhy",
     "editGroup": "Upravit skupinu {{name}}",
     "deleteGroup": "Smazat skupinu {{name}}",

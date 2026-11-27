@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import i18n from '@/i18n';
 import { formatRelativeTime } from '@/lib/relativeTime';
 import { slugifyProcessModelId } from '@/lib/processModelId';
-import { cn } from '@/lib/utils';
 
 export type ProcessGroupWriteFields = {
   id: string;
@@ -24,16 +23,12 @@ export type ProcessGroupsPickerProps = {
   groups: ProcessGroupListItem[];
   loading?: boolean;
   error?: string | null;
-  /** Active `?group=` id; null means All groups is selected. */
-  selectedGroupId?: string | null;
   canCreate?: boolean;
   canUpdate?: boolean;
   canDelete?: boolean;
   /** Open straight on the create form (entered from "no groups yet" elsewhere). */
   startInCreateMode?: boolean;
   onClose: () => void;
-  onSelectAll: () => void;
-  onSelectGroup: (groupId: string) => void;
   onCreateGroup?: (input: ProcessGroupWriteFields) => Promise<void>;
   onUpdateGroup?: (
     groupId: string,
@@ -45,22 +40,20 @@ export type ProcessGroupsPickerProps = {
 type FormMode = 'list' | 'create' | 'edit' | 'delete';
 
 /**
- * Process groups modal from Processes.dc.html: search, All groups row,
- * group rows, New group / edit / delete when `canManage`.
+ * Manage groups dialog: search, group rows, and New group / edit / delete
+ * gated by `canCreate` / `canUpdate` / `canDelete`. Filtering the model list
+ * is the Group dropdown's job, not this dialog's.
  */
 export function ProcessGroupsPicker({
   open,
   groups,
   loading = false,
   error = null,
-  selectedGroupId = null,
   canCreate = false,
   canUpdate = false,
   canDelete = false,
   startInCreateMode = false,
   onClose,
-  onSelectAll,
-  onSelectGroup,
   onCreateGroup,
   onUpdateGroup,
   onDeleteGroup,
@@ -136,9 +129,6 @@ export function ProcessGroupsPicker({
     setFormDisplayName(value);
     if (mode === 'create' && !idEdited) setFormId(suggestId(value));
   }
-
-  const totalModels = groups.reduce((sum, g) => sum + g.model_count, 0);
-  const allSelected = !selectedGroupId;
 
   function openCreate() {
     setFormMode('create');
@@ -287,41 +277,18 @@ export function ProcessGroupsPicker({
                   <p className="px-3 py-4 text-sm text-muted-foreground">{t('processes.loadingGroups')}</p>
                 ) : null}
 
-                {!loading ? (
-                  <button
-                    type="button"
-                    onClick={onSelectAll}
-                    className={cn(
-                      'flex w-full items-center gap-3 rounded-[10px] px-3 py-2.5 text-left',
-                      allSelected
-                        ? 'border border-nav-active/40 bg-nav-active/10'
-                        : 'border border-transparent',
-                    )}
-                  >
-                    <span className="flex-1 text-sm font-semibold text-foreground">{t('processes.allGroups')}</span>
-                    <span className="font-mono text-xs text-muted-foreground">{totalModels}</span>
-                  </button>
+                {!loading && search.trim() && filtered.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">{t('processes.groups.noMatches')}</p>
                 ) : null}
-
                 {!loading &&
                   filtered.map((group) => {
-                    const selected = selectedGroupId === group.id;
                     const label = group.display_name || group.id;
                     return (
                       <div
                         key={group.id}
-                        className={cn(
-                          'flex w-full items-center gap-1 rounded-[10px] px-1 py-1',
-                          selected
-                            ? 'border border-nav-active/40 bg-nav-active/10'
-                            : 'border border-transparent',
-                        )}
+                        className="flex w-full items-center gap-1 rounded-[10px] px-1 py-1"
                       >
-                        <button
-                          type="button"
-                          onClick={() => onSelectGroup(group.id)}
-                          className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1.5 text-left"
-                        >
+                        <div className="flex min-w-0 flex-1 items-center gap-3 px-2 py-1.5">
                           <span className="flex size-[30px] shrink-0 items-center justify-center rounded-lg bg-muted">
                             <Folder className="size-[15px] text-muted-foreground" strokeWidth={1.8} />
                           </span>
@@ -343,7 +310,7 @@ export function ProcessGroupsPicker({
                               {group.model_count}
                             </span>
                           </span>
-                        </button>
+                        </div>
                         {canUpdate || canDelete ? (
                           <span className="flex shrink-0 items-center pr-1">
                             {canUpdate ? (

@@ -32,9 +32,13 @@ import { encodeProcessModelId } from '@/lib/processModelId';
 import { startErrorMessage } from '@/lib/startProcessError';
 import { useProcessStart } from '@/components/useProcessStart';
 
+const EMPTY_GROUPS: ProcessGroupListItem[] = [];
+const EMPTY_MODELS: ProcessModelListItem[] = [];
+
 /**
- * Processes models list — wired to GET /m8flow/process-models.
- * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
+ * Process model catalog. The shared API client supplies the configured API
+ * version. All-Tenants reads retain each model's owning tenant, while writes
+ * remain scoped to a concrete tenant.
  */
 export default function ProcessesPage() {
   const { t } = useTranslation();
@@ -63,8 +67,26 @@ export default function ProcessesPage() {
   const navigate = useNavigate();
 
   const groupFilter = searchParams.get('group');
+  const groupTenantId = allTenants && groupFilter ? searchParams.get('groupTenantId') || null : null;
 
-  const [models, setModels] = useState<ProcessModelListItem[]>([]);
+  const [modelsState, setModelsState] = useState<{
+    tenantId: typeof scopedTenantId;
+    rows: ProcessModelListItem[];
+    loading: boolean;
+    error: string | null;
+    allCount: number;
+  }>({ tenantId: scopedTenantId, rows: [], loading: true, error: null, allCount: 0 });
+  const currentModels = modelsState.tenantId === scopedTenantId ? modelsState : undefined;
+  const models = currentModels?.rows ?? EMPTY_MODELS;
+  const visibleModels = useMemo(() => groupTenantId
+    ? models.filter((model) => model.tenant_id === groupTenantId && model.group_id === groupFilter)
+    : models, [models, groupTenantId, groupFilter]);
+  const loading = currentModels?.loading ?? true;
+  const error = currentModels?.error ?? null;
+  const allCount = currentModels?.allCount ?? 0;
+  function setError(message: string | null) {
+    setModelsState((prev) => prev.tenantId === scopedTenantId ? { ...prev, error: message } : prev);
+  }
   const [allowedModelActions, setAllowedModelActions] = useState<{
     tenantId: typeof scopedTenantId; publish: Set<string>; start: Set<string>;
   }>();
@@ -92,27 +114,36 @@ export default function ProcessesPage() {
   const currentActions = allowedModelActions?.tenantId === scopedTenantId ? allowedModelActions : undefined;
   const [owners, setOwners] = useState<ProcessInstanceOwnerOption[]>([]);
   const [ownerFilter, setOwnerFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
-  /** Unfiltered count for empty-state copy when a group filter is active. */
-  const [allCount, setAllCount] = useState(0);
 
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [groupsCreateMode, setGroupsCreateMode] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [groups, setGroups] = useState<ProcessGroupListItem[]>([]);
-  const [groupsLoading, setGroupsLoading] = useState(false);
-  const [groupsError, setGroupsError] = useState<string | null>(null);
+  const [groupsState, setGroupsState] = useState<{
+    tenantId: typeof scopedTenantId;
+    rows: ProcessGroupListItem[];
+    loading: boolean;
+    error: string | null;
+  }>({ tenantId: scopedTenantId, rows: [], loading: true, error: null });
+  // Hide the old scope during render, before the new tenant's effect runs.
+  const currentGroups = groupsState.tenantId === scopedTenantId ? groupsState : undefined;
+  const groups = currentGroups?.rows ?? EMPTY_GROUPS;
+  const groupsLoading = currentGroups?.loading ?? true;
+  const groupsError = currentGroups?.error ?? null;
   /** Bumped after a successful delete to re-run the models fetch effect. */
   const [refreshKey, setRefreshKey] = useState(0);
-  /** Bumped after group create/edit/delete while the picker is open. */
+  /** Bumped after group create/edit/delete to refetch the group list. */
   const [groupsRefreshKey, setGroupsRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
+    setModelsState((prev) => ({
+      tenantId: scopedTenantId,
+      rows: prev.tenantId === scopedTenantId ? prev.rows : [],
+      loading: true,
+      error: null,
+      allCount: prev.tenantId === scopedTenantId ? prev.allCount : 0,
+    }));
 
     const ownerId = ownerFilter === 'all' ? null : Number(ownerFilter);
     const listPromise = fetchProcessModels(
@@ -133,18 +164,14 @@ export default function ProcessesPage() {
         if (cancelled) {
           return;
         }
-        setModels(rows);
-        setAllCount(allRows.length);
+        setModelsState({ tenantId: scopedTenantId, rows, allCount: allRows.length, loading: false, error: null });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : i18n.t('processes.page.loadModelsFailed'));
-          setModels([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
+          setModelsState({
+            tenantId: scopedTenantId, rows: [], allCount: 0, loading: false,
+            error: err instanceof Error ? err.message : i18n.t('processes.page.loadModelsFailed'),
+          });
         }
       });
 
@@ -176,51 +203,54 @@ export default function ProcessesPage() {
     };
   }, [scopedTenantId]);
 
+  // Loaded up front: the Group filter dropdown and the Manage groups dialog share it.
   useEffect(() => {
-    if (!groupsOpen) {
-      return;
-    }
-
     let cancelled = false;
-    setGroupsLoading(true);
-    setGroupsError(null);
+    setGroupsState((prev) => ({
+      tenantId: scopedTenantId,
+      rows: prev.tenantId === scopedTenantId ? prev.rows : [],
+      loading: true,
+      error: null,
+    }));
 
     fetchProcessGroups(scopedTenantId)
       .then((rows) => {
         if (!cancelled) {
-          setGroups(rows);
+          setGroupsState({ tenantId: scopedTenantId, rows, loading: false, error: null });
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setGroupsError(err instanceof Error ? err.message : i18n.t('processes.page.loadGroupsFailed'));
-          setGroups([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setGroupsLoading(false);
+          setGroupsState({
+            tenantId: scopedTenantId,
+            rows: [],
+            loading: false,
+            error: err instanceof Error ? err.message : i18n.t('processes.page.loadGroupsFailed'),
+          });
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [groupsOpen, scopedTenantId, groupsRefreshKey]);
+  }, [scopedTenantId, groupsRefreshKey]);
 
   const scopeLabel = useMemo(() => {
     if (!groupFilter) {
       return t('processes.allGroups');
     }
-    const fromGroups = groups.find((g) => g.id === groupFilter);
-    if (fromGroups) {
-      return fromGroups.display_name || groupFilter;
-    }
-    const match = models.find((m) => m.group_id === groupFilter);
-    return match?.group_display_name || groupFilter;
-  }, [groupFilter, models, groups, t]);
+    const fromGroups = groups.find((g) => g.id === groupFilter && (!groupTenantId || g.tenant_id === groupTenantId));
+    const match = visibleModels.find((m) => m.group_id === groupFilter);
+    const name = fromGroups?.display_name || match?.group_display_name || groupFilter;
+    if (!allTenants) return name;
+    const tenantName = fromGroups?.tenant_name || match?.tenant_name;
+    const tenantLabel = groupTenantId
+      ? tenantName && tenantName !== groupTenantId ? `${tenantName} (${groupTenantId})` : groupTenantId
+      : t('shell.tenant.allTenants');
+    return `${name} — ${tenantLabel}`;
+  }, [groupFilter, groupTenantId, visibleModels, groups, allTenants, t]);
 
-  function setGroup(groupId: string | null) {
+  function setGroup(groupId: string | null, tenantId?: string) {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -228,6 +258,11 @@ export default function ProcessesPage() {
           next.set('group', groupId);
         } else {
           next.delete('group');
+        }
+        if (groupId && allTenants && tenantId) {
+          next.set('groupTenantId', tenantId);
+        } else {
+          next.delete('groupTenantId');
         }
         return next;
       },
@@ -289,7 +324,10 @@ export default function ProcessesPage() {
     const created = await createProcessGroup(input, scopedTenantId);
     // Close and filter to the new group so the user lands on its (empty) model
     // list. Merge it into `groups` so the filter label resolves without a refetch.
-    setGroups((prev) => [...prev.filter((g) => g.id !== created.id), created]);
+    setGroupsState((prev) => prev.tenantId === scopedTenantId ? {
+      ...prev, rows: [...prev.rows.filter((g) => g.id !== created.id), created],
+    } : prev);
+    setGroupsRefreshKey((k) => k + 1);
     setGroup(created.id);
     closeGroups();
   }
@@ -315,18 +353,33 @@ export default function ProcessesPage() {
     <main className="min-w-0 flex-1 px-11 py-10">
       {picker}
       <ProcessesModelsList
-        models={models}
+        models={visibleModels}
         loading={loading}
         error={error}
         groupFilter={groupFilter}
+        groupTenantId={groupTenantId}
         scopeLabel={scopeLabel}
         totalUnfilteredCount={allCount}
         owners={owners}
         ownerFilter={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
-        onBrowseGroups={() => openGroups()}
+        groups={groups.map((group) => ({
+          id: group.id,
+          tenantId: allTenants ? group.tenant_id : undefined,
+          label: allTenants
+            ? `${group.display_name || group.id} — ${group.tenant_name && group.tenant_name !== group.tenant_id
+              ? `${group.tenant_name} (${group.tenant_id})` : group.tenant_id}`
+            : group.display_name || group.id,
+        }))}
+        groupsLoading={groupsLoading}
+        groupsError={groupsError}
+        onRetryGroups={() => {
+          if (groupsLoading) return;
+          setGroupsState((prev) => ({ ...prev, loading: true, error: null }));
+          setGroupsRefreshKey((k) => k + 1);
+        }}
         onClearGroupFilter={() => setGroup(null)}
-        onFilterByGroup={(groupId) => setGroup(groupId)}
+        onFilterByGroup={setGroup}
         showTenant={allTenants}
         onOpenModel={(model) => {
           // Model identifiers are catalog paths and collide across tenants,
@@ -347,7 +400,9 @@ export default function ProcessesPage() {
             ? handleChangeModelStatus : undefined
         }
         mayChangeStatus={canManageProcessModels}
-        onCreateGroup={canCreateGroup ? () => openGroups(true) : undefined}
+        onManageGroups={
+          canCreateGroup || canUpdateGroup || canDeleteGroup ? () => openGroups(true) : undefined
+        }
       />
       <CreateProcessModelDialog
         open={createOpen}
@@ -373,20 +428,11 @@ export default function ProcessesPage() {
         groups={groups}
         loading={groupsLoading}
         error={groupsError}
-        selectedGroupId={groupFilter}
         canCreate={canCreateGroup}
         canUpdate={canUpdateGroup}
         canDelete={canDeleteGroup}
         startInCreateMode={groupsCreateMode}
         onClose={closeGroups}
-        onSelectAll={() => {
-          setGroup(null);
-          setGroupsOpen(false);
-        }}
-        onSelectGroup={(groupId) => {
-          setGroup(groupId);
-          setGroupsOpen(false);
-        }}
         onCreateGroup={canCreateGroup ? handleCreateGroup : undefined}
         onUpdateGroup={canUpdateGroup ? handleUpdateGroup : undefined}
         onDeleteGroup={canDeleteGroup ? handleDeleteGroup : undefined}

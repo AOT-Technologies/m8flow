@@ -30,44 +30,24 @@ describe('ProcessGroupsPicker', () => {
         open={false}
         groups={GROUPS}
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
       />,
     );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('lists groups and selects one', () => {
-    const onSelect = vi.fn();
-    render(
-      <ProcessGroupsPicker
-        open
-        groups={GROUPS}
-        onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={onSelect}
-      />,
-    );
+  it('lists groups for management only, with no filter selection', () => {
+    render(<ProcessGroupsPicker open groups={GROUPS} onClose={vi.fn()} />);
 
-    expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument();
     expect(screen.getByText('Finance')).toBeInTheDocument();
     expect(screen.getByText('No runs yet')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Finance/ }));
-    expect(onSelect).toHaveBeenCalledWith('finance');
+    // Filtering is the Group dropdown's job: no All groups row, rows aren't buttons.
+    expect(screen.queryByText('All groups')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Finance/ })).not.toBeInTheDocument();
   });
 
-  it('filters by search and selects All groups', () => {
-    const onSelectAll = vi.fn();
-    render(
-      <ProcessGroupsPicker
-        open
-        groups={GROUPS}
-        selectedGroupId="finance"
-        onClose={vi.fn()}
-        onSelectAll={onSelectAll}
-        onSelectGroup={vi.fn()}
-      />,
-    );
+  it('filters the list by search', () => {
+    render(<ProcessGroupsPicker open groups={GROUPS} onClose={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Search groups'), {
       target: { value: 'onboard' },
@@ -75,8 +55,8 @@ describe('ProcessGroupsPicker', () => {
     expect(screen.getByText('Onboarding')).toBeInTheDocument();
     expect(screen.queryByText('Finance')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /All groups/ }));
-    expect(onSelectAll).toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Search groups'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No matching groups')).toBeInTheDocument();
   });
 
   it('closes on backdrop click, Close, and Escape', async () => {
@@ -86,8 +66,6 @@ describe('ProcessGroupsPicker', () => {
         open
         groups={GROUPS}
         onClose={onClose}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
       />,
     );
 
@@ -120,8 +98,6 @@ describe('ProcessGroupsPicker', () => {
         open={false}
         groups={GROUPS}
         onClose={onClose}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
       />,
     );
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -134,8 +110,6 @@ describe('ProcessGroupsPicker', () => {
         open
         groups={GROUPS}
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
       />,
     );
     expect(screen.queryByRole('button', { name: /New group/i })).not.toBeInTheDocument();
@@ -150,8 +124,6 @@ describe('ProcessGroupsPicker', () => {
         canUpdate={false}
         canDelete={false}
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
       />,
     );
 
@@ -168,8 +140,6 @@ describe('ProcessGroupsPicker', () => {
         groups={GROUPS}
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
         onCreateGroup={onCreate}
       />,
     );
@@ -188,19 +158,16 @@ describe('ProcessGroupsPicker', () => {
         description: '',
       });
     });
-    expect(screen.getByRole('heading', { name: 'Process groups' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Manage groups' })).toBeInTheDocument();
   });
 
-  it('suggests a top-level id even when a nested group is selected', () => {
+  it('suggests a top-level id', () => {
     render(
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        selectedGroupId="finance"
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
         onCreateGroup={vi.fn()}
       />,
     );
@@ -217,11 +184,8 @@ describe('ProcessGroupsPicker', () => {
       <ProcessGroupsPicker
         open
         groups={GROUPS}
-        selectedGroupId="finance"
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
         onCreateGroup={onCreate}
       />,
     );
@@ -243,8 +207,6 @@ describe('ProcessGroupsPicker', () => {
         groups={GROUPS}
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
         onCreateGroup={vi.fn()}
       />,
     );
@@ -263,8 +225,6 @@ describe('ProcessGroupsPicker', () => {
         groups={GROUPS}
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={vi.fn()}
         onCreateGroup={onCreate}
       />,
     );
@@ -278,8 +238,7 @@ describe('ProcessGroupsPicker', () => {
     expect(onCreate).not.toHaveBeenCalled();
   });
 
-  it('edits and deletes a group without selecting it', async () => {
-    const onSelect = vi.fn();
+  it('edits a group and deletes one only after confirming', async () => {
     const onUpdate = vi.fn().mockResolvedValue(undefined);
     const onDelete = vi.fn().mockResolvedValue(undefined);
     render(
@@ -288,15 +247,12 @@ describe('ProcessGroupsPicker', () => {
         groups={GROUPS}
         canCreate canUpdate canDelete
         onClose={vi.fn()}
-        onSelectAll={vi.fn()}
-        onSelectGroup={onSelect}
         onUpdateGroup={onUpdate}
         onDeleteGroup={onDelete}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Finance' }));
-    expect(onSelect).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Process group display name'), {
       target: { value: 'Finance Ops' },
     });
@@ -309,11 +265,12 @@ describe('ProcessGroupsPicker', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete Onboarding' }));
+    expect(screen.getByRole('heading', { name: 'Delete process group' })).toBeInTheDocument();
+    expect(onDelete).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Delete group' }));
     await waitFor(() => {
       expect(onDelete).toHaveBeenCalledWith('onboarding');
     });
-    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it('returns to the list when reopened after a create-mode open', () => {
@@ -321,18 +278,16 @@ describe('ProcessGroupsPicker', () => {
       groups: GROUPS,
       canCreate: true, canUpdate: true, canDelete: true,
       onClose: vi.fn(),
-      onSelectAll: vi.fn(),
-      onSelectGroup: vi.fn(),
       onCreateGroup: vi.fn(),
     };
     const { rerender } = render(<ProcessGroupsPicker {...props} open startInCreateMode />);
     expect(screen.getByRole('dialog', { name: 'New process group' })).toBeInTheDocument();
 
-    // Close, then reopen the ordinary way (the filter pill).
+    // Close, then reopen the ordinary way (the Manage groups button).
     rerender(<ProcessGroupsPicker {...props} open={false} startInCreateMode={false} />);
     rerender(<ProcessGroupsPicker {...props} open startInCreateMode={false} />);
 
-    expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument();
   });
 
   it('returns to the list even if close and reopen land in one render pass', () => {
@@ -340,8 +295,6 @@ describe('ProcessGroupsPicker', () => {
       groups: GROUPS,
       canCreate: true, canUpdate: true, canDelete: true,
       onClose: vi.fn(),
-      onSelectAll: vi.fn(),
-      onSelectGroup: vi.fn(),
       onCreateGroup: vi.fn(),
     };
     const { rerender } = render(<ProcessGroupsPicker {...props} open startInCreateMode />);
@@ -351,6 +304,6 @@ describe('ProcessGroupsPicker', () => {
     // path has to stand on its own rather than rely on having been cleaned up.
     rerender(<ProcessGroupsPicker {...props} open startInCreateMode={false} />);
 
-    expect(screen.getByRole('dialog', { name: 'Process groups' })).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Manage groups' })).toBeInTheDocument();
   });
 });

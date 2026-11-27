@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Processes",
-    "showing": "Showing",
     "clear": "Clear",
+    "group": "Group",
     "searchPlaceholder": "Search process models",
     "owner": "Owner",
     "filterAll": "All",
@@ -54,17 +54,18 @@
     }
   },
   "groups": {
-    "title": "Process groups",
+    "title": "Manage groups",
     "editTitle": "Edit process group",
     "deleteTitle": "Delete process group",
     "subtitle": {
-      "list": "Pick a group to filter the model list, or manage groups here.",
+      "list": "Create, rename, or delete process groups in this tenant.",
       "create": "The id is generated from the display name. Edit it to nest with parent/child.",
       "edit": "Display name and description only — the id does not change.",
       "delete": "Models in this group are removed from the catalog if none have instances."
     },
     "searchPlaceholder": "Search {{total}} groups",
     "searchLabel": "Search groups",
+    "noMatches": "No matching groups",
     "noRunsYet": "No runs yet",
     "editGroup": "Edit {{name}}",
     "deleteGroup": "Delete {{name}}",

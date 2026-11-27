@@ -37,6 +37,10 @@ export interface SortDropdownProps {
   label?: string
   /** Classes applied to the trigger button. */
   className?: string
+  /** When set, the panel gets a search box (this placeholder) that filters options by label. */
+  searchPlaceholder?: string
+  /** Shown in place of the rows when the search matches nothing. */
+  emptyLabel?: string
 }
 
 /**
@@ -56,13 +60,22 @@ export interface SortDropdownProps {
  * otherwise fully uncontrolled/Radix-driven for outside-click/Escape.
  */
 const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
-  ({ options, value, onChange, label, className }, ref) => {
+  ({ options, value, onChange, label, className, searchPlaceholder, emptyLabel }, ref) => {
     const { t } = useTranslation()
     const [open, setOpen] = React.useState(false)
+    const [query, setQuery] = React.useState("")
     const selected = options.find((option) => option.value === value)
+    const q = query.trim().toLowerCase()
+    const visible = q ? options.filter((option) => option.label.toLowerCase().includes(q)) : options
 
     return (
-      <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenu
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next)
+          if (!next) setQuery("")
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <button
             ref={ref}
@@ -73,7 +86,7 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
               className
             )}
           >
-            <span className="flex-1 text-left">
+            <span className="min-w-0 flex-1 truncate text-left">
               {label ?? t("common.sort")}: {selected?.label ?? ""}
             </span>
             <ChevronDown
@@ -86,8 +99,37 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
           align="start"
           className="min-w-[max(220px,var(--radix-dropdown-menu-trigger-width))]"
         >
+          {searchPlaceholder ? (
+            <input
+              // Radix skips its own open-focus when focus is already inside.
+              autoFocus
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                // Radix menus treat printable keys as typeahead; keep them in the box.
+                // Arrows hand focus to the first/last visible row; Escape still closes.
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault()
+                  const items = event.currentTarget
+                    .closest("[role=menu]")
+                    ?.querySelectorAll<HTMLElement>("[role=menuitemradio]")
+                  const target = event.key === "ArrowDown" ? items?.[0] : items?.[items.length - 1]
+                  target?.focus()
+                } else if (event.key !== "Escape") {
+                  event.stopPropagation()
+                }
+              }}
+              placeholder={searchPlaceholder}
+              aria-label={searchPlaceholder}
+              className="mb-1 w-full rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] text-foreground outline-none focus-visible:border-nav-active"
+            />
+          ) : null}
+          {visible.length === 0 && emptyLabel ? (
+            <p className="px-3 py-2 text-[13px] text-muted-foreground">{emptyLabel}</p>
+          ) : null}
           <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
-            {options.map((option) => (
+            {visible.map((option) => (
               <DropdownMenuRadioItem
                 key={option.value}
                 value={option.value}
