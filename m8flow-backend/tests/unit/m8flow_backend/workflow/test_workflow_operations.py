@@ -299,19 +299,19 @@ def _seed_actor(
     return tenant, user
 
 
-def test_existing_tracking_identifiers_keep_relationships_and_file_access(db_session, tmp_path, monkeypatch):
+def test_persisted_workflow_keeps_relationships_and_file_access_after_reload(db_session, tmp_path, monkeypatch):
     """Reload a persisted workflow and its original files without renaming either."""
     from sqlalchemy import text
     from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
     from m8flow_core.models.process_instance import ProcessInstanceModel
 
-    legacy = "m8f_640"
-    model_id = f"existing/{legacy}"
-    file_name = f"{legacy}.bpmn"
+    identifier = "persisted_approval"
+    model_id = f"existing/{identifier}"
+    file_name = f"{identifier}.bpmn"
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
     tenant_id, user_id = tenant.id, user.id
-    xml = BPMN.read_text(encoding="utf-8").replace("simple_approval", legacy)
+    xml = BPMN.read_text(encoding="utf-8").replace("simple_approval", identifier)
     catalog.save(db_session, path=model_id, file_name=file_name, xml=xml, tenant_id=tenant_id, user_id=user_id)
     instance = workflow.start(db_session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=model_id)
     instance_id, definition_id = instance.id, instance.bpmn_process_definition_id
@@ -326,7 +326,7 @@ def test_existing_tracking_identifiers_keep_relationships_and_file_access(db_ses
     assert instance.bpmn_process_definition_id == definition.id
     assert instance.m8f_tenant_id == definition.m8f_tenant_id == tenant_id
     assert definition.process_model_identifier == model_id
-    assert definition.bpmn_identifier == legacy
+    assert definition.bpmn_identifier == identifier
     task, = workflow.list_pending_tasks(db_session, tenant_id=tenant_id, user_id=user_id)
     workflow.claim(db_session, tenant_id=tenant_id, work_item_id=task.id, user_id=user_id)
     workflow.complete(db_session, tenant_id=tenant_id, work_item_id=task.id, user_id=user_id)

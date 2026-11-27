@@ -145,12 +145,13 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
 
 
 def _active_tenant_ref_from_payload(payload: dict[str, Any], memberships: list[Membership]) -> TenantRef | None:
-    """The RealmInfoMapper's explicit finalized-tenant signal ('s
-    decision 6): `m8flow_tenant_id`/`m8flow_tenant_alias`, falling back to the
-    sole membership when there's exactly one -- mirrors
-    active_organization_from_payload's existing single-org shortcut on the
-    host side (auth/claims.py), so a single-tenant user needs no explicit
-    claim at all."""
+    """Resolve the active tenant from the RealmInfoMapper's explicit claims.
+
+    Use `m8flow_tenant_id`/`m8flow_tenant_alias`, falling back to the sole
+    membership when there's exactly one. This mirrors
+    active_organization_from_payload's single-organization shortcut in
+    auth/claims.py, so a single-tenant user needs no explicit tenant claim.
+    """
     tenant_id = _string(payload.get("m8flow_tenant_id"))
     tenant_alias = _string(payload.get("m8flow_tenant_alias"))
     if tenant_id or tenant_alias:

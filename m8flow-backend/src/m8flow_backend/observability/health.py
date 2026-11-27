@@ -1,7 +1,6 @@
 """Liveness/readiness probes for load balancers and container orchestration.
 
-Relocated from tenancy.py during the active-tenant deep-module collapse
-: health/readiness has nothing to do with tenant resolution.
+Health and readiness checks belong to observability.
 """
 from __future__ import annotations
 

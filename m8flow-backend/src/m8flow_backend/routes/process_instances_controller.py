@@ -180,9 +180,9 @@ def get_process_instance(process_instance_id: int):
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
-    # The diagram is the model's BPMN source: the full XML follows file-read
-    #; other instance readers get it without model logic.
-    # A called child's diagram follows file-read on the child model.
+    # Full BPMN XML requires file-read permission on the diagram's model.
+    # Other instance readers receive a diagram with model logic removed.
+    # A called child's diagram requires file-read permission on the child model.
     diagram_model_identifier = (detail["called_process"] or {}).get(
         "process_model_identifier", detail["process_model_identifier"]
     )

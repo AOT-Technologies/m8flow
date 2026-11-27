@@ -1104,8 +1104,7 @@ def Path_from_package() -> str:
 def ensure_tenant_exists(tenant_id: str | None) -> None:
     """Validate that the tenant row exists; raise if missing to enforce pre-provisioning.
 
-    Relocated from tenancy.py during the active-tenant deep-module collapse
-    : provisioning/validation is identity's job, not auth's.
+    Tenant provisioning and validation belong to the identity module.
     """
     if not tenant_id:
         from m8flow_backend.auth.tenant_context import TENANT_CLAIM
@@ -1158,8 +1157,7 @@ def create_tenant_if_not_exists(
     When slug is provided (e.g. realm name), it is used for M8flowTenantModel.slug;
     otherwise slug defaults to tenant_id (backward compatible).
 
-    Relocated from tenancy.py during the active-tenant deep-module collapse
-    : provisioning is identity's job, not auth's.
+    Tenant provisioning belongs to the identity module.
     """
     if not tenant_id or not tenant_id.strip():
         return
