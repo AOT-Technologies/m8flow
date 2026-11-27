@@ -108,13 +108,14 @@ const SortDropdown = React.forwardRef<HTMLButtonElement, SortDropdownProps>(
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 // Radix menus treat printable keys as typeahead; keep them in the box.
-                // ArrowDown hands focus to the first row, Escape still closes.
-                if (event.key === "ArrowDown") {
+                // Arrows hand focus to the first/last visible row; Escape still closes.
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault()
-                  event.currentTarget
+                  const items = event.currentTarget
                     .closest("[role=menu]")
-                    ?.querySelector<HTMLElement>("[role=menuitemradio]")
-                    ?.focus()
+                    ?.querySelectorAll<HTMLElement>("[role=menuitemradio]")
+                  const target = event.key === "ArrowDown" ? items?.[0] : items?.[items.length - 1]
+                  target?.focus()
                 } else if (event.key !== "Escape") {
                   event.stopPropagation()
                 }

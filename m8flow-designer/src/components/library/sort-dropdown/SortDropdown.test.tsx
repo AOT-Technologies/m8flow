@@ -11,13 +11,20 @@ const OPTIONS = [
 ];
 
 describe('SortDropdown', () => {
-  it('selects a filtered result with the keyboard when the current selection is hidden', async () => {
+  it.each([
+    { key: 'ArrowDown', name: 'Draft 0', value: 'draft' },
+    { key: 'ArrowUp', name: 'Draft review', value: 'draft-review' },
+  ])('selects the filtered boundary result with $key when the current selection is hidden', async ({ key, name, value }) => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(
       <SortDropdown
         label="Status"
-        options={OPTIONS}
+        options={[
+          ...OPTIONS,
+          { label: 'Draft review', value: 'draft-review' },
+          { label: 'Archived', value: 'archived' },
+        ]}
         value="published"
         onChange={onChange}
         searchPlaceholder="Search statuses"
@@ -30,12 +37,42 @@ describe('SortDropdown', () => {
     await user.type(search, 'draft');
     expect(search).toHaveFocus();
     expect(screen.queryByRole('menuitemradio', { name: /^Published/ })).not.toBeInTheDocument();
-    const draft = screen.getByRole('menuitemradio', { name: 'Draft 0' });
-    expect(draft).toHaveAttribute('aria-checked', 'false');
-    await user.keyboard('{ArrowDown}');
-    expect(draft).toHaveFocus();
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(2);
+    const result = screen.getByRole('menuitemradio', { name });
+    expect(result).toHaveAttribute('aria-checked', 'false');
+    await user.keyboard(`{${key}}`);
+    expect(result).toHaveFocus();
     await user.keyboard('{Enter}');
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('draft');
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(value);
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it.each(['ArrowDown', 'ArrowUp'])('keeps search focus with %s when no results match', async (key) => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <SortDropdown
+        label="Status"
+        options={OPTIONS}
+        value="published"
+        onChange={onChange}
+        searchPlaceholder="Search statuses"
+        emptyLabel="No matching statuses"
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Status: Published' });
+    await user.click(trigger);
+    const search = await screen.findByRole('searchbox', { name: 'Search statuses' });
+    await user.type(search, 'zzz');
+    expect(screen.queryByRole('menuitemradio')).not.toBeInTheDocument();
+    await user.keyboard(`{${key}}`);
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue('zzz');
+    expect(screen.getByText('No matching statuses')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
   });
