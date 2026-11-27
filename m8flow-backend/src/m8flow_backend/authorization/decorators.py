@@ -59,7 +59,7 @@ def require_permission(
     get_process_model still uses an inline `allow_uri` check):
 
         @handle_api_errors
-        @require_permission(uri="/v1.0/widgets/{widget_id}", on_deny="404")
+        @require_permission(uri="/widgets/{widget_id}", on_deny="404")
         def get_widget(widget_id: int): ...
 
     Routes registered directly in `routes/v1.py` don't use
@@ -69,7 +69,7 @@ def require_permission(
     alone is sufficient there. `onboarding` and `list_tasks` in that file are
     real, already-migrated examples of this form:
 
-        @app.get("/v1.0/onboarding")
+        @app.get(f"{DEFAULT_API_VERSION_PREFIX}/onboarding")
         @require_permission()
         def onboarding(): ...
     """

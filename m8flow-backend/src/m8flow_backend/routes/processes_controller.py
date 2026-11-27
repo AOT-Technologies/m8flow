@@ -35,14 +35,14 @@ def _safe_content_disposition(filename: str) -> dict[str, str]:
 
 def _process_group_permission_uri(*, modified_process_group_identifier: str, **_kwargs) -> str:
     group_id = process_model_identifier_from_path_param(modified_process_group_identifier)
-    return f"/v1.0/process-groups/{group_id}"
+    return f"/process-groups/{group_id}"
 
 
 def _model_files_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
     """Definition-content target (M8F-534): outside /process-models on purpose, since
     the catalog list grant matches every /process-models/... path."""
     model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
-    return f"/v1.0/process-model-files/{model_id}"
+    return f"/process-model-files/{model_id}"
 
 
 def _working_revision(*, required: bool = False) -> str | None:
@@ -56,15 +56,15 @@ def _working_revision(*, required: bool = False) -> str | None:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     on_deny="empty",
     empty_response=[],
 )
 def list_process_models():
     """Designer Processes models list. New endpoint rather than widening
-    GET /v1.0/process-models (path-only JSON used by thin/MCP clients).
+    GET /process-models (path-only JSON used by thin/MCP clients).
 
-    Auth mirrors Home: GET /v1.0/process-models; denied
+    Auth mirrors Home: GET /process-models; denied
     callers get [] (200), not 403. A super-admin on All Tenants gets the
     merged cross-tenant catalog, each row tagged with its own tenant.
     """
@@ -128,7 +128,7 @@ def list_process_models():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-groups",
+    uri="/process-groups",
     on_deny="empty",
     empty_response=[],
 )
@@ -198,7 +198,7 @@ def _explicit_body_tenant(payload: dict) -> str | None:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-groups",
+    uri="/process-groups",
     forbidden_message="Not permitted to create a process group",
 )
 def create_process_group(body: dict | None = None):
@@ -293,13 +293,13 @@ def delete_process_group(modified_process_group_identifier: str):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to create a process model",
 )
 def create_process_model(body: dict | None = None):
     """Create a process model under an existing group, with a default BPMN.
     Super-admin may write when bound to a concrete tenant (M8F-479). Distinct
-    from thin POST /v1.0/process-models ({path, xml}).
+    from thin POST /process-models ({path, xml}).
     """
     user = require_current_user()
     session = g.db_session
@@ -326,7 +326,7 @@ def create_process_model(body: dict | None = None):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to update this process model",
 )
 def update_process_model(modified_process_model_identifier: str, body: dict | None = None):
@@ -415,7 +415,7 @@ def change_working_version(modified_process_model_identifier: str, body: dict | 
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to copy this process model",
 )
 def copy_process_model(modified_process_model_identifier: str, body: dict | None = None):
@@ -472,7 +472,7 @@ def _primary_bpmn_name(*, tenant_id: str, process_model_identifier: str) -> str:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to run process model tests",
 )
 def run_process_model_tests(modified_process_model_identifier: str):
@@ -527,7 +527,7 @@ def list_script_unit_tests(modified_process_model_identifier: str):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to create a script unit test",
 )
 def create_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
@@ -565,7 +565,7 @@ def create_script_unit_test(modified_process_model_identifier: str, body: dict |
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to run a script unit test",
 )
 def run_script_unit_test(modified_process_model_identifier: str, body: dict | None = None):
@@ -602,7 +602,7 @@ def run_script_unit_test(modified_process_model_identifier: str, body: dict | No
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     on_deny="404",
     forbidden_message="Process model not found",
 )
@@ -729,7 +729,7 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to modify this process model",
 )
 def put_process_model_file(modified_process_model_identifier: str, file_name: str):
@@ -757,7 +757,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to modify this process model",
 )
 def create_process_model_file(modified_process_model_identifier: str, body: dict | None = None):
@@ -793,7 +793,7 @@ def create_process_model_file(modified_process_model_identifier: str, body: dict
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to modify this process model",
 )
 def delete_process_model_file(modified_process_model_identifier: str, file_name: str):
@@ -816,7 +816,7 @@ def delete_process_model_file(modified_process_model_identifier: str, file_name:
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances",
+    uri="/process-instances",
     forbidden_message="Not permitted to start this process model",
 )
 def start_process_instance(modified_process_model_identifier: str, body: dict | None = None):
@@ -855,7 +855,7 @@ def start_process_instance(modified_process_model_identifier: str, body: dict | 
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-models",
+    uri="/process-models",
     forbidden_message="Not permitted to delete this process model",
 )
 def delete_process_model(modified_process_model_identifier: str):

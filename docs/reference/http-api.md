@@ -1,19 +1,26 @@
 # HTTP API
 
-The backend serves its API under two prefixes on port 6840. This page covers
-the prefixes, authentication, tenant selection, errors, and the endpoints you
-use most.
+The backend serves versioned APIs on port 6840. This page covers the prefixes,
+authentication, tenant selection, errors, and the endpoints you use most.
 
 ## Prefixes and the OpenAPI spec
 
 | Prefix | Defined in | Contents |
 |---|---|---|
-| `/v1.0/m8flow/` | `m8flow-backend/src/m8flow_backend/api.yml` (OpenAPI 3) | Catalog, process instances, Task Review, templates, tenants, invitations, connectors, API keys, NATS, and MCP tools |
-| `/v1.0/` | `m8flow-backend/src/m8flow_backend/routes/v1.py` | Sign-in, health, permission checks, tasks, instance starts, and secrets |
+| `/v1.0/m8flow/` | `m8flow-backend/src/m8flow_backend/api-v1.yml` (OpenAPI 3) | V1 contract for catalog, process instances, Task Review, templates, tenants, invitations, connectors, API keys, NATS, and MCP tools |
+| `/v2.0/m8flow/` | `m8flow-backend/src/m8flow_backend/api-v2.yml` (OpenAPI 3) | V2 contract for the same API areas, independently versioned from V1 |
+| `/v{version}/` | `m8flow-backend/src/m8flow_backend/routes/v1.py` | Sign-in, health, permission checks, tasks, instance starts, and secrets |
 
-Connexion validates requests against `api.yml`. The interactive API reference
-is at `http://localhost:6840/v1.0/m8flow/ui`, and the raw spec is at
-`http://localhost:6840/v1.0/m8flow/openapi.json`.
+Currently, `{version}` is `1.0` or `2.0`. V1 remains the default for existing
+clients. V2 currently uses the same handlers and request/response contract as
+V1; endpoint-specific behavior or schemas will diverge only when that
+endpoint's contract changes. See the [versioning policy](versioning.md) for
+the compatibility guarantee.
+
+Connexion validates requests against the OpenAPI spec for the requested version. The interactive API reference
+is at `http://localhost:6840/v1.0/m8flow/ui` for V1 or
+`http://localhost:6840/v2.0/m8flow/ui` for V2. The raw OpenAPI document is
+available at the matching `/openapi.json` path.
 
 ## Authentication
 
@@ -68,7 +75,7 @@ These endpoints need no token:
 |---|---|
 | `GET /v1.0/healthy`, `GET /v1.0/ping` | Liveness |
 | `GET /v1.0/readyz` | Readiness, for load balancers and deployment checks |
-| `GET /v1.0/status` | `{"healthy": true, "ok": true, "status": "ok"}` when the backend is up |
+| `GET /v1.0/status` | `{"healthy": true, "ok": true, "status": "ok", "API version": "1.0"}` when the backend is up; `/v2.0/status` returns the same health fields with `"API version": "2.0"` |
 
 ## Permission checks
 

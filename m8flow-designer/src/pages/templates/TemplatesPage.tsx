@@ -31,7 +31,7 @@ const PER_PAGE = 12;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Templates gallery — wired to GET /v1.0/m8flow/templates (Template
+ * Templates gallery — wired to GET /m8flow/templates (Template
  * modeler map, ticket 02 — .scratch/template-modeler/). Same tenant-gating
  * posture as ProcessesPage: super-admin must pick a concrete tenant, no
  * merged all-tenant catalog view, even though the backend itself would

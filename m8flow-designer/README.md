@@ -13,28 +13,28 @@ once the user authenticates, with `access_token` / `id_token` cookies set by
 the backend. `src/auth.ts` here follows that same pattern:
 
 - `login()` / `loginAsPlatformAdmin()` send the browser to
-  `${VITE_BACKEND_BASE_URL}/v1.0/login?...`. Logged-out visits auto-redirect
+  `${VITE_BACKEND_BASE_URL}/v<configured-version>/login?...`. Logged-out visits auto-redirect
   straight to Keycloak's shared "m8flow" realm sign-in — the designer's
   tenant-selection gate no longer renders a realm chooser. Platform admins
   reach the master realm via the "Platform Admin Sign In" link Keycloak's own
   login page renders (see `m8flow-backend/keycloak/themes/m8flow/login/`).
   After shared-realm login, a user with one
-  organization is finalized via `GET /v1.0/login?...&tenant=<alias>&tenant_finalization=1`;
+  organization is finalized via `GET /v<configured-version>/login?...&tenant=<alias>&tenant_finalization=1`;
   a user with many organizations picks one on the same page. The active tenant
   is the `m8flow_selected_tenant` cookie — not `localStorage`.
   `/accept-invitation?token=…` is a public page (no tenant gate): validate,
   set password (min 8), then **Go to login** — it does not auto-login.
   Invitation emails and JSON `invitation_link` use this designer origin
   (`M8FLOW_FRONTEND_BASE_URL`, default `http://localhost:6853`).
-- Keycloak redirects to the backend's `/v1.0/login_return`, which exchanges
+- Keycloak redirects to the backend's `/v<configured-version>/login_return`, which exchanges
   the authorization code for tokens (server-side, via the confidential
   `m8flow-backend` Keycloak client) and sets `access_token` / `id_token`
   cookies before redirecting back to `redirect_url`.
 - `isLoggedIn()` / `getCurrentUser()` / `isSuperAdmin()` read those cookies.
-- `logout()` sends the browser to `${VITE_BACKEND_BASE_URL}/v1.0/logout?...`,
+- `logout()` sends the browser to `${VITE_BACKEND_BASE_URL}/v<configured-version>/logout?...`,
   which clears the app's cookies and ends the Keycloak SSO session.
 
-The browser-redirect `GET /v1.0/login` / `/v1.0/login_return` / `/v1.0/logout`
+The browser-redirect `GET /v<configured-version>/login` / `/v<configured-version>/login_return` / `/v<configured-version>/logout`
 routes live in `m8flow-backend/src/m8flow_backend/routes/login_controller.py`
 — they didn't exist when this app was first scaffolded (dropped along with
 the rest of the upstream auth controller during the `m8flow-core`
@@ -52,10 +52,12 @@ npm run dev       # http://localhost:6853
 
 `VITE_BACKEND_BASE_URL` defaults to `http://localhost:${M8FLOW_BACKEND_PORT}`
 (from the repo-root `.env`, normally `6840`) via `vite.config.ts`; override it
-with an env var if needed. Dev API calls use a Vite proxy on `/v1.0` (same
-origin) so credentialed Home fetches do not depend on cross-port CORS;
-login/logout still hit the absolute backend URL so Keycloak's redirect URI
-stays on `:6840`.
+with an env var if needed. `VITE_API_VERSION` selects the API version for the
+frontend build and defaults to `1.0`; `M8FLOW_API_VERSION` can provide the
+same build setting when `VITE_API_VERSION` is unset. Dev API calls use a Vite
+proxy for the configured versioned path (same origin) so credentialed Home
+fetches do not depend on cross-port CORS; login/logout still hit the absolute
+backend URL so Keycloak's redirect URI stays on `:6840`.
 
 ## E2E (Playwright)
 

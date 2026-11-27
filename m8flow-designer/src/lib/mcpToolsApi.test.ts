@@ -17,9 +17,9 @@ describe('mcpToolsApi', () => {
     await fetchMcpToolsCatalog();
     await pingMcpServer();
     await executeMcpTool('cancel_process_instance', { process_instance_id: 7 }, true);
-    expect(apiGet).toHaveBeenNthCalledWith(1, '/v1.0/m8flow/mcp-tools');
-    expect(apiGet).toHaveBeenNthCalledWith(2, '/v1.0/m8flow/mcp-tools/ping');
-    expect(apiPost).toHaveBeenCalledWith('/v1.0/m8flow/mcp-tools/execute', {
+    expect(apiGet).toHaveBeenNthCalledWith(1, '/m8flow/mcp-tools');
+    expect(apiGet).toHaveBeenNthCalledWith(2, '/m8flow/mcp-tools/ping');
+    expect(apiPost).toHaveBeenCalledWith('/m8flow/mcp-tools/execute', {
       tool_name: 'cancel_process_instance',
       arguments: { process_instance_id: 7 },
       confirm: true,
@@ -27,7 +27,7 @@ describe('mcpToolsApi', () => {
   });
 
   it('prefers the backend reason over the fallback', () => {
-    const err = new ApiError('/v1.0/m8flow/mcp-tools', 503, 'GET', 'M8FLOW_MCP_SERVER_URL is not configured.');
+    const err = new ApiError('/m8flow/mcp-tools', 503, 'GET', 'M8FLOW_MCP_SERVER_URL is not configured.');
     expect(mcpErrorMessage(err, 'fallback')).toBe('M8FLOW_MCP_SERVER_URL is not configured.');
     expect(mcpErrorMessage(new ApiError('/x', 500), 'fallback')).toBe('fallback');
     expect(mcpErrorMessage(new TypeError('network'), 'fallback')).toBe('fallback');

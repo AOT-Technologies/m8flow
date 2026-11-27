@@ -31,10 +31,14 @@ COPY m8flow-designer /app/m8flow-designer
 # Baked into the bundle at build time: auth.ts uses it for the Keycloak login
 # redirect, so it must be a browser-reachable backend origin, not an in-network
 # service name. VITE_API_BASE_URL is deliberately left empty so data fetches
-# stay same-origin and go through the nginx /v1.0 proxy below -- the same shape
+# stay same-origin and go through the versioned nginx API proxy below -- the same shape
 # as the Vite dev server proxy.
 ARG VITE_BACKEND_BASE_URL=http://localhost:6840
 ENV VITE_BACKEND_BASE_URL=${VITE_BACKEND_BASE_URL}
+# API path version is baked into the SPA bundle. Keep V1 as the default for
+# existing deployments; set M8FLOW_API_VERSION=2.0 to build a V2-configured UI.
+ARG VITE_API_VERSION=1.0
+ENV VITE_API_VERSION=${VITE_API_VERSION}
 # Browser-reachable MCP server URL shown on the MCP Connection page.
 ARG VITE_MCP_SERVER_URL=
 ENV VITE_MCP_SERVER_URL=${VITE_MCP_SERVER_URL}

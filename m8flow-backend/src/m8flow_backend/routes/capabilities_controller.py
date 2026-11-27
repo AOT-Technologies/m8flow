@@ -74,27 +74,27 @@ def get_capabilities():
     # Tenant-admin uses the page target, while super-admin uses the tenant
     # registry target. Check both through the materialized permission tables;
     # do not infer this capability from a role name.
-    can_manage_tenant = permitted("GET", "/v1.0/m8flow/tenant-management") or permitted(
-        "GET", "/v1.0/m8flow/tenants"
+    can_manage_tenant = permitted("GET", "/m8flow/tenant-management") or permitted(
+        "GET", "/m8flow/tenants"
     )
 
     return success_response(
         {
             # PM:ALL is materialized as /process-models/%; use a representative
             # item path so the DB target's wildcard is evaluated.
-            "can_manage_processes": permitted("DELETE", "/v1.0/process-models/capability-check"),
+            "can_manage_processes": permitted("DELETE", "/process-models/capability-check"),
             "can_manage_process_models": permitted(
-                "PUT", "/v1.0/process-models/capability-check"
+                "PUT", "/process-models/capability-check"
             ),
-            "can_start_processes": permitted("POST", "/v1.0/process-instances"),
-            "can_review_tasks": permitted("POST", "/v1.0/tasks/1"),
-            "can_read_secrets": permitted("GET", "/v1.0/secrets"),
-            "can_manage_secrets": permitted("DELETE", "/v1.0/secrets"),
-            "can_read_named_values": permitted("GET", "/v1.0/m8flow/named-values"),
-            "can_manage_named_values": permitted("POST", "/v1.0/m8flow/named-values"),
-            "can_read_connectors": permitted("GET", "/v1.0/m8flow/connectors-grouped"),
+            "can_start_processes": permitted("POST", "/process-instances"),
+            "can_review_tasks": permitted("POST", "/tasks/1"),
+            "can_read_secrets": permitted("GET", "/secrets"),
+            "can_manage_secrets": permitted("DELETE", "/secrets"),
+            "can_read_named_values": permitted("GET", "/m8flow/named-values"),
+            "can_manage_named_values": permitted("POST", "/m8flow/named-values"),
+            "can_read_connectors": permitted("GET", "/m8flow/connectors-grouped"),
             "can_manage_connector_profiles": permitted(
-                "POST", "/v1.0/m8flow/connector-profiles"
+                "POST", "/m8flow/connector-profiles"
             ),
             "can_manage_tenant": can_manage_tenant,
         },

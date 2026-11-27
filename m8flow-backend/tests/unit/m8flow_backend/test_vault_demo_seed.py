@@ -394,12 +394,15 @@ def test_backend_health_wait_retries_until_healthy(monkeypatch, capsys):
 
     monkeypatch.setattr(module.request, "urlopen", urlopen)
     monkeypatch.setattr(module.time, "sleep", lambda _seconds: None)
+    monkeypatch.delenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_API_VERSION", "2.0")
     monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "1")
     monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_POLL_SECONDS", "0.01")
 
     module.wait_for_backend_health()
 
     assert len(calls) == 2
+    assert all(call[0] == "http://m8flow-backend:6840/v2.0/healthy" for call in calls)
     assert "backend is healthy" in capsys.readouterr().out
 
 

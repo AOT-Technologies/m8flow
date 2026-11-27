@@ -62,12 +62,12 @@ def get_home_stats():
     scope_tenant_id = _home_scope_tenant_id(user=user, own_tenant_id=own_tenant_id)
 
     can_read_home_task_count = database_permission(
-        user, "GET", "/v1.0/m8flow/home-task-count", session=session
+        user, "GET", "/m8flow/home-task-count", session=session
     )
     # Tenant-wide readers count every instance; own-instance readers count the ones
     # they started or have a task assigned in (M8F-653), so they see 0, not null.
     can_read_instances = user_has_permission(
-        user, "GET", "/v1.0/process-instances/for-me", session=session
+        user, "GET", "/process-instances/for-me", session=session
     )
     viewer_id = instance_initiator_scope(user, session=session) if can_read_instances else None
 
@@ -124,24 +124,24 @@ def _home_scope_tenant_id(*, user: UserModel, own_tenant_id: str | None) -> str 
 @require_permission(
     # Own-instance read is enough; the list narrows to the caller's own
     # instances unless they read tenant-wide (M8F-534).
-    uri="/v1.0/process-instances/for-me",
+    uri="/process-instances/for-me",
     on_deny="empty",
     empty_response=[],
 )
 def get_home_recent_instances():
     """Recent process instances for the Home page table. New endpoint rather
-    than extending GET /v1.0/process-instances: that route's bare
+    than extending GET /process-instances: that route's bare
     {id, status} shape is what MCP's list_process_instances still hits, and
     m8flow-frontend's Process Instances page uses a different SpiffArena-style
     report path (/process-instances POST with filters) entirely -- mutating
     the shared list shape was the risk this ticket asked to avoid.
 
     Authorization mirrors ticket 03's live allow_uri check against
-    /v1.0/process-instances. Denied
+    /process-instances. Denied
     callers get an empty list (200), not a 403 -- same Home-still-loads
     philosophy as home-stats returning null per unauthorized field. That
     inherits YAML-uri-prefix issue #3 (viewer won't match via real YAML
-    grants today); matching existing /v1.0/process-instances behavior is
+    grants today); matching existing /process-instances behavior is
     deliberate, not a silent inheritance.
     """
     user = require_current_user()
@@ -191,13 +191,13 @@ def get_home_recent_instances():
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/tasks",
+    uri="/tasks",
     on_deny="empty",
     empty_response=[],
 )
 def get_home_my_tasks():
     """Pending tasks for the Home "My tasks" list. New endpoint rather than
-    extending GET /v1.0/tasks: m8flow-frontend's Homepage already expects a
+    extending GET /tasks: m8flow-frontend's Homepage already expects a
     richer SpiffArena-shaped `{results: ProcessInstanceTask[]}` payload from
     `/tasks`, while the bare v1 list returns
     `{id, task_name, task_title, process_instance_id}` and MCP still calls
@@ -205,9 +205,9 @@ def get_home_my_tasks():
     avoid. Also cannot reuse list_pending_tasks_for_super_admin (no user_id
     filter -- every pending task for every user).
 
-    Authorization mirrors ticket 03/04: live allow_uri against /v1.0/tasks.
+    Authorization mirrors ticket 03/04: live allow_uri against /tasks.
     Denied callers get [] (200), not 403. Inherits pre-existing issue #3
-    (YAML uri prefix) deliberately, matching today's /v1.0/tasks behavior.
+    (YAML uri prefix) deliberately, matching today's /tasks behavior.
     """
     user = require_current_user()
     session = g.db_session

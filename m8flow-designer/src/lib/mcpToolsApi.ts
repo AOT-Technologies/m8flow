@@ -5,7 +5,7 @@ import { ApiError, apiGet, apiPost } from './api';
  * `mcp_tools_controller.py`; the backend's `/m8flow/mcp-tools*` grants are the
  * enforcement layer.
  */
-const BASE_PATH = '/v1.0/m8flow/mcp-tools';
+const BASE_PATH = '/m8flow/mcp-tools';
 
 export type McpToolParameter = {
   name: string;

@@ -55,7 +55,7 @@ The optional local Vault server and demo bootstrap are development-only. The bac
 | Service | Build | Purpose | Ports | Configuration |
 |---------|-------|---------|-------|----------------|
 | **m8flow-backend** | m8flow.backend.Dockerfile | Flask/uvicorn API (SpiffWorkflow + m8flow extensions). Runs migrations on startup. | `${M8FLOW_BACKEND_PORT:-6840}` -> `${M8FLOW_BACKEND_PORT:-6840}` | DB: `m8flow-db`. Keycloak: `keycloak-proxy:6842`. Redis/Celery, MinIO URLs set for Docker. BPMN/templates dirs: volumes `process_models_cache`, `templates_cache` at `/app/data/process_models`, `/app/data/templates`. Entrypoint chowns those dirs then runs app as user `app` (UID 1000). Default build target: `dev`; prod override uses target `prod`. |
-| **m8flow-designer** | m8flow.designer.Dockerfile | Nginx serving the built Vite/React designer app, the primary UI. | `${M8FLOW_FRONTEND_PORT:-6853}` -> 8080 | `VITE_BACKEND_BASE_URL` is baked in at build time (the Keycloak login redirect origin). At runtime `BACKEND_BASE_URL` is the in-network target for the same-origin `/v1.0` proxy. Listens on 8080. |
+| **m8flow-designer** | m8flow.designer.Dockerfile | Nginx serving the built Vite/React designer app, the primary UI. | `${M8FLOW_FRONTEND_PORT:-6853}` -> 8080 | `VITE_BACKEND_BASE_URL` and `VITE_API_VERSION` are baked in at build time. Set `M8FLOW_API_VERSION=2.0` to build a V2-configured UI; it defaults to `1.0` for existing deployments. At runtime `BACKEND_BASE_URL` is the in-network target for the same-origin versioned API proxy. Listens on 8080. |
 
 ### Timer starts and scheduler ownership
 

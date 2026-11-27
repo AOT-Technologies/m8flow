@@ -1,26 +1,26 @@
 # m8flow-backend/src/m8flow_backend/routes/login_controller.py
 """Browser-redirect Keycloak login/logout.
 
-`POST /v1.0/login` (routes/v1.py) is a JSON credentials endpoint that mints an
+`POST /{version}/login` (routes/v1.py) is a JSON credentials endpoint that mints an
 internal token directly — it does not talk to Keycloak. This module is the
 other kind of login: the one a browser hits by full-page redirect.
 
-  1. `GET /v1.0/login` sends the browser to Keycloak's hosted login page.
-  2. Keycloak redirects back to `GET /v1.0/login_return` with an authorization
+  1. `GET /{version}/login` sends the browser to Keycloak's hosted login page.
+  2. Keycloak redirects back to `GET /{version}/login_return` with an authorization
      code.
   3. This exchanges the code for tokens (server-side, using the confidential
      `m8flow-backend` Keycloak client) and sets `access_token`/`id_token`/
      `refresh_token` cookies, then redirects to the caller's original
      `redirect_url`.
-  4. `POST /v1.0/refresh` silently mints a fresh `access_token`/`id_token`
+  4. `POST /{version}/refresh` silently mints a fresh `access_token`/`id_token`
      from the `refresh_token` cookie. m8flow-frontend's HttpService tries this
-     first on a 401 before falling back to a full `GET /v1.0/login` redirect —
+     first on a 401 before falling back to a full versioned `GET /login` redirect —
      see HttpService.ts. Without it, every access-token expiry (30 min of
      idle) forced a full round trip through Keycloak's `/auth` endpoint, which
      is where a known Keycloak quirk (a still-live AUTH_SESSION_ID/KC_RESTART
      cookie pointing at an already-evicted server-side auth session) can
      surface as Keycloak's own "loginTimeout" error page.
-  5. `GET /v1.0/logout` clears those cookies and ends the Keycloak SSO session.
+  5. `GET /{version}/logout` clears those cookies and ends the Keycloak SSO session.
 
 This gap was later filled by this module.
 """
@@ -34,6 +34,7 @@ from urllib.parse import unquote
 
 from flask import Response, jsonify, redirect, request
 
+from m8flow_backend.api_versions import api_version_prefix_for_path
 from m8flow_backend.errors import ApiError
 from m8flow_backend.integrations.auth import get_auth_provider
 from m8flow_backend.integrations.auth.base.errors import ProviderUnavailable, TokenInvalid
@@ -58,7 +59,9 @@ _OAUTH_NONCE_COOKIE = "m8flow_oauth_nonce"
 # M8FLOW_KEYCLOAK_ACCESS_CODE_LIFESPAN_LOGIN in docker/keycloak-entrypoint.sh),
 # or a form left idle completes into a callback whose nonce cookie is gone.
 _OAUTH_NONCE_MAX_AGE = 3600
-_LOGIN_RETURN_PATH = "/v1.0/login_return"
+def _login_return_path() -> str:
+    """Keep the OAuth callback on the same API version as the login request."""
+    return f"{api_version_prefix_for_path(request.path)}/login_return"
 
 
 def _nonce_cookie_name(nonce: str) -> str:
@@ -68,7 +71,7 @@ def _nonce_cookie_name(nonce: str) -> str:
 def _redirect_uri() -> str:
     """Callback URL registered on the m8flow-backend client (its redirectUris
     entry is a wildcard on this backend's own origin, e.g. http://localhost:6840/*)."""
-    return f"{request.host_url.rstrip('/')}{_LOGIN_RETURN_PATH}"
+    return f"{request.host_url.rstrip('/')}{_login_return_path()}"
 
 
 def _encode_state(*, authentication_identifier: str, redirect_url: str, nonce: str, restarted: bool) -> str:
@@ -99,7 +102,7 @@ def _decode_state(state: str | None) -> dict[str, str] | None:
 
 
 def login() -> Response:
-    """GET /v1.0/login - start the browser-redirect Keycloak login flow.
+    """GET /{version}/login - start the browser-redirect Keycloak login flow.
 
     Query params:
       redirect_url (required): where to land in the app after a successful login.
@@ -155,14 +158,14 @@ def _start_login(*, identifier: str, redirect_url: str, prompt: str | None, rest
         _nonce_cookie_name(nonce),
         nonce,
         max_age=_OAUTH_NONCE_MAX_AGE,
-        path=_LOGIN_RETURN_PATH,
+        path=_login_return_path(),
         httponly=True,
     )
     return response
 
 
 def login_return() -> Response:
-    """GET /v1.0/login_return - Keycloak's OAuth authorization-code callback."""
+    """GET /{version}/login_return - Keycloak's OAuth authorization-code callback."""
     error = request.args.get("error")
     if error:
         raise ApiError("keycloak_login_failed", request.args.get("error_description") or error, 401)
@@ -201,19 +204,19 @@ def login_return() -> Response:
         raise ApiError("keycloak_token_exchange_failed", "Could not complete sign-in", 401) from None
 
     response = redirect(redirect_url)
-    clear_session_cookie(response, _nonce_cookie_name(nonce), path=_LOGIN_RETURN_PATH, httponly=True)
+    clear_session_cookie(response, _nonce_cookie_name(nonce), path=_login_return_path(), httponly=True)
     set_token_cookies(response, token_set_as_dict(token_set), identifier=identifier)
     return response
 
 
 def refresh() -> Response:
-    """POST /v1.0/refresh - silently mint fresh tokens from the refresh_token
+    """POST /{version}/refresh - silently mint fresh tokens from the refresh_token
     cookie, without sending the browser back through Keycloak's /auth
     endpoint. See the module docstring for why this exists.
 
     Returns 401 (no cookies changed) if there's no refresh_token cookie or
     Keycloak rejects it (expired/revoked); the caller is expected to fall
-    back to the full GET /v1.0/login redirect in that case.
+    back to the full versioned GET /login redirect in that case.
     """
     refresh_token = request.cookies.get("refresh_token")
     if not refresh_token:
@@ -249,7 +252,7 @@ def refresh() -> Response:
 
 
 def logout() -> Response:
-    """GET /v1.0/logout - clear the app session and end the Keycloak SSO session.
+    """GET /{version}/logout - clear the app session and end the Keycloak SSO session.
 
     Query params (matching m8flow-frontend's UserService.doLogout()):
       redirect_url: where to land after logout.

@@ -72,7 +72,7 @@ const VISIBILITY_OPTIONS: { value: VisibilityFilter; labelKey: ParseKeys }[] = [
 
 /**
  * Templates gallery — search/filter/sort/paginate over
- * `GET /v1.0/m8flow/templates`, matching this app's own Processes-list
+ * `GET /m8flow/templates`, matching this app's own Processes-list
  * conventions (`ProcessesModelsList.tsx`) rather than porting
  * `m8flow-frontend`'s Carbon-based `TemplateGalleryPage`. Presentational:
  * the parent (`TemplatesPage`) owns fetching and filter state.

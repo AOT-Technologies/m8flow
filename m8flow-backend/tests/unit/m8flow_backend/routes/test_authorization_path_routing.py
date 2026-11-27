@@ -11,10 +11,11 @@ import pytest
 
 from m8flow_core.models.process_instance import ProcessInstanceModel
 
-from m8flow_backend import authorization, workflow
+from m8flow_backend import authorization, identity, workflow
 from m8flow_backend.auth import encode_auth_token
 from m8flow_backend.auth.tenant_context import SELECTED_TENANT_COOKIE_NAME
 from m8flow_backend.identity import ensure_membership, ensure_tenant, ensure_user, sync_groups
+from m8flow_backend.api_versions import API_VERSION_PREFIXES
 
 
 @pytest.fixture
@@ -42,6 +43,101 @@ def routing_member(client, db_session):
     token = encode_auth_token(user=user)
     client.set_cookie(SELECTED_TENANT_COOKIE_NAME, tenant_id)
     return user.id, tenant_id, {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def versioned_grant_member(client, db_session):
+    granted_tenant_id = "versioned-grant-tenant"
+    denied_tenant_id = "versioned-deny-tenant"
+    granted_tenant = ensure_tenant(
+        db_session, tenant_id=granted_tenant_id, slug=granted_tenant_id
+    )
+    denied_tenant = ensure_tenant(db_session, tenant_id=denied_tenant_id, slug=denied_tenant_id)
+    user = ensure_user(
+        db_session,
+        username="versioned-grant-viewer",
+        service="https://example.test/realms/m8flow",
+        service_id="versioned-grant-viewer",
+    )
+    ensure_membership(db_session, user, granted_tenant)
+    ensure_membership(db_session, user, denied_tenant)
+    sync_groups(
+        db_session,
+        user=user,
+        # Membership in both tenants lets the cookie select either context.
+        # Only the granted tenant gets a role with a real `/tasks` grant;
+        # `member` exists solely to establish membership in the denied tenant.
+        group_identifiers=[f"{granted_tenant_id}:viewer", f"{denied_tenant_id}:member"],
+        tenant_id=granted_tenant_id,
+    )
+    identity.import_yaml(db_session, tenant_id=granted_tenant_id)
+    identity.import_yaml(db_session, tenant_id=denied_tenant_id)
+    db_session.commit()
+    token = encode_auth_token(user=user)
+    return {
+        "headers": {"Authorization": f"Bearer {token}"},
+        "granted_tenant_id": granted_tenant_id,
+        "denied_tenant_id": denied_tenant_id,
+    }
+
+
+def test_v1_v2_flask_route_use_real_active_tenant_grants_identically(
+    client, versioned_grant_member
+):
+    headers = versioned_grant_member["headers"]
+    allowed_responses = []
+    denied_responses = []
+
+    for version_prefix in API_VERSION_PREFIXES:
+        client.set_cookie(
+            SELECTED_TENANT_COOKIE_NAME, versioned_grant_member["granted_tenant_id"]
+        )
+        allowed = client.get(f"{version_prefix}/tasks", headers=headers)
+        allowed_responses.append(allowed)
+
+        client.set_cookie(
+            SELECTED_TENANT_COOKIE_NAME, versioned_grant_member["denied_tenant_id"]
+        )
+        denied = client.get(f"{version_prefix}/tasks", headers=headers)
+        denied_responses.append(denied)
+
+    assert [response.status_code for response in allowed_responses] == [200, 200]
+    assert allowed_responses[0].get_json() == allowed_responses[1].get_json()
+    assert [response.status_code for response in denied_responses] == [403, 403]
+    assert denied_responses[0].get_json() == denied_responses[1].get_json()
+    assert denied_responses[0].get_json()["error_code"] == "permission_denied"
+
+
+def test_v1_v2_connexion_route_use_real_active_tenant_grants_identically(
+    client, versioned_grant_member
+):
+    """Connexion dispatch must enforce the same selected-tenant grants as Flask routes."""
+    granted_tenant_id = versioned_grant_member["granted_tenant_id"]
+    denied_tenant_id = versioned_grant_member["denied_tenant_id"]
+
+    headers = versioned_grant_member["headers"]
+    allowed_responses = []
+    denied_responses = []
+    for version_prefix in API_VERSION_PREFIXES:
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, granted_tenant_id)
+        allowed_responses.append(
+            client.get(f"{version_prefix}/m8flow/connector-templates", headers=headers)
+        )
+
+        client.set_cookie(SELECTED_TENANT_COOKIE_NAME, denied_tenant_id)
+        denied_responses.append(
+            client.get(f"{version_prefix}/m8flow/connector-templates", headers=headers)
+        )
+
+    assert [response.status_code for response in allowed_responses] == [200, 200]
+    assert [response.status_code for response in denied_responses] == [403, 403]
+    allowed_payloads = [response.get_json() for response in allowed_responses]
+    denied_payloads = [response.get_json() for response in denied_responses]
+    assert allowed_payloads[0] == allowed_payloads[1]
+    assert denied_payloads[0] == denied_payloads[1]
+    assert allowed_payloads[0]
+    # Membership in the second tenant alone does not grant access to its route.
+    assert denied_payloads[0]["error_code"] == "permission_denied"
 
 
 @pytest.mark.parametrize("allowed", [True, False], ids=["allowed", "denied"])

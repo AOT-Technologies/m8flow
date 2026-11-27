@@ -33,7 +33,7 @@ import { startErrorMessage } from '@/lib/startProcessError';
 import { useProcessStart } from '@/components/useProcessStart';
 
 /**
- * Processes models list — wired to GET /v1.0/m8flow/process-models.
+ * Processes models list — wired to GET /m8flow/process-models.
  * Super-admin must pick a concrete tenant (no All-Tenants catalog merge).
  */
 export default function ProcessesPage() {

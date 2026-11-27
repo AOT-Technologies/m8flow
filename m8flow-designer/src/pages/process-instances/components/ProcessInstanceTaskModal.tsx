@@ -30,7 +30,7 @@ export function ProcessInstanceTaskModal({ instanceId, tenantId = null, task, on
     setError(null);
     setDenied(false);
     // Task data has its own grant (read-task-data); ask before fetching.
-    const taskDataUri = `/v1.0/task-data/${instanceId}`;
+    const taskDataUri = `/task-data/${instanceId}`;
     checkPermissions({ [taskDataUri]: ['GET'] })
       .then((permissions) => {
         if (cancelled) return;

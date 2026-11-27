@@ -224,6 +224,7 @@ fi
 log_config="$repo_root/uvicorn-log.yaml"
 default_backend_port="6840"
 backend_port="${port_arg:-${M8FLOW_BACKEND_PORT:-$default_backend_port}}"
+api_version="${M8FLOW_API_VERSION:-1.0}"
 
 # In Docker, Compose already injects env; avoid uvicorn --env-file overriding OTEL_* and other vars.
 # m8flow_backend.app:app is now a Connexion FlaskApp (ASGI), so uvicorn serves it
@@ -244,5 +245,5 @@ if [[ "$reload_mode" == "true" ]]; then
   uvicorn_args+=(--reload-exclude ".git/**")
 fi
 
-log_launcher_status "Starting Uvicorn. The backend is ready once '/v1.0/status' returns 200."
+log_launcher_status "Starting Uvicorn. The backend is ready once '/v${api_version}/status' returns 200."
 exec_python_module uvicorn m8flow_backend.app:app "${uvicorn_args[@]}"

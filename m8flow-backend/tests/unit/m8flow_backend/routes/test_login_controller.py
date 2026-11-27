@@ -45,6 +45,21 @@ def test_login_redirects_to_keycloak_with_state_and_nonce_cookie(client):
     assert "Max-Age=3600" in nonce_cookie
 
 
+def test_v2_login_keeps_callback_and_nonce_cookie_on_v2_path(client):
+    response = client.get("/v2.0/login", query_string={"redirect_url": "http://localhost:6853/"})
+    assert response.status_code == 302
+
+    query = parse_qs(urlparse(response.headers["Location"]).query)
+    assert urlparse(query["redirect_uri"][0]).path == "/v2.0/login_return"
+    state = _decode_state(query["state"][0])
+    nonce_cookie = next(
+        header
+        for header in response.headers.getlist("Set-Cookie")
+        if header.startswith(f"m8flow_oauth_nonce_{state['nonce']}=")
+    )
+    assert "Path=/v2.0/login_return" in nonce_cookie
+
+
 def test_login_return_requires_state(client):
     response = client.get("/v1.0/login_return", query_string={"code": "abc"})
     assert response.status_code == 400

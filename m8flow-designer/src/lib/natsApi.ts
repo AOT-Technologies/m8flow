@@ -5,7 +5,7 @@ import { apiGet } from './api';
  * `/m8flow/nats/*` permission is the enforcement layer). Shapes mirror
  * `nats_monitoring_controller.py`.
  */
-const BASE_PATH = '/v1.0/m8flow/nats';
+const BASE_PATH = '/m8flow/nats';
 
 export type NatsJetStreamTotals = {
   memoryBytes: number;

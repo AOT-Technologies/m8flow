@@ -57,7 +57,7 @@ def tenant_id_from_database(conn: psycopg.Connection | None = None) -> str:
 def wait_for_backend_health() -> None:
     health_url = os.getenv(
         "M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL",
-        "http://m8flow-backend:6840/v1.0/healthy",
+        f"http://m8flow-backend:6840/v{os.getenv('M8FLOW_API_VERSION', '1.0')}/healthy",
     )
     try:
         timeout_seconds = float(

@@ -15,7 +15,7 @@ _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}
 # Read gate for every instance view: tenant-wide readers match it through their
 # /process-instances grant, submitters through their own-instance grant. Handlers
 # then narrow to the caller's own instances via instance_initiator_scope (M8F-534).
-_OWN_INSTANCES_URI = "/v1.0/process-instances/for-me"
+_OWN_INSTANCES_URI = "/process-instances/for-me"
 
 
 def _attach_tenant_names(session, rows) -> None:
@@ -189,7 +189,7 @@ def get_process_instance(process_instance_id: int):
     can_read_files = user_has_permission(
         user,
         "GET",
-        f"/v1.0/process-model-files/{diagram_model_identifier}",
+        f"/process-model-files/{diagram_model_identifier}",
         session=session,
     )
     if not can_read_files and detail["bpmn_xml"]:
@@ -207,7 +207,7 @@ def get_process_instance(process_instance_id: int):
     forbidden_message="Process instance not found",
 )
 @require_permission(
-    uri="/v1.0/task-data/{process_instance_id}",
+    uri="/task-data/{process_instance_id}",
     on_deny="404",
     forbidden_message="Process instance not found",
 )
@@ -355,7 +355,7 @@ def list_process_instance_pending_tasks(process_instance_id: int):
     # Go opens Task Review: a candidate who cannot submit there would land on
     # Home instead (M8F-647), so can_complete also needs the submit grant.
     can_submit = user_has_permission(
-        user, "POST", "/v1.0/m8flow/task-review-access/{id}/submit", session=session
+        user, "POST", "/m8flow/task-review-access/{id}/submit", session=session
     )
     rows = [{**row, "can_complete": row["can_complete"] and can_submit} for row in rows]
     return success_response({"results": rows}, 200)
@@ -430,7 +430,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
 @handle_api_errors
 @require_permission(
     action="execute",
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri="/process-instances/{process_instance_id}",
     forbidden_message="Not permitted to change this process instance",
 )
 def suspend_process_instance(process_instance_id: int):
@@ -440,7 +440,7 @@ def suspend_process_instance(process_instance_id: int):
 @handle_api_errors
 @require_permission(
     action="execute",
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri="/process-instances/{process_instance_id}",
     forbidden_message="Not permitted to change this process instance",
 )
 def resume_process_instance(process_instance_id: int):
@@ -450,7 +450,7 @@ def resume_process_instance(process_instance_id: int):
 @handle_api_errors
 @require_permission(
     action="execute",
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri="/process-instances/{process_instance_id}",
     forbidden_message="Not permitted to change this process instance",
 )
 def terminate_process_instance(process_instance_id: int):
@@ -460,7 +460,7 @@ def terminate_process_instance(process_instance_id: int):
 @handle_api_errors
 @require_permission(
     action="execute",
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri="/process-instances/{process_instance_id}",
     forbidden_message="Not permitted to change this process instance",
 )
 def retry_process_instance(process_instance_id: int):
@@ -469,7 +469,7 @@ def retry_process_instance(process_instance_id: int):
 
 @handle_api_errors
 @require_permission(
-    uri="/v1.0/process-instances/{process_instance_id}",
+    uri="/process-instances/{process_instance_id}",
     forbidden_message="Not permitted to delete this process instance",
 )
 def delete_process_instance(process_instance_id: int):

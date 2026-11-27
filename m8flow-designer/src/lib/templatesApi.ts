@@ -1,17 +1,18 @@
 import i18n from '@/i18n';
 
 import { apiFetch, API_BASE_URL, ApiError } from './api';
+import { apiVersionPath } from './apiVersion';
 import { NetworkError } from './networkErrors';
 
 /** The backend's reason when it sent one, else `fallback` — never
- * `ApiError.message` ("POST /v1.0/… failed: 400"), which is for logs (M8F-685). */
+ * `ApiError.message` ("POST /… failed: 400"), which is for logs (M8F-685). */
 export function templateErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof NetworkError) return err.message;
   return (err instanceof ApiError && err.serverMessage) || fallback;
 }
 
 /**
- * Client for m8flow-backend's already-live `/v1.0/m8flow/templates*`
+ * Client for m8flow-backend's already-live `/m8flow/templates*`
  * contract (Template modeler map, ticket 01 —
  * `.scratch/template-modeler/`). Types and response shapes are read
  * directly from `templates_controller.py`'s own `_serialize_template`/
@@ -19,7 +20,7 @@ export function templateErrorMessage(err: unknown, fallback: string): string {
  * `m8flow-frontend` reference client (`TemplateService.ts`) — that
  * reference uses Spiff-style `HttpService`/XHR and is a UX/contract
  * pointer only, not a source to port. Response bodies are camelCase as-is
- * (unlike this app's other `/v1.0/m8flow/*` routes, which are
+ * (unlike this app's other `/m8flow/*` routes, which are
  * snake_case) — confirmed from the controller, no field-mapping needed.
  */
 
@@ -135,7 +136,7 @@ export function templatesPath(filters: TemplateListFilters = {}): string {
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
   if (filters.tenantId) params.set('tenantId', filters.tenantId);
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/templates?${qs}` : '/v1.0/m8flow/templates';
+  return qs ? `/m8flow/templates?${qs}` : '/m8flow/templates';
 }
 
 export async function fetchTemplates(filters: TemplateListFilters = {}): Promise<TemplateListResponse> {
@@ -162,7 +163,7 @@ export function templatePath(id: number, options: { includeContents?: boolean; i
   if (options.includeContents !== undefined) params.set('include_contents', String(options.includeContents));
   if (options.includeDeleted !== undefined) params.set('include_deleted', String(options.includeDeleted));
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/templates/${id}?${qs}` : `/v1.0/m8flow/templates/${id}`;
+  return qs ? `/m8flow/templates/${id}?${qs}` : `/m8flow/templates/${id}`;
 }
 
 /** Designer route that opens one template file in DiagramCanvas. */
@@ -191,7 +192,7 @@ export async function fetchTemplate(
  * `fetchProcessModelFileContent`.
  */
 export async function fetchTemplateFileContent(id: number, fileName: string): Promise<string> {
-  const response = await apiFetch(`/v1.0/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`);
+  const response = await apiFetch(`/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`);
   return response.text();
 }
 
@@ -209,7 +210,7 @@ export async function saveTemplateFileContent(
   content: string,
   contentType = 'application/octet-stream',
 ): Promise<Template> {
-  const response = await apiFetch(`/v1.0/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`, {
+  const response = await apiFetch(`/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`, {
     method: 'PUT',
     headers: { 'Content-Type': contentType },
     body: content,
@@ -218,7 +219,7 @@ export async function saveTemplateFileContent(
 }
 
 export async function deleteTemplateFile(id: number, fileName: string): Promise<void> {
-  await apiFetch(`/v1.0/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+  await apiFetch(`/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`, { method: 'DELETE' });
 }
 
 /** Metadata sent as `X-Template-*` headers, matching `_metadata_from_headers` on the backend. */
@@ -251,7 +252,7 @@ function metadataHeaders(metadata: TemplateMetadataInput): Record<string, string
 
 /** Creates a new single-file (BPMN) template. */
 export async function createTemplate(bpmnXml: string, metadata: TemplateMetadataInput): Promise<Template> {
-  const response = await apiFetch('/v1.0/m8flow/templates', {
+  const response = await apiFetch('/m8flow/templates', {
     method: 'POST',
     headers: { ...metadataHeaders(metadata), 'Content-Type': 'application/xml' },
     body: bpmnXml,
@@ -266,7 +267,7 @@ export async function createTemplateWithFiles(
 ): Promise<Template> {
   const form = new FormData();
   files.forEach((f) => form.append('files', f.content, f.name));
-  const response = await apiFetch('/v1.0/m8flow/templates', {
+  const response = await apiFetch('/m8flow/templates', {
     method: 'POST',
     headers: metadataHeaders(metadata),
     body: form,
@@ -285,7 +286,7 @@ export async function updateTemplateMetadata(id: number, updates: Partial<Templa
   if (updates.visibility !== undefined) body.visibility = updates.visibility;
   if (updates.status !== undefined) body.status = updates.status;
   if (updates.isPublished !== undefined) body.is_published = updates.isPublished;
-  const response = await apiFetch(`/v1.0/m8flow/templates/${id}`, {
+  const response = await apiFetch(`/m8flow/templates/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -294,23 +295,23 @@ export async function updateTemplateMetadata(id: number, updates: Partial<Templa
 }
 
 export async function deleteTemplate(id: number): Promise<void> {
-  await apiFetch(`/v1.0/m8flow/templates/${id}`, { method: 'DELETE' });
+  await apiFetch(`/m8flow/templates/${id}`, { method: 'DELETE' });
 }
 
 export async function restoreTemplate(id: number): Promise<Template> {
-  const response = await apiFetch(`/v1.0/m8flow/templates/${id}/restore`, { method: 'POST' });
+  const response = await apiFetch(`/m8flow/templates/${id}/restore`, { method: 'POST' });
   return (await response.json()) as Template;
 }
 
 export async function exportTemplate(id: number): Promise<Blob> {
-  const response = await apiFetch(`/v1.0/m8flow/templates/${id}/export`);
+  const response = await apiFetch(`/m8flow/templates/${id}/export`);
   return response.blob();
 }
 
 export async function importTemplateZip(zipFile: File, metadata: TemplateMetadataInput): Promise<Template> {
   const form = new FormData();
   form.append('file', zipFile);
-  const response = await apiFetch('/v1.0/m8flow/templates/import', {
+  const response = await apiFetch('/m8flow/templates/import', {
     method: 'POST',
     headers: metadataHeaders(metadata),
     body: form,
@@ -352,7 +353,7 @@ export async function createProcessModelFromTemplate(
   const tenantId = request.tenantId?.trim() || null;
   const suffix = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
   const response = await apiFetch(
-    `/v1.0/m8flow/templates/${templateId}/create-process-model${suffix}`,
+    `/m8flow/templates/${templateId}/create-process-model${suffix}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -373,12 +374,12 @@ export async function fetchProcessModelTemplateInfo(
   modifiedProcessModelIdentifier: string,
 ): Promise<ProcessModelTemplateInfo | null> {
   const response = await apiFetch(
-    `/v1.0/m8flow/templates/process-models/${modifiedProcessModelIdentifier}/template-info`,
+    `/m8flow/templates/process-models/${modifiedProcessModelIdentifier}/template-info`,
   );
   return (await response.json()) as ProcessModelTemplateInfo | null;
 }
 
 /** Direct download URL for a template file — for `<a href>`/`window.open`, not `fetch` (no auth header attached). */
 export function templateFileDownloadUrl(id: number, fileName: string): string {
-  return `${API_BASE_URL}/v1.0/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`;
+  return `${API_BASE_URL}${apiVersionPath(`/m8flow/templates/${id}/files/${encodeURIComponent(fileName)}`)}`;
 }

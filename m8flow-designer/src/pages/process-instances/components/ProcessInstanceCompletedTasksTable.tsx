@@ -50,7 +50,7 @@ const EMPTY: ProcessInstanceCompletedTasksResponse = {
 
 /**
  * Tasks tab body for process instance detail: Completed by me / All
- * completed. Fetches GET /v1.0/m8flow/process-instances/{id}/completed-tasks.
+ * completed. Fetches GET /m8flow/process-instances/{id}/completed-tasks.
  * Task is title else name, never owner. Empty "Completed by me" uses the
  * mockup sentence. All-completed empty copy stays fog (headers only).
  */

@@ -35,7 +35,7 @@ function formatMilestoneTimestamp(timestamp: string | null | undefined): string 
 
 /**
  * Milestones tab body: zero or one current last milestone — not a history.
- * GET /v1.0/m8flow/process-instances/{id}/milestones. Timestamp is plain text.
+ * GET /m8flow/process-instances/{id}/milestones. Timestamp is plain text.
  */
 export function ProcessInstanceMilestonesTable({
   instanceId,

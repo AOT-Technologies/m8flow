@@ -22,7 +22,7 @@ export type NamedValueInput = {
   value?: string | number | boolean;
 };
 
-const COLLECTION_PATH = '/v1.0/m8flow/named-values';
+const COLLECTION_PATH = '/m8flow/named-values';
 
 function tenantQuery(tenantId?: string | null): string {
   return tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';

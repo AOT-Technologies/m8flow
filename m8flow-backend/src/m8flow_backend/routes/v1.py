@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from flask import Flask, g, jsonify, request
 
+from m8flow_backend.api_versions import (
+    DEFAULT_API_VERSION_PREFIX,
+    api_version_prefix_for_path,
+)
 from m8flow_backend import catalog, human_task, identity, secrets, workflow
 from m8flow_backend.auth import (
     clear_dead_auth_realm_cookie,
@@ -26,28 +30,34 @@ from m8flow_backend.observability.health import get_healthy_response, get_ready_
 from m8flow_core.models.work_item import WorkItemModel
 
 
+def _v1_route(path: str) -> str:
+    """Build a V1 Flask route from a version-neutral route suffix."""
+    return f"{DEFAULT_API_VERSION_PREFIX}/{path.lstrip('/')}"
+
+
 def register_v1_routes(app: Flask) -> None:
-    @app.get("/v1.0/ping")
-    @app.get("/v1.0/healthy")
+    @app.get(_v1_route("ping"))
+    @app.get(_v1_route("healthy"))
     def liveness():
         payload, code = get_healthy_response()
         return jsonify(payload), code
 
-    @app.get("/v1.0/status")
-    @app.get("/v1.0/readyz")
+    @app.get(_v1_route("status"))
+    @app.get(_v1_route("readyz"))
     def readiness():
         payload, code = get_ready_response()
-        return jsonify(payload), code
+        api_version = api_version_prefix_for_path(request.path).removeprefix("/v")
+        return jsonify({**payload, "API version": api_version}), code
 
-    app.post("/v1.0/permissions-check")(permissions_check)
+    app.post(_v1_route("permissions-check"))(permissions_check)
 
-    @app.get("/v1.0/extensions")
+    @app.get(_v1_route("extensions"))
     @require_permission(on_deny="empty", empty_response=[])
     def list_extensions():
         """Keep the core frontend bootstrap compatible when no extensions exist."""
         return jsonify([])
 
-    @app.get("/v1.0/onboarding")
+    @app.get(_v1_route("onboarding"))
     @require_permission(forbidden_message="Not allowed to read onboarding")
     def onboarding():
         user = require_current_user()
@@ -57,7 +67,7 @@ def register_v1_routes(app: Flask) -> None:
         # used by existing clients while satisfying that frontend contract.
         return jsonify({"ok": True, "username": user.username, "tenant_id": tenant_id, "instructions": ""})
 
-    @app.get("/v1.0/tasks")
+    @app.get(_v1_route("tasks"))
     @require_permission(forbidden_message="Not allowed to list tasks")
     def list_tasks():
         user = require_current_user()
@@ -79,8 +89,8 @@ def register_v1_routes(app: Flask) -> None:
             ]
         )
 
-    @app.put("/v1.0/tasks/<int:work_item_id>/claim")
-    @require_permission(uri="/v1.0/tasks/{work_item_id}/claim", forbidden_message="Not allowed to claim this task")
+    @app.put(_v1_route("tasks/<int:work_item_id>/claim"))
+    @require_permission(uri="/tasks/{work_item_id}/claim", forbidden_message="Not allowed to claim this task")
     def claim_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
@@ -88,8 +98,8 @@ def register_v1_routes(app: Flask) -> None:
         task = workflow.claim(session, tenant_id=tenant_id, work_item_id=work_item_id, user_id=user.id)
         return jsonify({"id": task.id, "actual_owner_id": task.actual_owner_id})
 
-    @app.post("/v1.0/tasks/<int:work_item_id>/complete")
-    @require_permission(uri="/v1.0/tasks/{work_item_id}/complete", forbidden_message="Not allowed to complete this task")
+    @app.post(_v1_route("tasks/<int:work_item_id>/complete"))
+    @require_permission(uri="/tasks/{work_item_id}/complete", forbidden_message="Not allowed to complete this task")
     def complete_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
@@ -104,8 +114,8 @@ def register_v1_routes(app: Flask) -> None:
         )
         return jsonify({"process_instance_id": result.process_instance_id, "status": result.status})
 
-    @app.get("/v1.0/tasks/<int:work_item_id>")
-    @require_permission(uri="/v1.0/tasks/{work_item_id}", on_deny="404", forbidden_message="Task not found")
+    @app.get(_v1_route("tasks/<int:work_item_id>"))
+    @require_permission(uri="/tasks/{work_item_id}", on_deny="404", forbidden_message="Task not found")
     def get_task(work_item_id: int):
         user = require_current_user()
         session = g.db_session
@@ -116,7 +126,7 @@ def register_v1_routes(app: Flask) -> None:
         require_task_candidate(session, user, task)
         return jsonify(human_task.display_task(session, tenant_id=tenant_id, work_item_id=work_item_id))
 
-    @app.post("/v1.0/process-models")
+    @app.post(_v1_route("process-models"))
     @require_permission(forbidden_message="Not allowed to save process models")
     def save_process_model():
         from m8flow_backend.catalog import versioned, versions
@@ -142,7 +152,7 @@ def register_v1_routes(app: Flask) -> None:
         session.commit()
         return jsonify({"ok": True}), 201
 
-    @app.get("/v1.0/process-models")
+    @app.get(_v1_route("process-models"))
     @require_permission(on_deny="empty", empty_response=[])
     def list_process_models():
         user = require_current_user()
@@ -150,7 +160,7 @@ def register_v1_routes(app: Flask) -> None:
         group = request.args.get("group")
         return jsonify(catalog.list_models(group, tenant_id=tenant_id))
 
-    @app.post("/v1.0/process-instances")
+    @app.post(_v1_route("process-instances"))
     @require_permission(forbidden_message="Not allowed to start process")
     def start_process():
         user = require_current_user()
@@ -176,7 +186,7 @@ def register_v1_routes(app: Flask) -> None:
             response["collaboration_correlation_key"] = key
         return jsonify(response), 201
 
-    @app.get("/v1.0/process-instances")
+    @app.get(_v1_route("process-instances"))
     @require_permission(on_deny="empty", empty_response=[])
     def list_instances():
         user = require_current_user()
@@ -188,7 +198,7 @@ def register_v1_routes(app: Flask) -> None:
             rows = workflow.list_instances(session, tenant_id=tenant_id)
         return jsonify([{"id": row.id, "status": row.status} for row in rows])
 
-    @app.get("/v1.0/secrets")
+    @app.get(_v1_route("secrets"))
     @require_permission(
         on_deny="empty",
         empty_response=secrets.EMPTY_SECRET_LIST,
@@ -206,7 +216,7 @@ def register_v1_routes(app: Flask) -> None:
         listed = secrets.list_secrets(session, tenant_id=tenant_id, page=page, per_page=per_page)
         return jsonify(secrets.serialize_secret_list(session, listed))
 
-    @app.post("/v1.0/secrets")
+    @app.post(_v1_route("secrets"))
     @require_permission(forbidden_message="Not allowed to manage secrets", group_fallback=False)
     def create_secret():
         user = require_current_user()
@@ -224,9 +234,9 @@ def register_v1_routes(app: Flask) -> None:
         )
         return jsonify(record.to_dict()), 201
 
-    @app.get("/v1.0/secrets/<key>/show")
+    @app.get(_v1_route("secrets/<key>/show"))
     @require_permission(
-        uri="/v1.0/secrets/{key}",
+        uri="/secrets/{key}",
         on_deny="404",
         forbidden_message="Secret not found",
         group_fallback=False,
@@ -239,9 +249,9 @@ def register_v1_routes(app: Flask) -> None:
             404,
         )
 
-    @app.get("/v1.0/secrets/<key>")
+    @app.get(_v1_route("secrets/<key>"))
     @require_permission(
-        uri="/v1.0/secrets/{key}",
+        uri="/secrets/{key}",
         on_deny="404",
         forbidden_message="Secret not found",
         group_fallback=False,
@@ -267,9 +277,9 @@ def register_v1_routes(app: Flask) -> None:
         record = secrets.get_secret(session, tenant_id=tenant_id, key=key)
         return jsonify(record.to_dict())
 
-    @app.put("/v1.0/secrets/<key>")
+    @app.put(_v1_route("secrets/<key>"))
     @require_permission(
-        uri="/v1.0/secrets/{key}",
+        uri="/secrets/{key}",
         forbidden_message="Not allowed to manage secrets",
         group_fallback=False,
     )
@@ -283,9 +293,9 @@ def register_v1_routes(app: Flask) -> None:
         secrets.update_secret(session, tenant_id=tenant_id, key=key, value=str(body["value"]))
         return jsonify({"ok": True})
 
-    @app.delete("/v1.0/secrets/<key>")
+    @app.delete(_v1_route("secrets/<key>"))
     @require_permission(
-        uri="/v1.0/secrets/{key}",
+        uri="/secrets/{key}",
         forbidden_message="Not allowed to manage secrets",
         group_fallback=False,
     )
@@ -303,7 +313,7 @@ def register_v1_routes(app: Flask) -> None:
         # login flow). Registered only under unit_testing/testing so it can never be
         # reached — and never grants super-admin from an unauthenticated request — in
         # a real environment.
-        @app.post("/v1.0/login")
+        @app.post(_v1_route("login"))
         def login():
             session = g.db_session
             body = request.get_json(force=True)
@@ -330,25 +340,25 @@ def register_v1_routes(app: Flask) -> None:
     # above): a full-page GET on the same path, dispatched separately by method.
     # See routes/login_controller.py.
     app.add_url_rule(
-        "/v1.0/login",
+        _v1_route("login"),
         endpoint="browser_login",
         view_func=login_controller.login,
         methods=["GET"],
     )
     app.add_url_rule(
-        "/v1.0/login_return",
+        _v1_route("login_return"),
         endpoint="login_return",
         view_func=login_controller.login_return,
         methods=["GET"],
     )
     app.add_url_rule(
-        "/v1.0/logout",
+        _v1_route("logout"),
         endpoint="logout",
         view_func=login_controller.logout,
         methods=["GET"],
     )
     app.add_url_rule(
-        "/v1.0/refresh",
+        _v1_route("refresh"),
         endpoint="refresh_tokens",
         view_func=login_controller.refresh,
         methods=["POST"],
@@ -366,7 +376,7 @@ def register_v1_routes(app: Flask) -> None:
     # gating this would newly deny every non-editor/tenant-admin role currently
     # able to submit an assigned task's external form -- needs a product
     # decision on the intended grant, not a guess here.
-    @app.post("/v1.0/m8flow/external-forms/<int:work_item_id>/submit")
+    @app.post(_v1_route("m8flow/external-forms/<int:work_item_id>/submit"))
     def submit_external_form(work_item_id: int):
         user = require_current_user()
         session = g.db_session

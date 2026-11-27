@@ -1,6 +1,6 @@
 openapi: "3.0.2"
 info:
-  version: 1.0.0
+  version: 2.0.0
   title: m8flow-backend-extension
 paths:
   /ping:
@@ -1775,7 +1775,7 @@ paths:
         tenants. Callers without process-model list permission get an
         empty list (200), not a 403. Optional group filters to models
         under that process-group path (unknown group → []). Does not
-        replace thin GET /v1.0/process-models.
+        replace the thin process-model endpoint.
       operationId: m8flow_backend.routes.processes_controller.list_process_models
       tags:
         - Processes
@@ -1821,8 +1821,8 @@ paths:
         Creates a process model under an existing process group and writes a
         default startable BPMN (`{leaf}.bpmn`). `id` is optional: when omitted,
         the leaf is slugified from `display_name` (same as the previous create
-        form). Super-admin is always 403. Distinct from thin POST
-        /v1.0/process-models `{path, xml}`.
+        form). Super-admin is always 403. Distinct from the thin
+        process-model import endpoint, which accepts `{path, xml}`.
       operationId: m8flow_backend.routes.processes_controller.create_process_model
       tags:
         - Processes

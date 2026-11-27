@@ -1,13 +1,13 @@
 import { apiFetch, apiGet } from './api';
 
 /**
- * Client for m8flow-backend's `/v1.0/m8flow/process-instances*` routes
+ * Client for m8flow-backend's `/m8flow/process-instances*` routes
  * (Process Instances + task-state map, ticket 02 —
  * `.scratch/process-instances-task-state/`, backend built in ticket 01).
  * Response shapes read directly from `process_instances_controller.py`/
  * `workflow.list_instances_for_designer`/`get_instance_detail_for_
  * designer`, snake_case (unlike Templates' camelCase) — same convention
- * as this app's other `/v1.0/m8flow/*` routes (`ProcessModelListItem`,
+ * as this app's other `/m8flow/*` routes (`ProcessModelListItem`,
  * `HomeRecentInstance`, etc. in `lib/api.ts`).
  */
 
@@ -80,7 +80,7 @@ export function processInstancesPath(filters: ProcessInstanceListFilters = {}): 
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
   if (filters.tenantId) params.set('tenantId', filters.tenantId);
   const qs = params.toString();
-  return qs ? `/v1.0/m8flow/process-instances?${qs}` : '/v1.0/m8flow/process-instances';
+  return qs ? `/m8flow/process-instances?${qs}` : '/m8flow/process-instances';
 }
 
 export function fetchProcessInstances(
@@ -96,7 +96,7 @@ export type ProcessInstanceOwnersResponse = {
 };
 
 export function processInstanceOwnersPath(tenantId?: string | null): string {
-  const base = '/v1.0/m8flow/process-instances/owners';
+  const base = '/m8flow/process-instances/owners';
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
@@ -158,7 +158,7 @@ export function processInstanceDetailPath(
   if (tenantId) params.set('tenantId', tenantId);
   if (toTaskGuid) params.set('to_task_guid', toTaskGuid);
   if (bpmnProcessIdentifier) params.set('bpmn_process_identifier', bpmnProcessIdentifier);
-  return withQuery(`/v1.0/m8flow/process-instances/${id}`, params);
+  return withQuery(`/m8flow/process-instances/${id}`, params);
 }
 
 export function fetchProcessInstanceDetail(
@@ -175,7 +175,7 @@ export type DeleteProcessInstanceResult = { id: number; deleted: boolean };
 export function deleteProcessInstancePath(id: number, tenantId?: string | null): string {
   const params = new URLSearchParams();
   if (tenantId) params.set('tenantId', tenantId);
-  return withQuery(`/v1.0/m8flow/process-instances/${id}`, params);
+  return withQuery(`/m8flow/process-instances/${id}`, params);
 }
 
 export async function deleteProcessInstance(
@@ -189,7 +189,7 @@ export async function deleteProcessInstance(
 export type ProcessInstanceTaskDetail = ProcessInstanceTaskState & { data: Record<string, unknown> };
 
 export function processInstanceTaskPath(id: number, taskGuid: string, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/tasks/${encodeURIComponent(taskGuid)}`;
+  const base = `/m8flow/process-instances/${id}/tasks/${encodeURIComponent(taskGuid)}`;
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
@@ -241,7 +241,7 @@ export function processInstanceEventsPath(
   if (filters.taskType) params.set('task_type', filters.taskType);
   if (filters.page !== undefined) params.set('page', String(filters.page));
   if (filters.perPage !== undefined) params.set('per_page', String(filters.perPage));
-  return withQuery(`/v1.0/m8flow/process-instances/${id}/events`, params);
+  return withQuery(`/m8flow/process-instances/${id}/events`, params);
 }
 
 export function fetchProcessInstanceEvents(
@@ -269,7 +269,7 @@ export type ProcessInstanceMilestonesResponse = {
 };
 
 export function processInstanceMilestonesPath(id: number, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/milestones`;
+  const base = `/m8flow/process-instances/${id}/milestones`;
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
@@ -307,7 +307,7 @@ export function fetchProcessInstancePendingTasks(
   id: number,
   tenantId?: string | null,
 ): Promise<ProcessInstancePendingTaskRow[]> {
-  const base = `/v1.0/m8flow/process-instances/${id}/pending-tasks`;
+  const base = `/m8flow/process-instances/${id}/pending-tasks`;
   const path = tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
   return apiGet<{ results: ProcessInstancePendingTaskRow[] }>(path).then((r) => r.results ?? []);
 }
@@ -317,7 +317,7 @@ export type ProcessInstanceCompletableTasksResponse = {
 };
 
 export function processInstanceCompletableTasksPath(id: number, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/completable-tasks`;
+  const base = `/m8flow/process-instances/${id}/completable-tasks`;
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
@@ -344,7 +344,7 @@ export type ProcessInstanceCompletedTasksResponse = {
 };
 
 export function processInstanceCompletedTasksPath(id: number, tenantId?: string | null): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/completed-tasks`;
+  const base = `/m8flow/process-instances/${id}/completed-tasks`;
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 
@@ -372,7 +372,7 @@ export function processInstanceLifecyclePath(
   action: ProcessInstanceLifecycleAction,
   tenantId?: string | null,
 ): string {
-  const base = `/v1.0/m8flow/process-instances/${id}/${action}`;
+  const base = `/m8flow/process-instances/${id}/${action}`;
   return tenantId ? `${base}?tenantId=${encodeURIComponent(tenantId)}` : base;
 }
 

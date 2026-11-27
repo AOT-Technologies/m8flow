@@ -33,7 +33,7 @@ function isNewTask(task: TaskReviewListItem): boolean {
 }
 
 /**
- * Task Review — "My tasks" inbox. Wired to GET /v1.0/m8flow/task-review
+ * Task Review — "My tasks" inbox. Wired to GET /m8flow/task-review
  * (the caller's pending human tasks; super-admin sees every tenant's,
  * narrowable via the sidebar tenant selector). Rows open the review detail
  * at `/task-review/:taskId`. Same outlet-context tenant-scoping + fetch

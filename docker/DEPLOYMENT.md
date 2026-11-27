@@ -35,7 +35,7 @@ export TAG="latest"
 
 ## 1. Backend
 
-Ensure the image is built from the repo that includes the m8flow-backend extension (tenancy, Keycloak realm APIs, and support for `SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX` and `M8FLOW_KEYCLOAK_ADMIN_PASSWORD`). ECS expects the API under `/api/v1.0/*`.
+Ensure the image is built from the repo that includes the m8flow-backend extension (tenancy, Keycloak realm APIs, and support for `SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX` and `M8FLOW_KEYCLOAK_ADMIN_PASSWORD`). The backend currently serves both `/v1.0/*` and `/v2.0/*` (including Connexion operations under `/m8flow/`). Configure the deployment ingress to forward both `/api/v1.0/*` and `/api/v2.0/*` to the backend. If the ingress preserves the `/api` prefix, set `SPIFFWORKFLOW_BACKEND_WSGI_PATH_PREFIX=/api`; if it strips that prefix, leave the setting empty. The ingress and backend prefix must agree, or requests will not reach the versioned routes.
 
 The backend uses the Keycloak **super-admin** user by default (username `super-admin`, created by the Keycloak image entrypoint). Set `KEYCLOAK_ADMIN_PASSWORD` or `M8FLOW_KEYCLOAK_ADMIN_PASSWORD` to the super-admin password (same as `KEYCLOAK_SUPERADMIN_PASSWORD` when using the Keycloak image entrypoint) so the backend can create realms and run partial import.
 
@@ -67,8 +67,20 @@ backend URL for the environment you are deploying to, not an in-network service 
 Build:
 
 ```bash
-docker build   --platform linux/amd64   -f docker/m8flow.designer.Dockerfile   --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}"   -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}"   .
+docker build \
+  --platform linux/amd64 \
+  -f docker/m8flow.designer.Dockerfile \
+  --build-arg VITE_BACKEND_BASE_URL="${M8FLOW_BACKEND_URL:-http://localhost:6840}" \
+  --build-arg VITE_API_VERSION="${M8FLOW_API_VERSION:-1.0}" \
+  -t "${DOCKER_NAMESPACE}/m8flow-designer:${TAG}" \
+  .
 ```
+
+`VITE_API_VERSION` selects the API path used by the built designer (`1.0` or
+`2.0`) and defaults to `1.0` for existing deployments. Set it to `2.0` only
+after the ingress routes `/api/v2.0/*` to the backend. This repository does
+not define the production ECS ingress; verify that configuration in the
+deployment repository before building a V2-configured designer.
 
 Push:
 

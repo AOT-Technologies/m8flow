@@ -24,7 +24,7 @@ const STATUS_CONFIG: Record<ProcessModelStatus, { labelKey: ParseKeys; tone: Pil
 
 /**
  * Absent / unrecognised reads as `published`, matching the backend's own
- * default (`catalog.process_model_status`) and api.yml. The API always sends
+ * default (`catalog.process_model_status`) and the OpenAPI schemas. The API always sends
  * one of the three values, so this only fires under version skew — and
  * defaulting to `draft` there would mark every legacy model Draft and strip
  * its Start button while the backend happily starts it.

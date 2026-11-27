@@ -34,7 +34,7 @@ docker:
   platforms: "linux/amd64"
   # Baked into the bundle. Relative, so one image serves any environment
   # that routes the backend at /api on the same host (login/logout only;
-  # data calls stay same-origin through the image's nginx /v1.0 proxy).
+  # data calls stay same-origin through the image's versioned API proxy).
   # One KEY=value per line. Needs DevX with the build-args fix: before it,
   # the lines were comma-joined and this value was baked in as "/api,".
   build_args: |

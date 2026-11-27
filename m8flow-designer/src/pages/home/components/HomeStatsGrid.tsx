@@ -61,7 +61,7 @@ function formatAvgMinutes(value: number | null | undefined, unit: string): React
 }
 
 /**
- * Home page 2×3 KPI grid wired to GET /v1.0/m8flow/home-stats.
+ * Home page 2×3 KPI grid wired to GET /m8flow/home-stats.
  * Null fields (permission-gated per ticket 03) render as an em dash.
  */
 export function HomeStatsGrid({

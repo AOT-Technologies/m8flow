@@ -20,7 +20,7 @@ function stubFetch({ canReadData = true, data = { invoice_total: 1250 } as Recor
     if (String(url).includes('/permissions-check')) {
       return Promise.resolve({
         ok: true,
-        json: async () => ({ results: { '/v1.0/task-data/7': { GET: canReadData } } }),
+        json: async () => ({ results: { '/task-data/7': { GET: canReadData } } }),
       });
     }
     return Promise.resolve({ ok: true, json: async () => ({ ...scriptTask, data }) });
@@ -99,7 +99,7 @@ describe('ProcessInstanceTaskModal', () => {
     expect(taskCalls(fetchMock)).toHaveLength(0);
     const [, init] = fetchMock.mock.calls.find(([url]) => String(url).includes('/permissions-check'))!;
     expect(JSON.parse(String(init?.body))).toEqual({
-      requests_to_check: { '/v1.0/task-data/7': ['GET'] },
+      requests_to_check: { '/task-data/7': ['GET'] },
     });
     // Time travel needs only instance read.
     expect(screen.getByRole('link', { name: /at the time/ })).toBeInTheDocument();

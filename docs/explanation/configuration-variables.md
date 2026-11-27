@@ -136,7 +136,8 @@ descriptor marks non-sensitive. Backfill and cutover must be reversible where
 practical; do not clear the existing profile data or provider keys until the
 new rows and Vault document have been read back and verified.
 
-The API schema must be added to the current backend's `api.yml`, routes must
+The API schema must be added to each applicable versioned OpenAPI spec
+(`api-v1.yml` and/or `api-v2.yml`), routes must
 use current tenant and authorization helpers, and new UI must be implemented in
 `m8flow-designer`. Do not copy the old `m8flow-frontend` pages or backend code
 that depends on `spiffworkflow_backend`.

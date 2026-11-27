@@ -13,8 +13,8 @@ from m8flow_backend.errors import ApiError
 from m8flow_backend.helpers.response_helper import handle_api_errors
 from m8flow_backend.secrets import named_values
 
-_COLLECTION_URI = "/v1.0/m8flow/named-values"
-_ITEM_URI = "/v1.0/m8flow/named-values/{variable_id}"
+_COLLECTION_URI = "/m8flow/named-values"
+_ITEM_URI = "/m8flow/named-values/{variable_id}"
 
 
 def _body() -> dict[str, Any]:

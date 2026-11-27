@@ -80,7 +80,7 @@ export type CapabilityFlags = {
   canReadNatsApiKeys: boolean;
   /** `permissions-check` POST on `/m8flow/nats-tokens`: create and revoke. */
   canManageNatsApiKeys: boolean;
-  /** Operation-specific UI hints from POST /v1.0/permissions-check. */
+  /** Operation-specific UI hints from POST /permissions-check. */
   canCreateProcessModels: boolean;
   canDeleteProcessModels: boolean;
   canCreateProcessGroups: boolean;

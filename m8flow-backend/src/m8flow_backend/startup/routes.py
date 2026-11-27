@@ -1,6 +1,8 @@
 import logging
 import os
 
+from m8flow_backend.api_versions import DEFAULT_API_VERSION_PREFIX
+
 logger = logging.getLogger(__name__)
 
 
@@ -56,7 +58,7 @@ def register_process_model_file_fallback_routes(app) -> None:
         put_process_model_file,
     )
 
-    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
+    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", DEFAULT_API_VERSION_PREFIX)
     rule = f"{base_path}/m8flow/process-models/<modified_process_model_identifier>/files/<path:file_name>"
 
     def get_view(modified_process_model_identifier: str, file_name: str):
@@ -85,7 +87,7 @@ def register_process_model_file_fallback_routes(app) -> None:
 def register_template_file_fallback_routes(app) -> None:
     from m8flow_backend.routes.templates_controller import template_put_file, template_delete_file
 
-    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", "/v1.0")
+    base_path = app.config.get("SPIFFWORKFLOW_BACKEND_API_PATH_PREFIX", DEFAULT_API_VERSION_PREFIX)
     rule = f"{base_path}/m8flow/templates/<int:id>/files/<path:file_name>"
 
     def put_view(id: int, file_name: str):

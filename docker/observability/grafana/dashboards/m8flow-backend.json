@@ -87,7 +87,7 @@
       "id": 3,
       "type": "stat",
       "title": "HTTP p99 latency",
-      "description": "p99 of Flask `duration_ms` on `request completed` logs. Health `/v1.0/status` is excluded.",
+      "description": "p99 of Flask `duration_ms` on `request completed` logs. Health/status endpoint requests are excluded.",
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 2 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [

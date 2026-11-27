@@ -16,80 +16,80 @@ import {
 
 describe('processInstancesPath', () => {
   it('builds the bare path with no filters', () => {
-    expect(processInstancesPath()).toBe('/v1.0/m8flow/process-instances');
-    expect(processInstancesPath({})).toBe('/v1.0/m8flow/process-instances');
+    expect(processInstancesPath()).toBe('/m8flow/process-instances');
+    expect(processInstancesPath({})).toBe('/m8flow/process-instances');
   });
 
   it('appends filters in declaration order', () => {
     expect(
       processInstancesPath({ status: 'error', search: 'invoice', page: 2, perPage: 10, tenantId: 't1' }),
-    ).toBe('/v1.0/m8flow/process-instances?status=error&search=invoice&page=2&per_page=10&tenantId=t1');
+    ).toBe('/m8flow/process-instances?status=error&search=invoice&page=2&per_page=10&tenantId=t1');
   });
 
   it('omits unset filters', () => {
     expect(processInstancesPath({ status: 'running' })).toBe(
-      '/v1.0/m8flow/process-instances?status=running',
+      '/m8flow/process-instances?status=running',
     );
   });
 
   it('appends started_by and sort params', () => {
     expect(processInstancesPath({ startedBy: 'amir', sort: 'oldest' })).toBe(
-      '/v1.0/m8flow/process-instances?started_by=amir&sort=oldest',
+      '/m8flow/process-instances?started_by=amir&sort=oldest',
     );
   });
 });
 
 describe('processInstanceOwnersPath', () => {
   it('builds the bare owners path with no tenant', () => {
-    expect(processInstanceOwnersPath()).toBe('/v1.0/m8flow/process-instances/owners');
+    expect(processInstanceOwnersPath()).toBe('/m8flow/process-instances/owners');
   });
 
   it('appends tenantId when set', () => {
     expect(processInstanceOwnersPath('t1')).toBe(
-      '/v1.0/m8flow/process-instances/owners?tenantId=t1',
+      '/m8flow/process-instances/owners?tenantId=t1',
     );
   });
 });
 
 describe('processInstanceDetailPath', () => {
   it('builds the bare path with no tenant', () => {
-    expect(processInstanceDetailPath(7)).toBe('/v1.0/m8flow/process-instances/7');
+    expect(processInstanceDetailPath(7)).toBe('/m8flow/process-instances/7');
   });
 
   it('appends tenantId when set', () => {
-    expect(processInstanceDetailPath(7, 't1')).toBe('/v1.0/m8flow/process-instances/7?tenantId=t1');
+    expect(processInstanceDetailPath(7, 't1')).toBe('/m8flow/process-instances/7?tenantId=t1');
   });
 });
 
 describe('deleteProcessInstancePath', () => {
   it('builds the delete path and includes a tenant override when provided', () => {
-    expect(deleteProcessInstancePath(7)).toBe('/v1.0/m8flow/process-instances/7');
+    expect(deleteProcessInstancePath(7)).toBe('/m8flow/process-instances/7');
     expect(deleteProcessInstancePath(7, 'tenant one')).toBe(
-      '/v1.0/m8flow/process-instances/7?tenantId=tenant+one',
+      '/m8flow/process-instances/7?tenantId=tenant+one',
     );
   });
 });
 
 describe('processInstanceEventsPath', () => {
   it('builds the bare events path with no tenant', () => {
-    expect(processInstanceEventsPath(7)).toBe('/v1.0/m8flow/process-instances/7/events');
+    expect(processInstanceEventsPath(7)).toBe('/m8flow/process-instances/7/events');
   });
 
   it('appends tenantId when set', () => {
     expect(processInstanceEventsPath(7, 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/events?tenantId=t1',
+      '/m8flow/process-instances/7/events?tenantId=t1',
     );
   });
 });
 
 describe('processInstanceMilestonesPath', () => {
   it('builds the bare milestones path with no tenant', () => {
-    expect(processInstanceMilestonesPath(7)).toBe('/v1.0/m8flow/process-instances/7/milestones');
+    expect(processInstanceMilestonesPath(7)).toBe('/m8flow/process-instances/7/milestones');
   });
 
   it('appends tenantId when set', () => {
     expect(processInstanceMilestonesPath(7, 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/milestones?tenantId=t1',
+      '/m8flow/process-instances/7/milestones?tenantId=t1',
     );
   });
 });
@@ -97,13 +97,13 @@ describe('processInstanceMilestonesPath', () => {
 describe('processInstanceCompletableTasksPath', () => {
   it('builds the bare completable-tasks path with no tenant', () => {
     expect(processInstanceCompletableTasksPath(7)).toBe(
-      '/v1.0/m8flow/process-instances/7/completable-tasks',
+      '/m8flow/process-instances/7/completable-tasks',
     );
   });
 
   it('appends tenantId when set', () => {
     expect(processInstanceCompletableTasksPath(7, 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/completable-tasks?tenantId=t1',
+      '/m8flow/process-instances/7/completable-tasks?tenantId=t1',
     );
   });
 });
@@ -111,13 +111,13 @@ describe('processInstanceCompletableTasksPath', () => {
 describe('processInstanceCompletedTasksPath', () => {
   it('builds the bare completed-tasks path with no tenant', () => {
     expect(processInstanceCompletedTasksPath(7)).toBe(
-      '/v1.0/m8flow/process-instances/7/completed-tasks',
+      '/m8flow/process-instances/7/completed-tasks',
     );
   });
 
   it('appends tenantId when set', () => {
     expect(processInstanceCompletedTasksPath(7, 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/completed-tasks?tenantId=t1',
+      '/m8flow/process-instances/7/completed-tasks?tenantId=t1',
     );
   });
 });
@@ -125,13 +125,13 @@ describe('processInstanceCompletedTasksPath', () => {
 describe('processInstanceLifecyclePath', () => {
   it('builds suspend, resume, and terminate paths', () => {
     expect(processInstanceLifecyclePath(7, 'suspend')).toBe(
-      '/v1.0/m8flow/process-instances/7/suspend',
+      '/m8flow/process-instances/7/suspend',
     );
     expect(processInstanceLifecyclePath(7, 'resume', 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/resume?tenantId=t1',
+      '/m8flow/process-instances/7/resume?tenantId=t1',
     );
     expect(processInstanceLifecyclePath(7, 'terminate')).toBe(
-      '/v1.0/m8flow/process-instances/7/terminate',
+      '/m8flow/process-instances/7/terminate',
     );
   });
 });
@@ -139,16 +139,16 @@ describe('processInstanceLifecyclePath', () => {
 describe('processInstanceDetailPath with to_task_guid', () => {
   it('adds to_task_guid after tenantId', () => {
     expect(processInstanceDetailPath(7, 't1', 'g-1')).toBe(
-      '/v1.0/m8flow/process-instances/7?tenantId=t1&to_task_guid=g-1',
+      '/m8flow/process-instances/7?tenantId=t1&to_task_guid=g-1',
     );
-    expect(processInstanceDetailPath(7, null, 'g-1')).toBe('/v1.0/m8flow/process-instances/7?to_task_guid=g-1');
+    expect(processInstanceDetailPath(7, null, 'g-1')).toBe('/m8flow/process-instances/7?to_task_guid=g-1');
   });
 });
 
 describe('processInstanceTaskPath', () => {
   it('encodes the guid and scopes the tenant', () => {
     expect(processInstanceTaskPath(7, 'a/b', 't1')).toBe(
-      '/v1.0/m8flow/process-instances/7/tasks/a%2Fb?tenantId=t1',
+      '/m8flow/process-instances/7/tasks/a%2Fb?tenantId=t1',
     );
   });
 });
@@ -157,7 +157,7 @@ describe('processInstanceEventsPath with filters', () => {
   it('sends only the filters that are set, in a stable order', () => {
     expect(
       processInstanceEventsPath(7, 't1', { eventType: 'task_failed', taskType: '', page: 2, perPage: 50 }),
-    ).toBe('/v1.0/m8flow/process-instances/7/events?tenantId=t1&event_type=task_failed&page=2&per_page=50');
+    ).toBe('/m8flow/process-instances/7/events?tenantId=t1&event_type=task_failed&page=2&per_page=50');
   });
 });
 

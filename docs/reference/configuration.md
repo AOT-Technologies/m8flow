@@ -125,11 +125,13 @@ Rebuild the `m8flow-designer` image after you change them.
 | Variable | Default | Meaning |
 |---|---|---|
 | `M8FLOW_FRONTEND_BACKEND_BASE_URL` | `http://localhost:6840` | Backend URL the browser uses for sign-in and sign-out. Becomes `VITE_BACKEND_BASE_URL`. |
+| `M8FLOW_API_VERSION` | `1.0` | API version prefix baked into the designer build. Currently supported values are `1.0` and `2.0`; existing deployments keep V1 unless they opt into another version. Becomes `VITE_API_VERSION`. |
 | `M8FLOW_MCP_SERVER_URL` | Empty | Becomes `VITE_MCP_SERVER_URL`. A designer-only build can pass a same-host path such as `/mcp`; the MCP Connection page adds the browser's host. The backend still needs an absolute URL. |
 | `M8FLOW_CELERY_FLOWER_URL` | Empty | No longer used by the designer: **System** > **Celery** is m8flow's own page. |
 
-At run time, the designer container forwards `/v1.0` to `BACKEND_BASE_URL`,
-which Compose sets to the backend's in-network address.
+At run time, the designer container forwards the configured `/v{version}` API
+prefix to `BACKEND_BASE_URL`, which Compose sets to the backend's in-network
+address. The default version is `1.0` for existing deployments.
 
 ## Observability
 

@@ -37,12 +37,11 @@ from m8flow_backend.startup.routes import (
     register_root_route,
     register_template_file_fallback_routes,
 )
+from m8flow_backend.api_versions import API_VERSION_SPEC_FILES, register_flask_version_aliases
 
-# The api.yml operations are mounted here; the resolver reads each operationId
-# as a dotted import path. Matches the old hand-rolled resolver's base path so
-# every advertised /v1.0/m8flow/* URL is unchanged.
-_API_BASE_PATH = "/v1.0/m8flow"
-_SPEC_PATH = Path(__file__).resolve().parent / "api.yml"
+# Each URL version has its own OpenAPI contract. Operation IDs can still point
+# to shared handlers while behavior and schemas remain compatible.
+_SPEC_DIR = Path(__file__).resolve().parent
 
 # Local UI origins always allowed for credentialed browser calls (designer :6853,
 # frontend :6841, Vite defaults). Env list is additive.
@@ -86,7 +85,7 @@ def create_app() -> FlaskApp:
     install_service_task_literal_fallback()
     attach_host_timestamp_listeners()
 
-    # Connexion 3.x is an ASGI app that routes + validates the api.yml operations
+    # Connexion 3.x is an ASGI app that routes + validates versioned OpenAPI operations
     # at the middleware layer and dispatches into the wrapped Flask app. Host
     # wiring below (request hooks, auth, Flask error handlers) attaches to that
     # underlying Flask app; plain-Flask routes (v1.py, root) fall through from
@@ -215,22 +214,24 @@ def create_app() -> FlaskApp:
     # paths fall through here to the same controllers (see the registrars).
     register_process_model_file_fallback_routes(app)
     register_template_file_fallback_routes(app)
+    register_flask_version_aliases(app)
 
-    # Mount the api.yml operations on the Connexion router. Request validation is
+    # Mount each version's OpenAPI spec on the Connexion router. Request validation is
     # on by Connexion default (it cannot be cleanly disabled). validate_responses
     # stays off: 67/68 ops declare response schemas that controllers do not
     # strictly satisfy, so runtime response validation would break working
     # responses for no parity benefit (the reference didn't response-validate
     # either) — deferred as a follow-up, not a platform-host gap. Swagger UI +
     # spec are served at {base_path}/ui and {base_path}/openapi.json.
-    connexion_app.add_api(
-        _SPEC_PATH,
-        base_path=_API_BASE_PATH,
-        resolver=Resolver(),
-        strict_validation=False,
-        validate_responses=False,
-        swagger_ui_options=SwaggerUIOptions(swagger_ui=True, serve_spec=True),
-    )
+    for version_prefix, spec_filename in API_VERSION_SPEC_FILES.items():
+        connexion_app.add_api(
+            _SPEC_DIR / spec_filename,
+            base_path=f"{version_prefix}/m8flow",
+            resolver=Resolver(),
+            strict_validation=False,
+            validate_responses=False,
+            swagger_ui_options=SwaggerUIOptions(swagger_ui=True, serve_spec=True),
+        )
     # Render Connexion's ASGI-layer problem responses in the app's {error_code,
     # message} shape (the Flask handlers only see errors raised inside Flask).
     register_connexion_error_handlers(connexion_app)

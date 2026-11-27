@@ -425,7 +425,7 @@ What you got for free, without writing it:
   optional cache (`core/membership.py`, `AuthService.directory_memberships`).
 - Platform-session detection for tenant binding (`AuthService.is_platform_session`).
 - The tenant switcher list (`AuthService.memberships_for_switcher`) and the
-  neutral `/v1.0/m8flow/session` endpoint.
+  version-neutral `/v<version>/m8flow/session` endpoint.
 
 ### Admin capabilities (optional)
 
@@ -522,11 +522,11 @@ that alias exists.
 
 **Not yet supported by the host:** `REAUTHORIZE` and `REAUTHENTICATE` are
 declared, but `AuthService.switch_tenant` raises `CapabilityNotSupported` for
-them until `/v1.0/login` and `/v1.0/login_return` handle the redirect (and set
-`m8flow_selected_tenant` only after the new token arrives). A realm-per-tenant
-provider also needs a pre-login tenant picker in the designer, and gives one
-person a separate local user per realm. Plan these as product work, not only a
-provider.
+them until `/v<version>/login` and `/v<version>/login_return` handle the
+redirect (and set `m8flow_selected_tenant` only after the new token arrives).
+A realm-per-tenant provider also needs a pre-login tenant picker in the
+designer, and gives one person a separate local user per realm. Plan these as
+product work, not only a provider.
 
 ## Register the provider
 

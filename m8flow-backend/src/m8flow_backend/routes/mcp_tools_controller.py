@@ -118,7 +118,7 @@ def execute_mcp_tool(body: dict[str, Any] | None) -> flask.wrappers.Response:
     code. An auth rejection by the MCP server itself is normalized to 502 by the
     service, so it never surfaces here as this endpoint's own 401/403.
 
-    api.yml's requestBody schema validates shape (object body, non-empty
+    the versioned OpenAPI requestBody schemas validate shape (object body, non-empty
     tool_name, object arguments, boolean confirm), but that runs in Connexion's request
     pipeline, not in this function, so each is guarded explicitly below too.
     """

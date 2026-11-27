@@ -18,13 +18,15 @@ from typing import Optional
 
 from flask import Flask, Response, g, has_request_context, request
 
+from m8flow_backend.api_versions import strip_api_version_prefix
 from m8flow_backend.observability.log_sanitize import sanitize_log_value
 
 REQUEST_ID_HEADER = "X-Request-Id"
 LOGGER = logging.getLogger(__name__)
 
-# Polled health/status paths would dominate p99 if included.
-_SKIP_DURATION_LOG_PATHS = frozenset({"/v1.0/status", "/status", "/health"})
+# Polled health/status paths would dominate p99 if included. Keep these
+# version-neutral so every supported API prefix is excluded consistently.
+_SKIP_DURATION_LOG_PATHS = frozenset({"/status", "/health"})
 
 _CONTEXT_REQUEST_ID: ContextVar[Optional[str]] = ContextVar("m8flow_request_id", default=None)
 
@@ -90,7 +92,7 @@ def install_request_id_middleware(app: Flask) -> None:
             response.headers.setdefault(REQUEST_ID_HEADER, request_id)
         started = getattr(g, "_m8flow_request_started", None)
         path = request.path or ""
-        if started is not None and path not in _SKIP_DURATION_LOG_PATHS:
+        if started is not None and strip_api_version_prefix(path) not in _SKIP_DURATION_LOG_PATHS:
             duration_ms = round((time.perf_counter() - started) * 1000.0, 3)
             sql_query_count = int(getattr(g, "_m8flow_sql_query_count", 0) or 0)
             sql_duration_ms = round(float(getattr(g, "_m8flow_sql_duration_ms", 0.0) or 0.0), 3)

@@ -177,7 +177,7 @@ Opt-in switches, all **off by default** (default behaviour is pinned by
   default `https://m8flow.io/claims`) instead of vendor claim parsing. Golden
   fixtures for IdP-side emitters: `tests/fixtures/auth/contract/`.
 
-`GET /v1.0/m8flow/session` returns the provider-neutral session view
+`GET /v<version>/m8flow/session` returns the provider-neutral session view
 (`AuthService.session_view`) so the frontend need not decode vendor JWTs.
 
 ## Selecting a provider (`factory.py`)

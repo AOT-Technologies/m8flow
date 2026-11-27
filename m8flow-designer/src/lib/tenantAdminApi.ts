@@ -125,7 +125,7 @@ type PageQuery = {
 };
 
 function tenantPath(tenantId: string, suffix: string): string {
-  return `/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}${suffix}`;
+  return `/m8flow/tenants/${encodeURIComponent(tenantId)}${suffix}`;
 }
 
 function withQuery(path: string, query: PageQuery = {}): string {

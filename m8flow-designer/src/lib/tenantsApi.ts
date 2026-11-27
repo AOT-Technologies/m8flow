@@ -109,7 +109,7 @@ function asTenant(value: unknown): Tenant | null {
 }
 
 export async function fetchTenants(): Promise<Tenant[]> {
-  const rows = await apiGet<unknown>('/v1.0/m8flow/tenants');
+  const rows = await apiGet<unknown>('/m8flow/tenants');
   if (!Array.isArray(rows)) {
     return [];
   }
@@ -122,7 +122,7 @@ export async function fetchTenants(): Promise<Tenant[]> {
 export async function createTenant(name: string, existingTenants: Tenant[]): Promise<Tenant> {
   const trimmed = name.trim();
   const slug = generateUniqueTenantAlias(trimmed, existingTenants);
-  const response = await apiFetch('/v1.0/m8flow/tenant-realms', {
+  const response = await apiFetch('/m8flow/tenant-realms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ slug, name: trimmed }),
@@ -150,7 +150,7 @@ export async function createTenant(name: string, existingTenants: Tenant[]): Pro
 }
 
 export async function updateTenantName(tenantId: string, name: string): Promise<void> {
-  await apiFetch(`/v1.0/m8flow/tenants/${encodeURIComponent(tenantId)}`, {
+  await apiFetch(`/m8flow/tenants/${encodeURIComponent(tenantId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ name: name.trim() }),
