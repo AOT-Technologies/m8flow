@@ -91,7 +91,8 @@
       "milestones": "Marcos",
       "events": "Eventos",
       "messages": "Mensagens",
-      "tasks": "Tarefas"
+      "tasks": "Tarefas",
+      "emails": "E-mails de formulários externos"
     },
     "terminateConfirm": {
       "title": "Encerrar a instância de processo?",
@@ -148,5 +149,39 @@
   },
   "diagram": {
     "renderError": "Falha ao renderizar o diagrama"
+  },
+  "emails": {
+    "loading": "Carregando e-mails de formulários externos…",
+    "loadError": "Falha ao carregar os e-mails de formulários externos",
+    "empty": "Nenhum e-mail de formulário externo foi enviado para esta instância de processo.",
+    "truncated": "Exibindo os {{shown}} e-mails mais recentes de {{total}}.",
+    "cancelledNotice": "Links cancelados não funcionam mais: a instância de processo foi encerrada ou a tarefa foi fechada.",
+    "stuckSending": "O envio está demorando mais que o esperado. Ele será repetido automaticamente.",
+    "resend": "Reenviar",
+    "resendSuccess": "Um novo link de formulário foi gerado para {{email}}. Ele será enviado por e-mail em breve.",
+    "resendError": "Falha ao reenviar o link do formulário",
+    "resendConfirm": {
+      "title": "Reenviar o link do formulário?",
+      "description": "Um novo link será enviado para {{email}}. Os links anteriores desta solicitação deixarão de funcionar."
+    },
+    "columns": {
+      "recipient": "Destinatário",
+      "task": "Tarefa",
+      "status": "Status",
+      "sent": "Enviado",
+      "expires": "Link expira",
+      "error": "Erro"
+    },
+    "status": {
+      "pending": "Aguardando envio",
+      "sending": "Enviando",
+      "notified": "Enviado",
+      "failed": "Falhou",
+      "smtpUnconfigured": "E-mail não configurado",
+      "expired": "Link expirado",
+      "cancelled": "Cancelado",
+      "submitted": "Enviado pelo destinatário",
+      "superseded": "Concluído por outra pessoa"
+    }
   }
 }

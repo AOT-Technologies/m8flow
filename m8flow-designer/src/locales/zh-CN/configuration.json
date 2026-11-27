@@ -119,5 +119,10 @@
       "delete": "Could not delete this configuration variable.",
       "unreadable": "The configuration variable response was unreadable."
     }
+  },
+  "smtpWarning": {
+    "title": "无法发送外部表单邮件",
+    "missing": "缺少邮件设置：{{keys}}",
+    "unreadable": "无法读取的邮件设置：{{keys}}"
   }
 }

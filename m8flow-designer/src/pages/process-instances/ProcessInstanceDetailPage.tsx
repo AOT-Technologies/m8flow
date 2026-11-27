@@ -28,6 +28,7 @@ import { processInstanceLifecycleVisibility } from './lifecycleActions';
 import { ProcessInstanceCompletableTasksTable } from './components/ProcessInstanceCompletableTasksTable';
 import { ProcessInstanceCompletedTasksTable } from './components/ProcessInstanceCompletedTasksTable';
 import { ProcessInstanceEventsTable } from './components/ProcessInstanceEventsTable';
+import { ProcessInstanceExternalFormEmailsTable } from './components/ProcessInstanceExternalFormEmailsTable';
 import { ProcessInstanceMilestonesTable } from './components/ProcessInstanceMilestonesTable';
 import { ProcessInstanceTaskModal } from './components/ProcessInstanceTaskModal';
 import { latestTaskForElement } from './taskSelection';
@@ -36,7 +37,7 @@ const InstanceDiagramViewer = lazy(() =>
   import('./components/InstanceDiagramViewer').then((m) => ({ default: m.InstanceDiagramViewer })),
 );
 
-type DetailTab = 'diagram' | 'milestones' | 'events' | 'messages' | 'tasks';
+type DetailTab = 'diagram' | 'milestones' | 'events' | 'messages' | 'tasks' | 'emails';
 
 const TABS: { id: DetailTab; labelKey: ParseKeys }[] = [
   { id: 'diagram', labelKey: 'processInstances.detail.tabs.diagram' },
@@ -44,6 +45,7 @@ const TABS: { id: DetailTab; labelKey: ParseKeys }[] = [
   { id: 'events', labelKey: 'processInstances.detail.tabs.events' },
   { id: 'messages', labelKey: 'processInstances.detail.tabs.messages' },
   { id: 'tasks', labelKey: 'processInstances.detail.tabs.tasks' },
+  { id: 'emails', labelKey: 'processInstances.detail.tabs.emails' },
 ];
 
 function formatUtcTimestamp(timestamp: string | null | undefined): string {
@@ -122,6 +124,8 @@ export default function ProcessInstanceDetailPage() {
     canRetryProcessInstances,
     canDeleteProcessInstances,
     canReadAllProcessInstances,
+    canReadSecrets,
+    canCreateSecrets,
   } = useCapabilities();
   // Reads work under All Tenants; lifecycle actions are writes and must land
   // in exactly one tenant, so they stay disabled until a tenant is selected.
@@ -264,7 +268,7 @@ export default function ProcessInstanceDetailPage() {
   );
 
   return (
-    <div className="flex min-h-screen flex-1 flex-col px-11 py-7">
+    <div className="flex min-h-screen min-w-0 flex-1 flex-col px-11 py-7">
       <Breadcrumbs
         className="mb-[18px] min-w-0 text-[13.5px] text-muted-foreground"
         LinkComponent={RouterBreadcrumbLink}
@@ -427,7 +431,8 @@ export default function ProcessInstanceDetailPage() {
 
           <Tabs value={tab} onValueChange={(value) => setTab(value as DetailTab)} className="mb-5">
             <TabsList className="gap-[26px]">
-              {TABS.map((item) => (
+              {/* External-form emails ride on the tenant's /secrets grant, like the API behind them. */}
+              {TABS.filter((item) => item.id !== 'emails' || canReadSecrets).map((item) => (
                 <TabsTrigger
                   key={item.id}
                   value={item.id}
@@ -473,6 +478,14 @@ export default function ProcessInstanceDetailPage() {
 
           {tab === 'tasks' ? (
             <ProcessInstanceCompletedTasksTable instanceId={parsedId} tenantId={scopedTenantId} />
+          ) : null}
+
+          {tab === 'emails' && canReadSecrets ? (
+            <ProcessInstanceExternalFormEmailsTable
+              instanceId={parsedId}
+              tenantId={detail.tenant_id || scopedTenantId}
+              canResend={canCreateSecrets}
+            />
           ) : null}
         </>
       ) : null}

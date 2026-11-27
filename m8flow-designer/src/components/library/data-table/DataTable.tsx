@@ -99,7 +99,7 @@ function DataTable<T>({
           style={{ gridTemplateColumns }}
         >
           {columns.map((column) => (
-            <div key={column.key} role="columnheader" className={cn("min-w-0", column.className)}>
+            <div key={column.key} role="columnheader" className={cn("relative min-w-0", column.className)}>
               {column.header}
             </div>
           ))}

@@ -345,7 +345,7 @@ def test_a_stale_send_is_parked_when_the_tenant_lost_its_smtp(app, db_session):
 
     with app.app_context():
         g.db_session = db_session
-        assert ExternalFormNotificationService.mark_smtp_unconfigured([row.id], "no SMTP") == 1
+        assert ExternalFormNotificationService.mark_smtp_unconfigured([row.id], "no SMTP") == [row.id]
 
     db_session.expire_all()
     assert (row.status, row.notified_at_in_seconds) == (ExternalFormRequestStatus.smtp_unconfigured.value, None)
@@ -513,3 +513,148 @@ def test_notify_skips_an_unknown_request_id(app, db_session):
     with app.app_context():
         g.db_session = db_session
         assert ExternalFormNotificationService.notify(999_999) == "skipped:unknown_request"
+
+
+def test_smtp_settings_resolve_from_named_values(app, db_session):
+    """The Configuration page stores SMTP as named values -- plain ones in the row,
+    sensitive ones in the secret provider (Vault or DB) -- not as legacy secrets."""
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import create_named_value
+
+    tenant = "named-value-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(
+        db_session, username="bob", service="https://example.test/realms/m8flow", service_id="bob"
+    )
+    for name, value, sensitive in (
+        ("NATS_SMTP_HOST", "smtp.named.test", False),
+        ("NATS_SMTP_FROM_EMAIL", "noreply@named.test", False),
+        ("NATS_SMTP_PORT", "2525", False),
+        ("NATS_SMTP_PASSWORD", "s3cret", True),
+    ):
+        create_named_value(
+            db_session,
+            tenant_id=tenant,
+            body={"name": name, "value": value, "is_sensitive": sensitive},
+            user_id=user.id,
+        )
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(tenant)
+        status = ExternalFormNotificationService.smtp_configuration_status(tenant)
+
+    assert settings is not None
+    assert settings["host"] == "smtp.named.test"
+    assert settings["port"] == 2525
+    assert settings["password"] == "s3cret"
+    assert status["configured"] is True
+    assert "NATS_SMTP_PASSWORD" in status["configured_keys"]
+
+
+def test_named_values_stored_as_json_numbers_and_booleans_read_as_text(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import create_named_value
+
+    tenant = "json-value-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(db_session, username="cara", service="https://example.test/realms/m8flow", service_id="cara")
+    for name, value in (
+        ("NATS_SMTP_HOST", "smtp.named.test"),
+        ("NATS_SMTP_FROM_EMAIL", "noreply@named.test"),
+        ("NATS_SMTP_PORT", 465.0),
+        ("NATS_SMTP_SSL", True),
+    ):
+        create_named_value(db_session, tenant_id=tenant, body={"name": name, "value": value}, user_id=user.id)
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(tenant)
+
+    assert settings["port"] == 465
+    assert settings["ssl"] is True
+
+
+def test_a_named_value_wins_over_a_legacy_secret_of_the_same_name(app, db_session, _tenant_smtp_secrets):
+    from m8flow_backend.identity import ensure_tenant
+    from m8flow_backend.secrets.named_values import create_named_value
+
+    ensure_tenant(db_session, tenant_id=TENANT, slug=TENANT, name=TENANT)
+    create_named_value(
+        db_session,
+        tenant_id=TENANT,
+        body={"name": "NATS_SMTP_HOST", "value": "smtp.named.test"},
+        user_id=_tenant_smtp_secrets.id,
+    )
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+
+    # Host comes from the named value; the rest still fall back to the legacy secrets.
+    assert settings["host"] == "smtp.named.test"
+    assert settings["from_email"] == "noreply@example.test"
+    assert settings["port"] == 2525
+
+
+def test_configured_named_value_names_match_case_insensitively(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import configured_named_value_names, create_named_value
+
+    tenant = "case-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(db_session, username="dev", service="https://example.test/realms/m8flow", service_id="dev")
+    create_named_value(db_session, tenant_id=tenant, body={"name": "nats_smtp_host", "value": "h"}, user_id=user.id)
+    db_session.commit()
+
+    found = configured_named_value_names(
+        db_session, tenant_id=tenant, names={"NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"}
+    )
+
+    assert found == {"NATS_SMTP_HOST"}
+
+
+def test_parking_returns_only_the_rows_it_parked(app, db_session):
+    """Portable without UPDATE ... RETURNING: a row another worker is sending, or one
+    already delivered, is neither parked nor reported as parked."""
+    import time
+
+    from m8flow_backend.models.external_form_request import ExternalFormRequestStatus
+
+    owed = _request_row(db_session, status=ExternalFormRequestStatus.pending.value)
+    in_flight = _request_row(
+        db_session, status=ExternalFormRequestStatus.sending.value, notified_at=int(time.time())
+    )
+    delivered = _request_row(db_session, status=ExternalFormRequestStatus.notified.value, notified_at=5)
+
+    with app.app_context():
+        g.db_session = db_session
+        parked = ExternalFormNotificationService.mark_smtp_unconfigured(
+            [owed.id, in_flight.id, delivered.id], "no SMTP"
+        )
+        assert ExternalFormNotificationService.mark_smtp_unconfigured([], "no SMTP") == []
+
+    assert parked == [owed.id]
+    db_session.expire_all()
+    assert owed.status == ExternalFormRequestStatus.smtp_unconfigured.value
+    assert in_flight.status == ExternalFormRequestStatus.sending.value
+    assert delivered.status == ExternalFormRequestStatus.notified.value
+
+
+def test_a_sensitive_named_value_resolves_whatever_case_it_was_saved_in(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets.named_values import create_named_value, resolve_named_value
+
+    tenant = "sensitive-case-tenant"
+    ensure_tenant(db_session, tenant_id=tenant, slug=tenant, name=tenant)
+    user = ensure_user(db_session, username="eve", service="https://example.test/realms/m8flow", service_id="eve")
+    create_named_value(
+        db_session,
+        tenant_id=tenant,
+        body={"name": "Nats_Smtp_Password", "value": "s3cret", "is_sensitive": True},
+        user_id=user.id,
+    )
+    db_session.commit()
+
+    with app.app_context():
+        assert resolve_named_value(db_session, tenant_id=tenant, name="NATS_SMTP_PASSWORD") == "s3cret"

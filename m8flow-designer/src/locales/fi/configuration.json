@@ -119,5 +119,10 @@
       "delete": "Could not delete this configuration variable.",
       "unreadable": "The configuration variable response was unreadable."
     }
+  },
+  "smtpWarning": {
+    "title": "Ulkoisen lomakkeen sähköposteja ei voi lähettää",
+    "missing": "Puuttuvat sähköpostiasetukset: {{keys}}",
+    "unreadable": "Sähköpostiasetukset, joita ei voitu lukea: {{keys}}"
   }
 }

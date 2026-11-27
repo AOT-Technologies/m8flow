@@ -90,7 +90,8 @@
       "milestones": "Milestones",
       "events": "Events",
       "messages": "Messages",
-      "tasks": "Tasks"
+      "tasks": "Tasks",
+      "emails": "External form emails"
     },
     "terminateConfirm": {
       "title": "Terminate process instance?",
@@ -147,5 +148,39 @@
   },
   "diagram": {
     "renderError": "Failed to render diagram"
+  },
+  "emails": {
+    "loading": "Loading external form emails…",
+    "loadError": "Failed to load external form emails",
+    "empty": "No external form emails have been sent for this process instance.",
+    "truncated": "Showing the newest {{shown}} of {{total}} emails.",
+    "cancelledNotice": "Cancelled links no longer work: the process instance was terminated or the task was closed.",
+    "stuckSending": "Sending is taking longer than expected. It will be retried automatically.",
+    "resend": "Resend",
+    "resendSuccess": "A new form link was issued for {{email}}. It will be emailed shortly.",
+    "resendError": "Failed to resend the form link",
+    "resendConfirm": {
+      "title": "Resend form link?",
+      "description": "A new link will be emailed to {{email}}. Earlier links for this request will stop working."
+    },
+    "columns": {
+      "recipient": "Recipient",
+      "task": "Task",
+      "status": "Status",
+      "sent": "Sent",
+      "expires": "Link expires",
+      "error": "Error"
+    },
+    "status": {
+      "pending": "Waiting to send",
+      "sending": "Sending",
+      "notified": "Sent",
+      "failed": "Failed",
+      "smtpUnconfigured": "Email not set up",
+      "expired": "Link expired",
+      "cancelled": "Cancelled",
+      "submitted": "Submitted",
+      "superseded": "Done by someone else"
+    }
   }
 }

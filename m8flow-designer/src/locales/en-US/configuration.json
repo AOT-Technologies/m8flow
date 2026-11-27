@@ -119,5 +119,10 @@
     "update": "Could not update secret.",
     "delete": "Could not delete secret.",
     "metadataUnreadable": "Secret metadata was unreadable."
+  },
+  "smtpWarning": {
+    "title": "External form emails cannot be sent",
+    "missing": "Missing email settings: {{keys}}",
+    "unreadable": "Email settings that could not be read: {{keys}}"
   }
 }

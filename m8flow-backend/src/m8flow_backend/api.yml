@@ -9202,6 +9202,27 @@ components:
         expires_at_in_seconds:
           type: integer
           nullable: true
+        effective_status:
+          type: string
+          description: >
+            status as the admin should read it: "expired" for a delivered (notified or
+            failed) link whose expires_at_in_seconds is earlier than now (the link still works
+            during its expiry second, as the public link check does), which the stored status
+            only reflects once the recipient opens the link. Otherwise equal to status.
+        stuck_sending:
+          type: boolean
+          description: True when the row has been "sending" for longer than the send lease.
+        resendable:
+          type: boolean
+          description: >
+            Whether POST .../resend would currently be accepted on status alone. The
+            resend call still re-checks the task and answers 409 when it has closed.
+        task_name:
+          type: string
+          nullable: true
+        task_title:
+          type: string
+          nullable: true
 
     ExternalFormNotificationListResponse:
       type: object

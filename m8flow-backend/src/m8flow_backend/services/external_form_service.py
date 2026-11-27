@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from flask import g
+from sqlalchemy import and_, not_, or_
 from sqlalchemy import update as sa_update
 from sqlalchemy.orm import Session
 
@@ -37,6 +38,9 @@ SEND_LEASE_SECONDS = 120
 # Authored under `spiffworkflow:properties`, which lands in the serialized spec at
 # json_metadata["task_definition_properties"]["extensions"]["properties"].
 EXTERNAL_FORM_URL_PROPERTY = "externalFormUrl"
+
+# Delivered statuses whose link can lapse unopened; admin_view reports them as expired then.
+_DELIVERED_STATUSES = (ExternalFormRequestStatus.notified.value, ExternalFormRequestStatus.failed.value)
 
 # last_error of a link retired because its task closed without it (M8F-575).
 TASK_CLOSED_REASON = "The task this link was issued for is no longer open."
@@ -207,6 +211,79 @@ class ExternalFormService:
         ),
     }
 
+    @staticmethod
+    def _send_in_flight(row: ExternalFormRequestModel, now: int) -> bool:
+        """A worker claimed the row within the lease and may still be emailing it."""
+        return (
+            row.status == ExternalFormRequestStatus.sending.value
+            and (row.notified_at_in_seconds or 0) >= now - SEND_LEASE_SECONDS
+        )
+
+    @classmethod
+    def resend_blocked_reason(cls, row: ExternalFormRequestModel, now: int) -> str | None:
+        """Why an admin may not re-issue this link right now, or None when they may."""
+        reason = cls._NOT_REISSUABLE.get(row.status)
+        if reason is None and cls._send_in_flight(row, now):
+            # Rotating the link now would let the in-flight email deliver a dead one.
+            reason = "An email for this request is being sent right now. Try again in a few minutes."
+        return reason
+
+    @classmethod
+    def admin_view(
+        cls, row: ExternalFormRequestModel, now: int, work_item: WorkItemModel | None = None
+    ) -> dict[str, Any]:
+        """to_admin_dict() plus what the admin UI derives its status and actions from.
+
+        effective_status reports a delivered link past its expiry as expired: rows only
+        flip to "expired" when the recipient opens them, so the stored status lags.
+        stuck_sending flags a claim older than the send lease (a worker died mid-send)."""
+        view = row.to_admin_dict()
+        expired = (
+            row.status in _DELIVERED_STATUSES
+            and row.expires_at_in_seconds is not None
+            and row.expires_at_in_seconds < now
+        )
+        view["effective_status"] = ExternalFormRequestStatus.expired.value if expired else row.status
+        view["stuck_sending"] = (
+            row.status == ExternalFormRequestStatus.sending.value and not cls._send_in_flight(row, now)
+        )
+        view["resendable"] = cls.resend_blocked_reason(row, now) is None
+        view["task_name"] = work_item.task_name if work_item is not None else None
+        view["task_title"] = work_item.task_title if work_item is not None else None
+        return view
+
+    @staticmethod
+    def filter_by_effective_status(query: Any, status: str, now: int) -> Any:
+        """Filter a request query on the status admin_view reports, so a list filtered by
+        "expired" includes delivered links whose expiry passed unopened, and "notified" or
+        "failed" leave those out."""
+        model = ExternalFormRequestModel
+        lapsed = and_(
+            model.status.in_(_DELIVERED_STATUSES),
+            model.expires_at_in_seconds.is_not(None),
+            model.expires_at_in_seconds < now,
+        )
+        if status == ExternalFormRequestStatus.expired.value:
+            return query.filter(or_(model.status == status, lapsed))
+        if status in _DELIVERED_STATUSES:
+            return query.filter(model.status == status, not_(lapsed))
+        return query.filter(model.status == status)
+
+    @staticmethod
+    def work_items_for(rows: list[ExternalFormRequestModel]) -> dict[tuple[int, str], WorkItemModel]:
+        """Work items for many rows in one query, keyed by (process_instance_id, task_guid)."""
+        if not rows:
+            return {}
+        items = (
+            db.session.query(WorkItemModel)
+            .filter(
+                WorkItemModel.process_instance_id.in_({row.process_instance_id for row in rows}),
+                WorkItemModel.task_guid.in_({row.task_guid for row in rows}),
+            )
+            .all()
+        )
+        return {(item.process_instance_id, item.task_guid): item for item in items}
+
     @classmethod
     def reissue(cls, request_id: int, *, tenant_id: str) -> ExternalFormRequestModel:
         """Admin resend: give the recipient a fresh link -- new reference_id, new expiry --
@@ -234,15 +311,8 @@ class ExternalFormService:
             )
 
         cls.cancel_if_task_closed(row, cls.human_task_for(row))
-        reason = cls._NOT_REISSUABLE.get(row.status)
         now = int(time.time())
-        if (
-            reason is None
-            and row.status == ExternalFormRequestStatus.sending.value
-            and (row.notified_at_in_seconds or 0) >= now - SEND_LEASE_SECONDS
-        ):
-            # Rotating the link now would let the in-flight email deliver a dead one.
-            reason = "An email for this request is being sent right now. Try again in a few minutes."
+        reason = cls.resend_blocked_reason(row, now)
         if reason:
             raise ApiError(
                 "external_form_request_not_resendable",

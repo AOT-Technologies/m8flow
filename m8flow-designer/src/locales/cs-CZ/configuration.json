@@ -119,5 +119,10 @@
       "delete": "Could not delete this configuration variable.",
       "unreadable": "The configuration variable response was unreadable."
     }
+  },
+  "smtpWarning": {
+    "title": "E-maily externích formulářů nelze odesílat",
+    "missing": "Chybějící nastavení e-mailu: {{keys}}",
+    "unreadable": "Nastavení e-mailu, která nelze přečíst: {{keys}}"
   }
 }

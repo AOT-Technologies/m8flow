@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -17,6 +18,8 @@ from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.secrets import (
     delete_configuration_value,
     delete_secret,
+    get_configuration_value,
+    get_secret_value,
     set_configuration_value,
 )
 
@@ -79,6 +82,56 @@ def list_named_values(session: Session, *, tenant_id: str) -> list[dict[str, Any
 
 def get_named_value(session: Session, *, tenant_id: str, variable_id: str) -> dict[str, Any]:
     return _serialize(_get_row(session, tenant_id=tenant_id, variable_id=variable_id))
+
+
+def configured_named_value_names(session: Session, *, tenant_id: str, names: set[str]) -> set[str]:
+    """Which of ``names`` the tenant has configured, matched case-insensitively and
+    returned in the caller's spelling. Metadata only -- no provider read."""
+    by_lower = {name.casefold(): name for name in names}
+    stored = session.scalars(
+        select(NamedValueModel.name).where(
+            NamedValueModel.m8f_tenant_id == tenant_id,
+            NamedValueModel.is_configured.is_(True),
+            func.lower(NamedValueModel.name).in_(list(by_lower)),
+        )
+    ).all()
+    return {by_lower[name.casefold()] for name in stored}
+
+
+def resolve_named_value(session: Session, *, tenant_id: str, name: str) -> str | None:
+    """The runtime value of a tenant's named value, as a string, or None when it is
+    absent or unconfigured. Sensitive values are read from the active secret provider
+    (Vault or the database), so callers never need to know where they live."""
+    row = session.scalar(
+        select(NamedValueModel).where(
+            NamedValueModel.m8f_tenant_id == tenant_id,
+            func.lower(NamedValueModel.name) == name.casefold(),
+        )
+    )
+    if row is None or not row.is_configured:
+        return None
+    if not row.is_sensitive:
+        return _as_text(row.value)
+    if not row.provider_key:
+        return None
+    configuration_id = _configuration_id_for_provider_key(row.provider_key, named_value_id=row.id)
+    if configuration_id is not None:
+        return get_configuration_value(session, tenant_id=tenant_id, variable_id=configuration_id)
+    return get_secret_value(session, tenant_id=tenant_id, key=row.provider_key)
+
+
+def _as_text(value: Any) -> str | None:
+    """An ordinary value (stored as JSON) as the text an admin would expect: strings as
+    typed, booleans as true/false, whole numbers without a trailing .0, else JSON."""
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, int | float):
+        return str(value)
+    return json.dumps(value, sort_keys=True)
 
 
 def create_named_value(

@@ -91,7 +91,8 @@
       "milestones": "Marcos",
       "events": "Eventos",
       "messages": "Mensagens",
-      "tasks": "Tarefas"
+      "tasks": "Tarefas",
+      "emails": "E-mails de formulários externos"
     },
     "terminateConfirm": {
       "title": "Terminar a instância de processo?",
@@ -148,5 +149,39 @@
   },
   "diagram": {
     "renderError": "Não foi possível apresentar o diagrama"
+  },
+  "emails": {
+    "loading": "A carregar e-mails de formulários externos…",
+    "loadError": "Falha ao carregar os e-mails de formulários externos",
+    "empty": "Não foram enviados e-mails de formulários externos para esta instância de processo.",
+    "truncated": "A mostrar os {{shown}} e-mails mais recentes de {{total}}.",
+    "cancelledNotice": "As ligações canceladas já não funcionam: a instância de processo foi terminada ou a tarefa foi fechada.",
+    "stuckSending": "O envio está a demorar mais do que o esperado. Será repetido automaticamente.",
+    "resend": "Reenviar",
+    "resendSuccess": "Foi gerada uma nova ligação de formulário para {{email}}. Será enviada por e-mail em breve.",
+    "resendError": "Falha ao reenviar a ligação do formulário",
+    "resendConfirm": {
+      "title": "Reenviar a ligação do formulário?",
+      "description": "Será enviada uma nova ligação para {{email}}. As ligações anteriores deste pedido deixarão de funcionar."
+    },
+    "columns": {
+      "recipient": "Destinatário",
+      "task": "Tarefa",
+      "status": "Estado",
+      "sent": "Enviado",
+      "expires": "A ligação expira",
+      "error": "Erro"
+    },
+    "status": {
+      "pending": "A aguardar envio",
+      "sending": "A enviar",
+      "notified": "Enviado",
+      "failed": "Falhou",
+      "smtpUnconfigured": "E-mail não configurado",
+      "expired": "Ligação expirada",
+      "cancelled": "Cancelado",
+      "submitted": "Submetido",
+      "superseded": "Concluído por outra pessoa"
+    }
   }
 }

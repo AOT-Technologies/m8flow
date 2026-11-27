@@ -13,6 +13,7 @@ from urllib.parse import urlunsplit
 
 from sqlalchemy import and_
 from sqlalchemy import or_
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 
 from m8flow_backend.db import db
@@ -59,9 +60,10 @@ def _claimable(now: int):
         ),
     )
 
-# SMTP is configured per-tenant via encrypted tenant secrets, never global
-# env. These keys are read from the recipient's tenant when sending — host and
-# from_email are required; the rest are optional.
+# SMTP is configured per-tenant, never global env: as tenant named values
+# (Configuration page; sensitive ones live in the active secret provider, e.g. Vault),
+# falling back to legacy tenant secrets of the same name. These keys are read from the
+# recipient's tenant when sending — host and from_email are required; the rest optional.
 #
 # The NATS notification worker uses its OWN, NATS_-prefixed secrets so they stay
 # independent of the plain SMTP_* secrets that the BPMN smtp/SendHTMLEmail connector
@@ -287,20 +289,21 @@ class ExternalFormNotificationService:
 
     @classmethod
     def _read_tenant_secret(cls, key: str, tenant_id: str | None = None) -> str | None:
-        """Decrypted value of a tenant secret, or None if absent/unreadable."""
+        """Tenant value for `key`, or None if absent/unreadable: the tenant's named value
+        of that name, else a legacy tenant secret of that key."""
         from m8flow_backend.errors import ApiError
         from m8flow_backend import secrets as SecretService
         from m8flow_backend.db import current_session
+        from m8flow_backend.secrets.named_values import resolve_named_value
 
         effective_tenant_id = cls._effective_tenant_id(tenant_id)
         if effective_tenant_id is None:
             return None
+        session = current_session()
         try:
-            secret = SecretService.get_secret_value(
-                current_session(),
-                tenant_id=effective_tenant_id,
-                key=key,
-            )
+            secret = resolve_named_value(session, tenant_id=effective_tenant_id, name=key)
+            if secret is None:
+                secret = SecretService.get_secret_value(session, tenant_id=effective_tenant_id, key=key)
         except ApiError:
             return None
         if secret is None:
@@ -338,18 +341,21 @@ class ExternalFormNotificationService:
 
     @classmethod
     def _present_smtp_secret_keys(cls, tenant_id: str | None = None) -> set[str]:
-        """Which NATS_SMTP_* keys the tenant has rows for. Presence only, no decryption,
-        so it stays a single query."""
+        """Which NATS_SMTP_* keys the tenant has a named value or legacy secret for.
+        Presence only, no decryption."""
         from m8flow_backend.db import current_session
         from m8flow_backend.secrets import list_secret_keys
+        from m8flow_backend.secrets.named_values import configured_named_value_names
 
         effective_tenant_id = cls._effective_tenant_id(tenant_id)
         if effective_tenant_id is None:
             # `list_secret_keys(tenant_id=None)` spans every tenant; reporting another
             # tenant's keys as this one's is worse than reporting none.
             return set()
-        keys = set(list_secret_keys(current_session(), tenant_id=effective_tenant_id))
-        return keys & set(SMTP_SECRET_KEYS.values())
+        session = current_session()
+        wanted = set(SMTP_SECRET_KEYS.values())
+        keys = set(list_secret_keys(session, tenant_id=effective_tenant_id)) & wanted
+        return keys | configured_named_value_names(session, tenant_id=effective_tenant_id, names=wanted)
 
     @classmethod
     def smtp_readiness(cls, tenant_id: str | None = None) -> dict[str, Any]:
@@ -405,22 +411,33 @@ class ExternalFormNotificationService:
         }
 
     @classmethod
-    def mark_smtp_unconfigured(cls, request_ids: list[int], reason: str) -> int:
-        """Park requests that cannot be emailed because the tenant has no usable SMTP config.
+    def mark_smtp_unconfigured(cls, request_ids: list[int], reason: str) -> list[int]:
+        """Park requests that cannot be emailed because the tenant has no usable SMTP config,
+        returning the ids actually parked.
 
         'smtp_unconfigured' is outside CLAIMABLE_STATUSES, so the sweep stops considering
         these rows entirely -- this is what ends the indefinite retry loop. The status
         guard mirrors release_failed(): a row the recipient just submitted, or one another
         worker already claimed, is left alone."""
         if not request_ids:
-            return 0
+            return []
         now = int(time.time())
-        result = db.session.execute(
-            sa_update(ExternalFormRequestModel)
-            .where(
-                ExternalFormRequestModel.id.in_(request_ids),
-                _claimable(now),
+        # Lock the eligible rows, then update exactly those: portable where UPDATE ...
+        # RETURNING is not (MySQL), and the lock keeps a concurrent claim from slipping in
+        # between the two statements on databases that support it.
+        parked = list(
+            db.session.scalars(
+                select(ExternalFormRequestModel.id)
+                .where(ExternalFormRequestModel.id.in_(request_ids), _claimable(now))
+                .with_for_update()
             )
+        )
+        if not parked:
+            db.session.commit()
+            return []
+        db.session.execute(
+            sa_update(ExternalFormRequestModel)
+            .where(ExternalFormRequestModel.id.in_(parked))
             .values(
                 status=ExternalFormRequestStatus.smtp_unconfigured.value,
                 notified_at_in_seconds=None,
@@ -430,7 +447,7 @@ class ExternalFormNotificationService:
             .execution_options(synchronize_session=False)
         )
         db.session.commit()
-        return result.rowcount
+        return parked
 
     @classmethod
     def revive_smtp_unconfigured(cls, tenant_id: str) -> int:

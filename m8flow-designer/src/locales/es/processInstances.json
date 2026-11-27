@@ -91,7 +91,8 @@
       "milestones": "Hitos",
       "events": "Eventos",
       "messages": "Mensajes",
-      "tasks": "Tareas"
+      "tasks": "Tareas",
+      "emails": "Correos de formularios externos"
     },
     "terminateConfirm": {
       "title": "¿Terminar la instancia de proceso?",
@@ -148,5 +149,39 @@
   },
   "diagram": {
     "renderError": "No se pudo representar el diagrama"
+  },
+  "emails": {
+    "loading": "Cargando correos de formularios externos…",
+    "loadError": "No se pudieron cargar los correos de formularios externos",
+    "empty": "No se han enviado correos de formularios externos para esta instancia de proceso.",
+    "truncated": "Se muestran los {{shown}} correos más recientes de {{total}}.",
+    "cancelledNotice": "Los enlaces cancelados ya no funcionan: la instancia de proceso se terminó o la tarea se cerró.",
+    "stuckSending": "El envío está tardando más de lo esperado. Se reintentará automáticamente.",
+    "resend": "Reenviar",
+    "resendSuccess": "Se generó un nuevo enlace de formulario para {{email}}. Se enviará por correo en breve.",
+    "resendError": "No se pudo reenviar el enlace del formulario",
+    "resendConfirm": {
+      "title": "¿Reenviar el enlace del formulario?",
+      "description": "Se enviará un nuevo enlace a {{email}}. Los enlaces anteriores de esta solicitud dejarán de funcionar."
+    },
+    "columns": {
+      "recipient": "Destinatario",
+      "task": "Tarea",
+      "status": "Estado",
+      "sent": "Enviado",
+      "expires": "El enlace caduca",
+      "error": "Error"
+    },
+    "status": {
+      "pending": "Pendiente de envío",
+      "sending": "Enviando",
+      "notified": "Enviado",
+      "failed": "Fallido",
+      "smtpUnconfigured": "Correo no configurado",
+      "expired": "Enlace caducado",
+      "cancelled": "Cancelado",
+      "submitted": "Enviado por el destinatario",
+      "superseded": "Completado por otra persona"
+    }
   }
 }

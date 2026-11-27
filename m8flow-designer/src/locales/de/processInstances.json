@@ -90,7 +90,8 @@
       "milestones": "Meilensteine",
       "events": "Ereignisse",
       "messages": "Nachrichten",
-      "tasks": "Aufgaben"
+      "tasks": "Aufgaben",
+      "emails": "E-Mails für externe Formulare"
     },
     "terminateConfirm": {
       "title": "Prozessinstanz beenden?",
@@ -147,5 +148,39 @@
   },
   "diagram": {
     "renderError": "Diagramm konnte nicht dargestellt werden"
+  },
+  "emails": {
+    "loading": "E-Mails für externe Formulare werden geladen…",
+    "loadError": "E-Mails für externe Formulare konnten nicht geladen werden",
+    "empty": "Für diese Prozessinstanz wurden keine E-Mails für externe Formulare gesendet.",
+    "truncated": "Die neuesten {{shown}} von {{total}} E-Mails werden angezeigt.",
+    "cancelledNotice": "Stornierte Links funktionieren nicht mehr: Die Prozessinstanz wurde beendet oder die Aufgabe wurde geschlossen.",
+    "stuckSending": "Das Senden dauert länger als erwartet. Es wird automatisch erneut versucht.",
+    "resend": "Erneut senden",
+    "resendSuccess": "Für {{email}} wurde ein neuer Formularlink erstellt. Er wird in Kürze per E-Mail gesendet.",
+    "resendError": "Formularlink konnte nicht erneut gesendet werden",
+    "resendConfirm": {
+      "title": "Formularlink erneut senden?",
+      "description": "Ein neuer Link wird an {{email}} gesendet. Frühere Links dieser Anfrage funktionieren dann nicht mehr."
+    },
+    "columns": {
+      "recipient": "Empfänger",
+      "task": "Aufgabe",
+      "status": "Status",
+      "sent": "Gesendet",
+      "expires": "Link läuft ab",
+      "error": "Fehler"
+    },
+    "status": {
+      "pending": "Wartet auf Versand",
+      "sending": "Wird gesendet",
+      "notified": "Gesendet",
+      "failed": "Fehlgeschlagen",
+      "smtpUnconfigured": "E-Mail nicht eingerichtet",
+      "expired": "Link abgelaufen",
+      "cancelled": "Storniert",
+      "submitted": "Übermittelt",
+      "superseded": "Von jemand anderem erledigt"
+    }
   }
 }
