@@ -1686,6 +1686,74 @@ def test_versioned_dmn_only_publish_keeps_previous_definition(db_session, tmp_pa
     assert first.bpmn_process_definition.source_dmn_xml == first_dmn
 
 
+@pytest.mark.parametrize("isolation", ["model", "release", "tenant"])
+def test_versioned_collaboration_messages_stay_in_the_sender_deployment(db_session, tmp_path, monkeypatch, isolation):
+    from m8flow_backend.catalog import versioned
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    source = BPMN.with_name("order-fulfilment-collaboration.bpmn").read_bytes()
+    original_model = versioned.create(
+        db_session, tenant.id, "orders/original", name="Original", files={"orders.bpmn": source},
+    )
+    versioned.publish(db_session, original_model, user_id=user.id, username=user.username)
+    db_session.commit()
+
+    def start(model, actor, participant):
+        return workflow.start(
+            db_session, tenant_id=model.m8f_tenant_id, user_id=actor.id,
+            process_model_identifier=model.model_id, bpmn_process_id=participant,
+            collaboration_correlation_key="shared-order",
+            submission_metadata={"start_fulfilment": False},
+        )
+
+    def finish(instance, actor):
+        item = next(
+            item for item in workflow.list_pending_tasks(
+                db_session, tenant_id=instance.m8f_tenant_id, user_id=actor.id,
+            ) if item.process_instance_id == instance.id
+        )
+        workflow.claim(db_session, tenant_id=instance.m8f_tenant_id, work_item_id=item.id, user_id=actor.id)
+        workflow.complete(db_session, tenant_id=instance.m8f_tenant_id, work_item_id=item.id, user_id=actor.id)
+        db_session.commit()
+
+    receiver = start(original_model, user, "Fulfilment")
+    db_session.commit()
+    finish(receiver, user)
+    sender = start(original_model, user, "Order")
+    db_session.commit()
+    original_definition_id = sender.bpmn_process_definition_id
+    other_user = user
+    if isolation == "release":
+        versioned.write_file(original_model, "notes.json", b'{"release": 2}')
+        other_model = original_model
+    else:
+        other_tenant = tenant
+        if isolation == "tenant":
+            other_tenant, other_user = _seed_actor(
+                db_session, "tenant-b", username="other-editor", service_id="other-editor",
+            )
+        other_model = versioned.create(
+            db_session, other_tenant.id, "orders/copy", name="Copy", files={"orders.bpmn": source},
+        )
+    versioned.publish(db_session, other_model, user_id=other_user.id, username=other_user.username)
+    db_session.commit()
+    unrelated = start(other_model, other_user, "Fulfilment")
+    db_session.commit()
+    assert unrelated.bpmn_process_definition_id != original_definition_id
+    assert unrelated.bpmn_process_definition.source_bpmn_xml == source.decode()
+    finish(unrelated, other_user)
+    assert unrelated.status == receiver.status == "waiting"
+    finish(sender, user)
+
+    assert workflow.run_due(db_session, tenant_id=tenant.id, now=datetime.now(UTC)) == 1
+    db_session.commit()
+    db_session.expire_all()
+    assert sender.status == receiver.status == "complete"
+    assert sender.bpmn_process_definition_id == receiver.bpmn_process_definition_id == original_definition_id
+    assert unrelated.status == "waiting"
+
+
 @pytest.mark.parametrize("key", sorted(
     path.parent.name for path in (
         Path(__file__).resolve().parents[5] / "m8flow-designer/e2e/seed/catalog/templates"

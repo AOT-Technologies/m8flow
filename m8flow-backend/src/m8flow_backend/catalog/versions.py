@@ -242,6 +242,7 @@ def add_release(
 
 
 def definition_digest(entry: ProcessModelRelease, file_name: str) -> str:
+    """Identify a release deployment even when BPMN is unchanged across releases."""
     return sha256(f"m8flow:release:{entry.generation}:{entry.version}:{file_name}".encode()).hexdigest()
 
 

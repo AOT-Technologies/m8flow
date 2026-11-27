@@ -42,21 +42,37 @@ head`, and creates a login role without `SUPERUSER` or `BYPASSRLS`. The host
 connects as that role, so core's queries run under the same row-level security
 as production. The database and role are dropped when the worker finishes.
 
-### Test a local collaboration-capable core wheel
+### Test a local core wheel for collaboration publishing
 
-The backend lock remains on the published core version until a release
-includes BPMN-08. To verify against a locally built wheel, add it to the
+Collaboration publishing requires a core version that accepts caller-owned
+`process_xml_digest` values. The host uses a distinct digest for each model
+generation, release, and BPMN filename so identical BPMN cannot merge separate
+deployments. Core `1.1.0b2` rejects these digests for collaborations. Keep the
+registry dependency and lockfile unchanged until the fixed core is published,
+then update both to that exact published version.
+
+To verify the fix before publication, build the core wheel and add it to the
 Python import path for a test invocation. On PowerShell, from
 `m8flow-backend` with the backend virtual environment already synced:
 
 ```powershell
-$env:PYTHONPATH = "C:\path\to\m8flow_core-1.0.0-py3-none-any.whl"
+$env:PYTHONPATH = "C:\path\to\m8flow_core-1.1.0-py3-none-any.whl"
+.\.venv\Scripts\python.exe -m pytest tests/unit/m8flow_backend/routes/test_templates_controller.py -k collaboration_template
+.\.venv\Scripts\python.exe -m pytest tests/unit/m8flow_backend/workflow/test_workflow_operations.py -k versioned_collaboration
 .\.venv\Scripts\python.exe -m pytest tests/integration/test_collaboration.py tests/integration/test_schema_matches_core.py
 Remove-Item Env:PYTHONPATH
 ```
 
-Run the host's Alembic migration before starting a backend or scheduler built
-with that core. The existing scheduler poller delivers collaboration messages.
+Do not commit a local wheel dependency or vendor core source. This fix does
+not change the database schema. The existing scheduler poller delivers
+collaboration messages, and the PostgreSQL tests exercise versioned publishing
+under tenant RLS.
+
+The HTTP regression builds its template archive in memory from the existing
+`order-fulfilment-collaboration.bpmn` fixture and a small approval form. It
+imports and publishes the template, creates two process models, and publishes
+a form-only second release while checking that existing instances retain their
+original source and form. No ZIP fixture is stored in the repository.
 
 ## What is covered
 
