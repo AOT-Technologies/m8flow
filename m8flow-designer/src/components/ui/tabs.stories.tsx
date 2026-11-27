@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './tabs';
 
 /**
- * Showcase-only story for `ui/tabs.tsx` (added in ticket 02) — no component
+ * Showcase-only story for `ui/tabs.tsx` (added in) — no component
  * code changed here. Reproduces the mockup's "Tabbed pages" example:
  * Diagram (active) | Instances | Files, with a content area below each tab
  * standing in for the real page content (a BPMN-canvas placeholder for the

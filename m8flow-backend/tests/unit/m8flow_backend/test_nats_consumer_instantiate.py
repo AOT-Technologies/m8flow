@@ -206,7 +206,7 @@ def test_a_forged_message_cannot_rewrite_another_tenants_history(consumer, db_se
     rows = {(r.m8f_tenant_id, r.event_id): r for r in db_session.scalars(select(NatsEventAuditModel))}
     assert (rows[("t-victim", "victim-evt")].outcome, rows[("t-victim", "victim-evt")].stream_seq) == ("queued", None)
     # The rejection is still recorded, under the tenant the subject names, and without the
-    # username the unverified sender claimed (M8F-574).
+    # username the unverified sender claimed.
     assert rows[("t-evil", "victim-evt")].outcome == "rejected_auth"
     assert rows[("t-evil", "victim-evt")].username is None
     assert forged.acked
@@ -288,7 +288,7 @@ def _trigger_event(app, *, owner="admin", issued_at=None, **fields):
 
 @pytest.mark.parametrize("claim", [{"username": "u2"}, {}], ids=["names-another-user", "no-username"])
 def test_a_trigger_starts_as_the_key_owner(consumer, app, db_session, tmp_path, claim):
-    """M8F-574 Issue II: a username in the message is the sender's claim; the key decides,
+    """a username in the message is the sender's claim; the key decides,
     for the initiator, the audit row and the instance metadata alike."""
     from m8flow_core.models.process_instance_metadata import ProcessInstanceMetadataModel
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel
@@ -332,7 +332,7 @@ def test_a_key_whose_owner_no_longer_resolves_is_rejected_not_redirected(consume
 
 
 def test_an_event_carrying_a_raw_api_key_is_rejected(consumer, app, db_session, tmp_path):
-    """M8F-574 Issue III: the old format put the raw key in the stream. The consumer no
+    """the old format put the raw key in the stream. The consumer no
     longer accepts it, so no client has a reason to keep publishing keys to the broker."""
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
     from m8flow_backend.services.nats_token_service import NatsTokenService
@@ -379,7 +379,7 @@ def test_an_altered_signed_event_is_rejected(consumer, app, db_session, tmp_path
 
 
 def test_a_replayed_signed_event_is_rejected(consumer, app, db_session, tmp_path):
-    """M8F-574 review: a captured signed event must not start the process again once it is
+    """a captured signed event must not start the process again once it is
     older than the freshness window, even after the dedup bucket has forgotten its id."""
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel, NatsEventOutcome
 
@@ -410,7 +410,7 @@ def test_a_replayed_signed_event_is_rejected(consumer, app, db_session, tmp_path
 def test_the_consumer_refuses_to_start_when_every_trigger_would_be_refused(
     consumer, monkeypatch, variable, value, error
 ):
-    """M8F-574 review: fail at boot, where a deploy notices, not on each message."""
+    """fail at boot, where a deploy notices, not on each message."""
     consumer.require_trigger_config()  # the valid test config starts
 
     monkeypatch.setenv(variable, value)

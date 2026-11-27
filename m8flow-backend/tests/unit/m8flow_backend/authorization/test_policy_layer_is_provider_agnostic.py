@@ -1,5 +1,4 @@
-"""Regression test for the auth-provider-seam wayfinder map's locked decision
-2 and ticket 11 ("Pin the policy layer's provider-agnosticism"): authorization
+"""Regression test for provider-agnostic authorization: authorization
 decisions must derive ONLY from ``VerifiedClaims`` + DB state, never a raw
 token payload or a Keycloak import.
 
@@ -33,7 +32,7 @@ _MASTER_SERVICE = "https://example.test/realms/master"
 
 def _assert_no_raw_payload_present() -> None:
     """The property under test: no raw token dict anywhere on `g`, for any
-    of the names the pre-ticket-10 code used to read."""
+    of the names the old token-parsing code used to read."""
     assert getattr(g, "decoded_token", None) is None
     assert getattr(g, "_m8flow_decoded_token", None) is None
 
@@ -97,7 +96,7 @@ def test_policy_decisions_work_with_verified_claims_and_no_raw_payload(app, db_s
 def test_fake_provider_verified_claims_drive_identical_policy_decisions(app, db_session):
     """The same neutral VerifiedClaims shape must yield the same policy
     decision no matter which AuthProvider produced it. Driving this end-to-
-    end from the ticket-02 conformance fake (InMemoryAuthProvider) both
+    end from the conformance fake (InMemoryAuthProvider) both
     proves the boundary and proves the fake's VerifiedClaims are realistic
     enough to exercise the real policy layer, not just the conformance
     suite it was built for."""

@@ -17,7 +17,7 @@ import { TemplateFileList } from './components/TemplateFileList';
 import { TemplateVersionSelector } from './components/TemplateVersionSelector';
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 11). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>
@@ -29,7 +29,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 /**
  * Template detail — identity, publish/visibility, and the file list.
  * Per-file authoring lives at `/templates/:id/modeler/:fileName`
- * (Templates to 100%, ticket 07).
+ * (Templates to 100%).
  */
 export default function TemplateModelerPage() {
   const { t } = useTranslation();

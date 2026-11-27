@@ -31,8 +31,7 @@ export type CreateProcessModelFromTemplateDialogProps = {
 };
 
 /**
- * "Use template" → `POST .../create-process-model` (Template modeler map,
- * ticket 04). The backend requires an *existing* process group (it 404s
+ * "Use template" → `POST.../create-process-model`. The backend requires an *existing* process group (it 404s
  * rather than auto-creating one — confirmed from
  * `TemplateService.create_process_model_from_template`'s own
  * `is_process_group_identifier` check), so this fetches the real group
@@ -43,7 +42,7 @@ export type CreateProcessModelFromTemplateDialogProps = {
  * dialog opening a dialog) for what's otherwise a single form field
  * wasn't worth the indirection.
  *
- * Super-admin must have a concrete `scopedTenantId` (M8F-479); the request
+ * Super-admin must have a concrete `scopedTenantId`; the request
  * then sends both `?tenantId=` and body `m8f_tenant_id`.
  */
 export function CreateProcessModelFromTemplateDialog({

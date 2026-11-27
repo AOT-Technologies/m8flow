@@ -718,7 +718,7 @@ test.describe('Processes for a tenant with data', () => {
   test('PRC-08: The Owner filter shows only process models with instances started by that user', async ({
     page,
   }) => {
-    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    // Organization-wide data (owners, run stats) is tenant-admin only.
     await useSession(page, tenantAdminCredentials());
     const owners = (await backendFetch(page, '/v1.0/m8flow/process-instances/owners')).body as {
       owner_options?: OwnerOption[];
@@ -754,7 +754,7 @@ test.describe('Processes for a tenant with data', () => {
   test('PRC-09: Sorting by Newest first and Oldest first orders process models by their last run', async ({
     page,
   }) => {
-    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    // Organization-wide data (owners, run stats) is tenant-admin only.
     await useSession(page, tenantAdminCredentials());
     await page.goto(groupPage);
     await expect(page.getByRole('button', { name: 'Sort: Newest first' })).toBeVisible();
@@ -1192,7 +1192,7 @@ test.describe('Processes for a tenant with data', () => {
   // ---------------- Page text and controls ----------------
 
   test('PRC-32: The Processes page with data shows its labels, columns and row buttons', async ({ page }) => {
-    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    // Organization-wide data (owners, run stats) is tenant-admin only.
     await useSession(page, tenantAdminCredentials());
     const models = await apiList<ModelItem>(page, groupModelsApi);
     await page.goto(groupPage);
@@ -1317,7 +1317,7 @@ test.describe('Processes for a tenant with data', () => {
   test('PRC-43: Status, Owner and search can be combined, and an empty combination shows a message', async ({
     page,
   }) => {
-    // Organization-wide data (owners, run stats) is tenant-admin only since M8F-627.
+    // Organization-wide data (owners, run stats) is tenant-admin only.
     await useSession(page, tenantAdminCredentials());
     await page.goto(groupPage);
     const checks: string[] = [];

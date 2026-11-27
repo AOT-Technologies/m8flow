@@ -2,7 +2,7 @@
  * Task-state markers, taken-path flows, and legend for the
  * process instance NavigatedViewer.
  *
- * M8F-579: each state pairs colour with stroke weight, fill tint, glow or
+ * each state pairs colour with stroke weight, fill tint, glow or
  * dash. Not-reached states (FUTURE/LIKELY/MAYBE) get nothing, so they keep
  * the renderer's neutral look.
  */

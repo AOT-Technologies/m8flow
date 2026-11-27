@@ -86,7 +86,7 @@ export type TenantAdminPanelProps = {
 };
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 12). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>

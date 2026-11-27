@@ -1,7 +1,7 @@
-"""Event subprocess support in the catalog save guard (M8F-667, M8F-665).
+"""Event subprocess support in the catalog save guard.
 
 The catalog accepts event subprocesses whose start events are non-interrupting
-timers (M8F-667) or error or escalation events (M8F-665), and rejects the rest.
+timers or error or escalation events, and rejects the rest.
 """
 
 from __future__ import annotations

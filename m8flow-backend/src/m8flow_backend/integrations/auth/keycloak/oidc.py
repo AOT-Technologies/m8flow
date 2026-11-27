@@ -1,12 +1,11 @@
 """Keycloak-specific overrides on top of ``base/oidc.py``'s spec-defined
-engine (auth-provider-seam wayfinder map, ticket 04).
+engine.
 
 Discovery/JWKS fetch+cache, RS256 verification, and the authorization-code/
 refresh token-endpoint grants all live in ``base.oidc.OidcClient`` now. Only
 what's genuinely Keycloak-specific remains here: realm URL templating, the
 public/internal Docker base split (``_internalize_url``), and Keycloak's own
-issuer/audience allow-listing rules -- exactly the ~54 lines ticket 04's own
-audit found weren't spec-defined.
+issuer/audience allow-listing rules that are specific to this provider.
 """
 from __future__ import annotations
 

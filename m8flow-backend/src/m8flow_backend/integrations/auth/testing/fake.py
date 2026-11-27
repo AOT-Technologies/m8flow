@@ -1,7 +1,6 @@
 """In-memory reference implementation of ``AuthProvider``.
 
-Built by the auth-provider-seam wayfinder map, ticket 02 ("Build the
-conformance suite + fake provider"). Exists for two reasons:
+The fake exists for two reasons:
 
 1. It is the forcing function that proves the port isn't secretly
    Keycloak-shaped -- an abstraction with only one implementation has no way

@@ -26,7 +26,7 @@ const DMN_XML = `<?xml version="1.0" encoding="UTF-8"?>
 </definitions>`;
 
 describe('DmnCanvas', () => {
-  // M8F-510: DmnModeler used `inherits()` + `.call(this)` against dmn-js's ES
+  // DmnModeler used `inherits()` + `.call(this)` against dmn-js's ES
   // class Modeler, so constructing it threw inside the mount effect. With no
   // error boundary above it, React unmounted the whole app -- the modeler page
   // rendered completely blank for every .dmn file.

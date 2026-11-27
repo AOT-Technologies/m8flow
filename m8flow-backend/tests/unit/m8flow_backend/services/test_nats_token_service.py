@@ -77,7 +77,7 @@ def test_a_signed_trigger_verifies_and_any_signed_change_breaks_it():
     "salt", [None, "m8flow_default_salt", "changeme_nats_salt", "my-random-salt-string", "x" * 31]
 )
 def test_a_public_salt_neither_signs_nor_verifies_a_trigger(monkeypatch, salt):
-    """M8F-574 review: the signature is the consumer's only proof a trigger came from the
+    """the signature is the consumer's only proof a trigger came from the
     backend. With the salt unset, a value published in this repo, or short enough to
     brute-force from a signed event read off the broker, anyone who can publish to the
     broker could sign an event naming any key, so triggers fail closed."""
@@ -98,7 +98,7 @@ def test_a_public_salt_neither_signs_nor_verifies_a_trigger(monkeypatch, salt):
 
 def test_a_trigger_is_fresh_only_inside_the_window(monkeypatch):
     """A signature proves who issued an event, not when; the window bounds how long a
-    captured event can be replayed (M8F-574 review)."""
+    captured event can be replayed."""
     monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", "300")
     now = 1_800_000_000
     fresh = NatsTokenService.trigger_is_fresh
@@ -114,7 +114,7 @@ def test_a_trigger_is_fresh_only_inside_the_window(monkeypatch):
 
 @pytest.mark.parametrize("raw", ["abc", "-1", "0", "1.5"])
 def test_a_bad_trigger_max_age_is_a_config_error(monkeypatch, raw):
-    """M8F-574 review: a negative window would refuse every trigger and a non-number would
+    """a negative window would refuse every trigger and a non-number would
     fail each message, so either is reported as a config error naming the variable."""
     monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", raw)
 
@@ -124,7 +124,7 @@ def test_a_bad_trigger_max_age_is_a_config_error(monkeypatch, raw):
 
 @pytest.mark.parametrize("raw", [" ", " 300 ", "300 ", "\t300\n"])
 def test_a_blank_or_padded_trigger_max_age_still_parses(monkeypatch, raw):
-    """M8F-574 review: env files often pad values, and the consumer will not start on a bad
+    """env files often pad values, and the consumer will not start on a bad
     one. config._get strips before validating; blank means unset, so the default."""
     monkeypatch.setenv("M8FLOW_NATS_TRIGGER_MAX_AGE_SECONDS", raw)
 
@@ -132,7 +132,7 @@ def test_a_blank_or_padded_trigger_max_age_still_parses(monkeypatch, raw):
 
 
 def test_a_trigger_signature_ignores_key_order_at_every_level():
-    """M8F-574 review: the payload is signed canonically. json.dumps(sort_keys=True) sorts
+    """the payload is signed canonically. json.dumps(sort_keys=True) sorts
     nested objects too, including ones inside lists, so a payload whose keys come back in
     another order (after the broker round trip, or from another producer) still verifies."""
     event = {

@@ -1,6 +1,6 @@
 """Regression coverage for tenant_role_service.py's own internals.
 
-Ticket 07's audit (auth-provider-seam wayfinder map) found zero existing test
+The auth-provider audit found zero existing test
 exercised this file's actual Keycloak-calling logic -- the only other test
 file (test_tenant_role_controller.py) mocks these functions away entirely to
 test route-level RBAC. This file closes that gap: it mocks Keycloak at the
@@ -8,7 +8,7 @@ HTTP/admin-client boundary, the way test_groups.py/test_tenants.py/
 test_directory.py already do for the adapter itself, and exercises the three
 top-level read entry points end to end -- including the pagination loop and
 the ThreadPoolExecutor fan-out with more than one item, both called out by
-the audit as needing coverage before the drain (tickets 08/09) touches them.
+the audit as needing coverage before the drain  touches them.
 """
 from __future__ import annotations
 
@@ -64,8 +64,7 @@ def _tenant_role_service_http(monkeypatch):
         lambda: "admin-token",
     )
     # tenant_role_service.py no longer imports fetch_master_admin_token at all
-    # (auth-provider-seam wayfinder map, ticket 15 drained the admin_token
-    # threading entirely) -- the admin_client patch above is the only one
+    #  -- the admin_client patch above is the only one
     # needed now; every Keycloak call goes through the cached capability
     # surface instead of a raw admin token passed by hand.
     reset_keycloak_settings()
@@ -237,7 +236,7 @@ def test_list_tenant_members_with_roles_maps_group_membership_to_roles(monkeypat
         if url == GROUPS_URL:
             return _FakeResponse([_administrators(), _designers()])
         if url == USERS_URL:
-            # list_member_groups (the neutral capability, ticket 15) resolves
+            # list_member_groups (the neutral capability) resolves
             # username -> Keycloak user id itself before listing that user's
             # groups -- a lookup the old raw member_id-keyed helpers never
             # needed to make.
@@ -326,8 +325,7 @@ def test_list_available_tenant_users_excludes_existing_members(monkeypatch, db_s
 
 
 def test_add_tenant_member_assigns_roles_via_capability(app, monkeypatch, db_session):
-    """The `roles=` parameter added to add_tenant_member (auth-provider-seam
-    wayfinder map, ticket 16) maps each neutral role to its group via the
+    """The `roles=` parameter added to add_tenant_member  maps each neutral role to its group via the
     same assign_roles capability assign_tenant_role already uses, so a
     caller with roles in hand (tenant_invitation_service.accept_invitation)
     never builds Keycloak group names by hand."""

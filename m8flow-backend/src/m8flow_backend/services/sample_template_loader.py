@@ -141,7 +141,7 @@ def load_sample_templates(flask_app) -> None:  # noqa: ANN001
                         # The row alone doesn't prove its files are in storage: a
                         # recreated or differently-mounted templates dir leaves rows
                         # pointing at nothing, failing every create-from-template
-                        # (M8F-650). Restore whatever is missing from the ZIP.
+                        # Restore whatever is missing from the ZIP.
                         present = {
                             f["file_name"]
                             for f in storage.list_files(tenant_id, template_key, template_version)

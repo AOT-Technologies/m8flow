@@ -58,7 +58,7 @@ export const Empty: Story = {
 
 // The "click anywhere in the row to open it" pattern `process-instances`/
 // `processes`/`task-review` each hand-rolled independently before this
-// (component-adoption map, ticket 23) — opt in via `onRowClick`.
+//— opt in via `onRowClick`.
 export const ClickableRows: Story = {
   args: {
     onRowClick: (row) => window.alert(`Opened ${row.name}`),

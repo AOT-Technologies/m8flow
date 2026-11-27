@@ -176,7 +176,7 @@ describe('ProcessInstanceDetailPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps the Diagram tab without model-file read, e.g. for a submitter (M8F-651)', async () => {
+  it('keeps the Diagram tab without model-file read, e.g. for a submitter', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail({ bpmn_xml: null })));
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
@@ -284,7 +284,7 @@ describe('ProcessInstanceDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Suspend' })).not.toBeInTheDocument();
   });
 
-  it('hides lifecycle buttons on an instance the editor only has a task in (M8F-653)', async () => {
+  it('hides lifecycle buttons on an instance the editor only has a task in', async () => {
     vi.stubGlobal('fetch', stubFetches(mockDetail({ started_by_me: false, assigned_to_me: true })));
 
     renderWithOutlet({ ...editorCtx, canReadAllProcessInstances: false });

@@ -15,11 +15,11 @@ function Card({
    * the one existing consumer, had this exact look HITL-confirmed against
    * the Home mockup ("looks good", see
    * .scratch/m8flow-designer-home/issues/07-stat-cards.md) before this
-   * ticket existed; changing the default risked silently invalidating an
+   * consolidation; changing the default risked silently invalidating an
    * already-approved visual result this session can't re-verify live.
    *
    * `bordered` is the *other* card look already established independently
-   * across ~5 files before this ticket (`rounded-2xl border border-border
+   * across ~5 files before this consolidation (`rounded-2xl border border-border
    * bg-card shadow-xs`) — consolidated here instead, as its own variant,
    * rather than overloading `default` to mean two different things. Also
    * cancels the base's own gap/vertical padding (`gap-0 py-0`): every

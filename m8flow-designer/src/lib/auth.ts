@@ -105,7 +105,7 @@ function tokenIndicatesSuperAdmin(decoded: Record<string, unknown>): boolean {
 
 /**
  * Mirrors m8flow-frontend UserService.isSuperAdmin() — client-side JWT
- * heuristic only (ticket 02). Prefer access_token (Keycloak puts M8Flow
+ * heuristic only. Prefer access_token (Keycloak puts M8Flow
  * roles in a top-level `roles` claim there), fall back to id_token.
  */
 export function isSuperAdmin(): boolean {

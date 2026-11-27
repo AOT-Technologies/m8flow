@@ -185,7 +185,7 @@ test.describe('Process flow: process instances', { tag: ['@workflow'] }, () => {
     const note = `Detail check ${flow.stamp}`;
     await withPage(browser, reviewerCredentials(), (r) => completeTask(r, id, { approval_note: note }));
 
-    // The submitter started it; a tenant admin can open any instance (M8F-627).
+    // The submitter started it; a tenant admin can open any instance.
     await useSession(page, tenantAdminCredentials());
     await waitForStatus(page, id, 'complete');
     for (const pass of ['first load', 'after refresh']) {

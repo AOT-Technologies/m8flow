@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 
 /**
- * Showcase-only story for `ui/tooltip.tsx` (added in ticket 02) — no
+ * Showcase-only story for `ui/tooltip.tsx` (added in) — no
  * component code changed here. Reproduces the mockup's tooltip example: a
  * round "?" info trigger that reveals a dark pill ("Runs every 15 minutes")
  * above it on hover.

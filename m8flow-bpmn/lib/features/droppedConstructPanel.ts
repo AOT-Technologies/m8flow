@@ -3,7 +3,7 @@
  *
  * Spiff still contributes Messages, Correlation, and Data Store groups.
  * Catalog save 400s those (or the engine rejects data stores). Call
- * activity and multi-instance are supported (M8F-668), so their groups
+ * activity and multi-instance are supported, so their groups
  * stay. This provider runs *after* those groups are pushed and
  * strips them. If the selected element *is* a leftover dropped shape,
  * it replaces the stripped groups with a short “not supported” notice —
@@ -50,8 +50,8 @@ function hasEventDefinition(element: any, type: string): boolean {
 }
 
 /** Mirrors catalog `_event_subprocess_start_supported`: every start event has
- * exactly one definition, either error or escalation (M8F-665) or a timer on a
- * non-interrupting start (M8F-667). The catalog rejects the rest on save. */
+ * exactly one definition, either error or escalation or a timer on a
+ * non-interrupting start. The catalog rejects the rest on save. */
 function isSupportedEventSubprocess(businessObject: any): boolean {
   const starts = (businessObject?.flowElements ?? []).filter((el: any) => el?.$type === 'bpmn:StartEvent');
   return (

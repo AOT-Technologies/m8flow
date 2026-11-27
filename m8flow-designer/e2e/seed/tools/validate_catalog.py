@@ -1,4 +1,4 @@
-"""Checks the E2E seed catalog on the workflow engine, without the app (M8F-677).
+"""Checks the E2E seed catalog on the workflow engine, without the app.
 
     python -I e2e/seed/tools/validate_catalog.py [--fast] [--only <folder>] [--verbose]
 

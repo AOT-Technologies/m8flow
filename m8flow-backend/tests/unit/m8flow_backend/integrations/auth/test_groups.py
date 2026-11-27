@@ -145,8 +145,7 @@ def test_assign_roles_adds_member_to_mapped_group(monkeypatch):
 
 
 def test_remove_roles_removes_member_from_every_candidate_group(monkeypatch):
-    """Symmetric counterpart to assign_roles (auth-provider-seam wayfinder
-    map, ticket 09): removes the member from every candidate group name a
+    """Symmetric counterpart to assign_roles: removes the member from every candidate group name a
     role maps to, not just the primary one -- "tenant-admin" candidates are
     ["Administrators", "tenant-admin"], and a group literally named
     "tenant-admin" doesn't exist in this fixture, so that lookup resolves to
@@ -331,7 +330,7 @@ def test_remove_group_realm_role_mapping_deletes_when_present(monkeypatch):
 def test_roles_for_group_reads_the_role_attribute_of_a_custom_group(monkeypatch):
     """A group with no default name mapping still reports its mapped roles.
 
-    Regression (M8F-530 #9): the by-name lookup asked Keycloak for a brief
+    Regression: the by-name lookup asked Keycloak for a brief
     representation, which omits "attributes", so a custom group's
     m8flow_role_names never came back and every read fell through to the
     group-name default mapping -- reporting no roles at all.

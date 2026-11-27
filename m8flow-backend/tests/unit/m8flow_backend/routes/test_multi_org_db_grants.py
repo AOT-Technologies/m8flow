@@ -87,7 +87,7 @@ def test_multi_org_editor_granted_via_real_db_permission_rows(db_session):
         tenant_id="org-b",
     )
 
-    # M8F-627: editors read only instances they started.
+    # editors read only instances they started.
     assert _resource_path_permitted(db_session, user, "read", "/process-instances/for-me") is True
     assert _resource_path_permitted(db_session, user, "read", "/process-instances") is False
     assert _resource_path_permitted(db_session, user, "create", "/process-instances") is True

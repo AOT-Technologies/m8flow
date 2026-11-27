@@ -33,7 +33,7 @@ export function mergeTemplateVersions(versions: Template[], current: Template): 
 /**
  * Version switcher for template detail. Hidden when the key has only one
  * version. Changing the value navigates to that version's id (Templates
- * to 100%, ticket 08).
+ * to 100%).
  */
 export function TemplateVersionSelector({
   current,

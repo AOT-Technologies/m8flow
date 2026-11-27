@@ -515,7 +515,7 @@ def list_model_rows(*, tenant_id: str | None, group: str | None = None) -> list[
 
     Reads each model's process_model.json and each group's process_group.json
     once, and parses BPMN only for published models: only those can start, so
-    only their process ids are listed (M8F-703).
+    only their process ids are listed.
     """
     rows: list[dict[str, Any]] = []
     for tenant in _tenant_ids_for_fanout(tenant_id):
@@ -1228,7 +1228,7 @@ def model_dmn_xml(
     Core takes one DMN document per definition and Spiff registers only its
     first decision, so this is the file whose decision a business rule task of
     `bpmn_xml` calls. Taking the first file by name regardless broke Start with
-    "No DMN Diagram available" as soon as a model had a second DMN (M8F-657).
+    "No DMN Diagram available" as soon as a model had a second DMN.
     With no decision called, the first file by name, as before. `pending` maps
     file name -> XML for a DMN not yet written to disk.
     """
@@ -1322,7 +1322,7 @@ def list_model_files(*, tenant_id: str, process_model_identifier: str) -> list[d
         }
         if path.suffix.lower() == ".dmn":
             # What a business rule task's calledDecisionId must name; the designer's
-            # decision dropdown offers it instead of the file name (M8F-657).
+            # decision dropdown offers it instead of the file name.
             try:
                 row["decision_id"] = _dmn_decision_id(path.read_text(encoding="utf-8", errors="replace"))
             except OSError:
@@ -1418,7 +1418,7 @@ def _reject_unsupported_constructs(xml: str) -> Element:
 
     _validate_multi_instance_features(root)
     # Regular subProcess elements are allowed. Of the event subprocesses, core
-    # runs non-interrupting timer ones (M8F-667) and error or escalation ones (M8F-665).
+    # runs non-interrupting timer ones and error or escalation ones.
     if not _event_subprocesses_supported(root):
         raise ApiError(
             "unsupported_bpmn",
@@ -1501,7 +1501,7 @@ def _xml_boolean_is_true(value: str | None) -> bool:
 def _core_runs_parallel_completion_conditions() -> bool:
     """Whether the installed core can stop a parallel multi-instance loop early.
 
-    m8flow-core added this, with the loop counters, in the M8F-640 release.
+    m8flow-core added this together with iteration-local data and loop counters.
     ponytail: drop once the pin includes multi_instance_runtime.
     """
     return importlib.util.find_spec("m8flow_core.services.multi_instance_runtime") is not None
@@ -1599,8 +1599,8 @@ def _event_subprocesses_supported(root) -> bool:
 
 
 def _event_subprocess_start_supported(start) -> bool:
-    """Exactly one event definition: error or escalation (M8F-665), or a timer on a
-    non-interrupting start (M8F-667)."""
+    """Exactly one event definition: error or escalation, or a timer on a
+    non-interrupting start."""
     definitions = [
         _xml_local_name(child.tag)
         for child in start

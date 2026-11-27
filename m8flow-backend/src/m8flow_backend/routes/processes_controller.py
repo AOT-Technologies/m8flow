@@ -39,7 +39,7 @@ def _process_group_permission_uri(*, modified_process_group_identifier: str, **_
 
 
 def _model_files_permission_uri(*, modified_process_model_identifier: str, **_kwargs) -> str:
-    """Definition-content target (M8F-534): outside /process-models on purpose, since
+    """Definition-content target: outside /process-models on purpose, since
     the catalog list grant matches every /process-models/... path."""
     model_id = process_model_identifier_from_path_param(modified_process_model_identifier)
     return f"/v1.0/process-model-files/{model_id}"
@@ -84,7 +84,7 @@ def list_process_models():
             owner_id = -1
 
     # Run stats are tenant-wide, so own-instance readers get none, and may only
-    # filter by themselves (M8F-534).
+    # filter by themselves.
     initiator_id = instance_initiator_scope(user, session=session)
     if initiator_id is not None and owner_id is not None:
         owner_id = initiator_id
@@ -204,7 +204,7 @@ def _explicit_body_tenant(payload: dict) -> str | None:
 def create_process_group(body: dict | None = None):
     """Create a process group (id, display_name, description). Nested ids
     (`parent/child`) create the leaf directory. Write op: denied → 403.
-    Super-admin may write when bound to a concrete tenant (M8F-479).
+    Super-admin may write when bound to a concrete tenant.
     """
     user = require_current_user()
     payload = _group_write_payload(body)
@@ -298,7 +298,7 @@ def delete_process_group(modified_process_group_identifier: str):
 )
 def create_process_model(body: dict | None = None):
     """Create a process model under an existing group, with a default BPMN.
-    Super-admin may write when bound to a concrete tenant (M8F-479). Distinct
+    Super-admin may write when bound to a concrete tenant. Distinct
     from thin POST /v1.0/process-models ({path, xml}).
     """
     user = require_current_user()
@@ -421,7 +421,7 @@ def change_working_version(modified_process_model_identifier: str, body: dict | 
 def copy_process_model(modified_process_model_identifier: str, body: dict | None = None):
     """Duplicate a process model under the same group (new leaf id + display
     name). Copies files; does not copy process instances. Super-admin may write
-    when bound to a concrete tenant (M8F-479). No git.
+    when bound to a concrete tenant. No git.
     """
     user = require_current_user()
     session = g.db_session
@@ -630,8 +630,8 @@ def get_process_model(modified_process_model_identifier: str):
     except (TypeError, ValueError):
         recent_limit = 10
 
-    # M8F-534: run metrics are tenant-wide, so own-instance readers get none and see
-    # only recent instances they started or have a task in (M8F-653); files follow
+    # run metrics are tenant-wide, so own-instance readers get none and see
+    # only recent instances they started or have a task in; files follow
     # the definition-content grant.
     initiator_id = instance_initiator_scope(user, session=session)
     stats = (
@@ -695,7 +695,7 @@ def get_process_model_file(modified_process_model_identifier: str, file_name: st
     """Raw content of one named file (.bpmn/.dmn/etc.) inside a process model.
 
     Gated on the definition-content grant (/process-model-files/*), not the
-    catalog list grant, so submitters cannot read files (M8F-534). Denied or
+    catalog list grant, so submitters cannot read files. Denied or
     missing model -> 404 (no distinction, same as the detail endpoint — avoids
     confirming a tenant-scoped model's existence to a caller who can't read it).
     """
@@ -762,7 +762,7 @@ def put_process_model_file(modified_process_model_identifier: str, file_name: st
 )
 def create_process_model_file(modified_process_model_identifier: str, body: dict | None = None):
     """Create one file in an existing process model (default contents or upload).
-    Super-admin may write when bound to a concrete tenant (M8F-479). No git.
+    Super-admin may write when bound to a concrete tenant. No git.
     """
     user = require_current_user()
     session = g.db_session

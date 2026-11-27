@@ -1,5 +1,5 @@
 """Unit tests for the tenant-switch re-mint helper
-(`m8flow_backend.auth._remint_active_tenant_token`, map ticket 10).
+.
 
 The switch writes the `m8flow_active_tenant` attribute and refresh-remints the
 token so it carries the target org's claims. Failure must degrade gracefully:
@@ -94,7 +94,7 @@ def test_remint_falls_back_to_cookie_only_for_unwired_switch_modes(app, monkeypa
 @pytest.mark.parametrize("value,expected", [("org-1", "org-1"), (None, "")])
 def test_set_active_tenant_attribute_shape(value, expected):
     """The Keycloak provider writes m8flow_active_tenant as a single-value list;
-    a blank/None value clears it. Guards the mapper's read contract (ticket 09)."""
+    a blank/None value clears it. Guards the mapper's read contract."""
     # Pure shape check on the directory helper's value normalization.
     normalized = str(value).strip() if value is not None else ""
     assert normalized == expected

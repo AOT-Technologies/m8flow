@@ -29,7 +29,7 @@ export const SEED_USER_TASK_NAME = 'Submit WFH Request';
 export const BACKEND_BASE_URL =
   process.env.M8FLOW_BACKEND_BASE_URL ?? 'http://localhost:6840';
 
-/** Second organization used only by Identity + Auth parity e2e (ticket 06). */
+/** Second organization used only by Identity + Auth parity e2e. */
 export const PARITY_SECOND_TENANT_SLUG = 'e2e-identity-auth-second';
 export const PARITY_SECOND_TENANT_NAME = 'E2E Identity Auth Second';
 

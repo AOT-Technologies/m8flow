@@ -113,14 +113,14 @@ describe('ProcessInstancesPage', () => {
     expect(url).toContain('/v1.0/m8flow/process-instances');
     expect(url).toContain('tenantId=t1');
     // "Complete" is the instance row's own status Pill — the Status filter
-    // (a SortDropdown, ticket 06) doesn't render its option list into the
+    // (a SortDropdown) doesn't render its option list into the
     // DOM until opened, unlike a native <select>'s always-present <option>s.
     expect(screen.getAllByText('Complete').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1 instance').length).toBeGreaterThan(0);
   });
 
   it('hides the Started by filter when the backend returns no owner options', async () => {
-    // Own-instance readers (M8F-627) get no owners: there is no one else to filter by.
+    // Own-instance readers get no owners: there is no one else to filter by.
     stubFetch({ results: [mockInstance()], pagination: { count: 1, total: 1, pages: 1 }, owners: [] });
 
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: false });
@@ -173,7 +173,7 @@ describe('ProcessInstancesPage', () => {
     });
     await waitFor(() => expect(screen.getAllByText('Invoice Approval')).toHaveLength(2));
 
-    // The backend narrows own-instance readers to "mine" when no scope is sent (M8F-653).
+    // The backend narrows own-instance readers to "mine" when no scope is sent.
     expect(lastListUrl(fetchMock)).not.toContain('scope=');
     expect(screen.getByText('Assigned to me')).toBeInTheDocument();
     expect(screen.getByText('Started by me')).toBeInTheDocument();
@@ -264,7 +264,7 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('status=error'));
   });
 
-  it('seeds the search box from a ?search= deep link (capstone ticket)', async () => {
+  it('seeds the search box from a ?search= deep link (navigation implementation)', async () => {
     const fetchMock = stubFetch();
 
     renderWithOutlet(
@@ -276,7 +276,7 @@ describe('ProcessInstancesPage', () => {
     await waitFor(() => expect(lastListUrl(fetchMock)).toContain('search=Invoice+Approval'));
   });
 
-  it('applies status and completed filters from a Home stat-card deep link (M8F-711)', async () => {
+  it('applies status and completed filters from a Home stat-card deep link', async () => {
     const user = userEvent.setup();
     const fetchMock = stubFetch();
 

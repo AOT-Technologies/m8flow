@@ -30,12 +30,12 @@ GLOBAL_GROUP = "super-admin"
 # Version 2 adds the Task Review and Home task-count grants for existing
 # tenants. A tenant marked with v1 receives one canonical import on its next
 # authenticated request, then the marker advances to v2.
-# Version 4 adds the own-instance and process-model-file grants (M8F-534).
-# Version 5 moves editor and viewer to own-instance read (M8F-627).
+# Version 4 adds the own-instance and process-model-file grants.
+# Version 5 moves editor and viewer to own-instance read.
 # Version 6 grants the "everybody" entries to every tenant role group.
-# Version 7 lets editors open and submit tasks assigned to them (M8F-647).
+# Version 7 lets editors open and submit tasks assigned to them.
 # Version 8 lets tenant admins read tenant-scoped named configuration values.
-# Version 9 lets submitters read task data of their own instances (M8F-678).
+# Version 9 lets submitters read task data of their own instances.
 # Version 10 adds the tenant-admin message correlation grant.
 TENANT_PERMISSION_SEED_VERSION = 10
 
@@ -955,7 +955,7 @@ def missing_task_review_submit_grants(session: Session, *, tenant_id: str) -> tu
 
 
 def missing_mcp_tools_grants(session: Session, *, tenant_id: str) -> tuple[str, ...]:
-    """Return the MCP Tools execute grant when a tenant was seeded before M8F-539.
+    """Restore the MCP Tools execute grant for tenants created before that grant existed.
 
     The ``/m8flow/mcp-tools*`` routes gate on YAML grants only (no group fallback), so
     a tenant whose grants were materialized before they existed would 403 its own
@@ -1104,8 +1104,7 @@ def Path_from_package() -> str:
 def ensure_tenant_exists(tenant_id: str | None) -> None:
     """Validate that the tenant row exists; raise if missing to enforce pre-provisioning.
 
-    Relocated from tenancy.py during the active-tenant deep-module collapse
-    (ticket 03): provisioning/validation is identity's job, not auth's.
+    Tenant provisioning and validation belong to the identity module.
     """
     if not tenant_id:
         from m8flow_backend.auth.tenant_context import TENANT_CLAIM
@@ -1158,8 +1157,7 @@ def create_tenant_if_not_exists(
     When slug is provided (e.g. realm name), it is used for M8flowTenantModel.slug;
     otherwise slug defaults to tenant_id (backward compatible).
 
-    Relocated from tenancy.py during the active-tenant deep-module collapse
-    (ticket 03): provisioning is identity's job, not auth's.
+    Tenant provisioning belongs to the identity module.
     """
     if not tenant_id or not tenant_id.strip():
         return

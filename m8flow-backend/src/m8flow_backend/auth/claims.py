@@ -4,8 +4,7 @@ column -- not from a raw token payload.
 Every function that used to parse organization/tenant claims directly out of
 a decoded JWT payload (``organization_memberships_from_payload``,
 ``tenant_id_from_payload``, ``tenant_alias_from_payload``, ...) has been
-retired (auth-provider-seam wayfinder map, ticket 10: "Neutralize the token
-shape"). ``VerifiedClaims.memberships`` and ``VerifiedClaims.active_tenant_ref``
+retired. ``VerifiedClaims.memberships`` and ``VerifiedClaims.active_tenant_ref``
 are the neutral, provider-agnostic replacement -- see ``auth/bind.py``'s
 ``_claims_match_cookie``/``_jwt_tenant`` and
 ``services/tenant_management_authorization.py``'s

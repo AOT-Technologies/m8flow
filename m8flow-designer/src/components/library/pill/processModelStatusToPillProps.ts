@@ -8,7 +8,7 @@ import { pillVariants } from "./Pill"
 type PillTone = NonNullable<VariantProps<typeof pillVariants>["tone"]>
 
 /**
- * Process *model* publish lifecycle (M8F-508) — distinct from
+ * Process *model* publish lifecycle — distinct from
  * `processInstanceStatusToPillProps`, which maps a process *instance*'s run
  * status. Kept as its own lookup because the two vocabularies are unrelated:
  * a model is draft/published/paused, an instance is complete/error/waiting.

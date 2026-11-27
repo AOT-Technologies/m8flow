@@ -134,7 +134,7 @@ def test_template_is_skipped_when_the_same_version_exists(loader_env):
 
 
 def test_existing_template_files_missing_from_storage_are_restored(loader_env):
-    """M8F-650: a DB row whose files are gone from storage (e.g. a recreated
+    """a DB row whose files are gone from storage (e.g. a recreated
     templates volume) must be healed from the ZIP, not skipped forever."""
     existing = MagicMock()
     existing.files = [{"file_type": "bpmn", "file_name": "process.bpmn"}]

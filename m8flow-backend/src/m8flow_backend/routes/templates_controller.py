@@ -430,7 +430,7 @@ def template_create_process_model(id: int):
     - process_model_id: Optional leaf id; slugified from display_name when omitted
     - display_name: Display name for the new process model
     - description: Optional description for the new process model
-    - m8f_tenant_id: Optional explicit tenant for super-admin writes (M8F-479)
+    - m8f_tenant_id: Optional explicit tenant for super-admin writes
     """
     user = getattr(g, "user", None)
     body = request.get_json(force=True, silent=True) or {}

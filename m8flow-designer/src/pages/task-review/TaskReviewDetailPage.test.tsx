@@ -173,7 +173,7 @@ describe('TaskReviewDetailPage', () => {
     expect(screen.queryByPlaceholderText(/Add an optional note/)).not.toBeInTheDocument();
   });
 
-  it('links the full instance only when the backend sends a detail path (M8F-534)', async () => {
+  it('links the full instance only when the backend sends a detail path', async () => {
     mockFetch.mockResolvedValue(mockDetail());
     const { unmount } = renderDetail();
     expect(await screen.findByRole('link', { name: /View full instance/ })).toHaveAttribute(
@@ -213,7 +213,7 @@ describe('TaskReviewDetailPage', () => {
     expect(await screen.findByText('INBOX MARKER')).toBeInTheDocument();
   });
 
-  it('returns a caller without the inbox (editor) to the instance after submit (M8F-647)', async () => {
+  it('returns a caller without the inbox (editor) to the instance after submit', async () => {
     permissions.canReadTaskReview = false;
     try {
       const base = mockDetail();

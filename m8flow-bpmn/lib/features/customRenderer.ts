@@ -1,6 +1,6 @@
 /**
  * Restyles diagram node rendering to match `Process Modeler.dc.html`
- * (node-shape-styling ticket, Process Modeler visual fidelity map):
+ * (node shape styling, Process Modeler visual fidelity map):
  * gunmetal-equivalent start events, success-colored end events, and
  * info-colored task-type icons on a light-gray-bordered box (rather than
  * bpmn-js's own black-on-black defaults).
@@ -22,7 +22,7 @@
  *
  * Scope: start events, end events, user/service/script/manual/business-
  * rule/send/receive tasks, generic tasks, call activities (the original
- * "biggest miss" ticket plus the task-subtype-styling follow-on),
+ * initial styling pass plus the task-subtype-styling follow-on),
  * all five gateway types (exclusive — the "decision node" the user
  * flagged as still untouched when the map was — wrongly — closed as
  * complete — plus parallel/inclusive/event-based/complex), sequence flow
@@ -59,7 +59,7 @@
  *   Terminate/Compensate/Conditional/Link event icons — all "control how
  *   the flow branches, loops, or ends" in kind.
  * - Timing (`TIMER_COLOR`, amber, `--color-warning`): the Timer icon only
- *   — the one operation group with a single, near-universal color
+ *— the one operation group with a single, near-universal color
  *   convention (clocks are amber), so it gets a dedicated group of one.
  * - System (`SYSTEM_COLOR`, blue, `--color-info` — the file's original,
  *   now-narrowed `TASK_ICON_COLOR`): every task/activity icon (User,
@@ -219,9 +219,9 @@ const BOUNDARY_EVENT_STROKE = SEQUENCE_FLOW_STROKE;
 // deliberately soft, diffuse "floating card" look, wider than the tighter
 // directional shadow the prior tuning pass produced.
 const TASK_SHADOW = 'drop-shadow(0px 8px 24px rgba(149, 157, 165, 0.2))';
-// Cross-participant message flow (data-artifacts-styling ticket) reuses
+// Cross-participant message flow (data artifact styling) reuses
 // `SYSTEM_COLOR` — the "system & communication" operation-group color — on
-// purpose, and the ticket's own Question flagged wanting a message flow to
+// purpose, and the design requirements flagged wanting a message flow to
 // read as visually different from a same-participant sequence flow "at a
 // glance": bpmn-js already dashes it distinctly (`10, 11` vs a sequence
 // flow's solid line), and this adds a distinct *color* on top of that.
@@ -237,11 +237,11 @@ const MESSAGE_FLOW_STROKE = SYSTEM_COLOR;
 const DEFAULT_SHAPE_FILL = 'white';
 
 // Matches the canvas's own dot-grid background (diagram-chrome.css's
-// `.djs-container` rule, ticket 01) — same 22px pitch, same 1.1px dot
+// `.djs-container` rule) — same 22px pitch, same 1.1px dot
 // radius, same `--color-border` dot color — so a lane's background reads
 // as "the canvas's own texture, made visible here" rather than an
 // unrelated new pattern. Live user feedback, after three failed attempts
-// at a translucent/flat-color swimlane background (see this ticket's own
+// at a translucent/flat-color swimlane background (see the original
 // "Reverted" section): texture, not color/opacity, is what actually
 // distinguishes a lane from a white task box in this app's near-white
 // palette.
@@ -313,7 +313,7 @@ export function recolorTaskIcon(parentGfx: SVGElement, elementType: string) {
     // attribute via its own `lineStyle()` helper, so a plain
     // `getAttribute` read always came back `null` and silently skipped
     // every icon path — this task-icon recolor has never actually
-    // fired since ticket 03 first wrote it. `.style.stroke`/`.style.fill`
+    // fired since the original implementation. `.style.stroke`/`.style.fill`
     // correctly parse the inline style string regardless.
     const stroke = node.style.stroke;
     if (stroke && stroke !== 'none') {
@@ -413,11 +413,10 @@ export function roundGatewayCorners(parentGfx: SVGElement) {
  * (`BpmnRenderer.js`) bundles `stroke`/`fill`/`strokeWidth`/etc. into a
  * single inline `style="..."` attribute rather than separate XML
  * attributes (confirmed by dumping the real DOM — this is true even for
- * the task boxes ticket 03 already recolored). `getAttribute('stroke')`
+ * the task boxes already recolored). `getAttribute('stroke')`
  * can't see a color living inside `style`, so a guard built on it always
  * read `null` and silently skipped every child; `svgAttr`'s own *write*
- * path already handles this correctly regardless (it's what let ticket
- * 03's task-box recolor work in the first place) — only the read-based
+ * path already handles this correctly regardless (it already recolors task boxes) — only the read-based
  * gate here was the bug.
  */
 export function recolorContainerStrokes(parentGfx: SVGElement, color: string) {
@@ -449,7 +448,7 @@ export default function CustomBpmnRenderer(
 
   this._bpmnRenderer = bpmnRenderer;
   // The instance viewer shows an end event green only once reached
-  // (task-state.css), so it opts out of the Modeler's default green (M8F-579).
+  // (task-state.css), so it opts out of the Modeler's default green.
   this._endEventStroke = config?.neutralEndEvents ? START_EVENT_STROKE : END_EVENT_STROKE;
 }
 
@@ -616,7 +615,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
   } else if (is(element, 'bpmn:Participant') || is(element, 'bpmn:Lane')) {
     recolorContainerStrokes(parentGfx, TASK_STROKE);
     if (is(element, 'bpmn:Lane')) {
-      // Live user feedback, this ticket's 4th attempt at a visible
+      // Live user feedback, the fourth attempt at a visible
       // swimlane background (see "Reverted" above for the first three):
       // "add a dot pattern background" — texture instead of a translucent
       // or flat color, which this app's near-white palette kept
@@ -646,7 +645,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     is(element, 'bpmn:DataStoreReference') ||
     is(element, 'bpmn:Group')
   ) {
-    // Data-artifacts-styling ticket. All three draw exactly one visible
+    // Data artifact styling. All three draw exactly one visible
     // child (the folded-document path, the data-store cylinder path, or the
     // dashed rect, respectively — confirmed reading each handler in
     // `BpmnRenderer.js`) with no embedded label of their own (`bpmn:Group`
@@ -679,7 +678,7 @@ CustomBpmnRenderer.prototype.drawShape = function drawShape(
     }
   } else if (CUSTOM_TASK_ICON_TAIL_COUNT[element.type]) {
     // Script/Manual/BusinessRule/Send/Receive Task — task-subtype-styling
-    // ticket. Strip bpmn-js's own stock icon path(s) and draw a genuinely
+    // styling. Strip bpmn-js's own stock icon path(s) and draw a genuinely
     // custom glyph, same "replace outright" pattern as the gateway's X
     // and the boundary event's clock (not a recolor-in-place, unlike
     // User/ServiceTask below — decided per the standing "create custom
@@ -746,7 +745,7 @@ CustomBpmnRenderer.prototype.drawConnection = function drawConnection(
     return connection;
   }
   if (is(element, 'bpmn:Association')) {
-    // Data-artifacts-styling ticket. `renderAssociation` never calls
+    // Data artifact styling. `renderAssociation` never calls
     // `renderLabel` at all — confirmed reading `BpmnRenderer.js` — so, like
     // sequence flow above, a custom `attrs.stroke` can be passed straight
     // through with no label-coupling risk. Same muted gray as a sequence

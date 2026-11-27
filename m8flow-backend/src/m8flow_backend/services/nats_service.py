@@ -66,11 +66,11 @@ class NatsService:
             "api_key_id": api_key_id,
             "payload": payload,
             "reply_to": reply_to,
-            # Signed with the rest, so the consumer can refuse a replayed copy (M8F-574).
+            # Signed with the rest, so the consumer can refuse a replayed copy.
             "issued_at": int(time.time()),
         }
         # The raw key was authenticated at the HTTP edge and never enters the broker; the
-        # consumer trusts this event because of the signature (M8F-574).
+        # consumer trusts this event because of the signature.
         event_data["signature"] = NatsTokenService.sign_trigger(event_data)
 
         nc = NATS()
@@ -215,7 +215,7 @@ class NatsService:
         """Synchronous wrapper to publish event to NATS.
 
         Tenant, owner and key id all come from the key the caller authenticated, so no
-        caller can name who owns the process (M8F-574). The owner only labels the audit
+        caller can name who owns the process. The owner only labels the audit
         rows; the consumer starts the process as the key's owner.
         """
         tenant_id = authenticated.tenant_id

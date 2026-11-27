@@ -48,7 +48,7 @@ const GRID =
 
 /**
  * Event history from the audit trail, across all tenants by default with an optional
- * tenant filter. Only reachable with the super-admin broker grant (M8F-700).
+ * tenant filter. Only reachable with the super-admin broker grant.
  */
 export function NatsEventsTab({ refreshKey }: { refreshKey: number }) {
   const { t } = useTranslation();

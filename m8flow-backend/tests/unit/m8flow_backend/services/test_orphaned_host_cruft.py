@@ -1,4 +1,4 @@
-"""Ticket 08: overlay host-layer modules with zero callers must stay gone."""
+"""Overlay host-layer modules with zero callers must stay gone."""
 
 from __future__ import annotations
 

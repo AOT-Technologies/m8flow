@@ -35,7 +35,7 @@ import './assets/dmn.css';
 /**
  * `class ... extends`, not `inherits()` + `.call(this)`: dmn-js's own Modeler
  * is an ES class, which throws "Class constructor Modeler cannot be invoked
- * without 'new'" when called as a plain function (M8F-510 -- the throw landed
+ * without 'new'" when called as a plain function (the throw landed
  * in DmnCanvas's mount effect and blanked the whole modeler page). Modeler.ts
  * (BPMN) still uses `inherits` because bpmn-js's Modeler is prototype-based
  * and its `_modules` override needs it.

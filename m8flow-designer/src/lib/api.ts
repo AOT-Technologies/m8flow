@@ -8,7 +8,7 @@ import {
 
 /**
  * Absolute backend for direct calls; empty string = same-origin Vite proxy.
- * Exported (Template modeler map, ticket 01) so feature-specific API
+ * Exported  so feature-specific API
  * modules (e.g. `templatesApi.ts`) that need raw `Response` access — blob
  * export, multipart import — don't have to re-derive it.
  */
@@ -195,7 +195,7 @@ async function fetchWithAuthRetry(
 }
 
 /**
- * Shared authenticated fetch (Template modeler map, ticket 01) — attaches
+ * Shared authenticated fetch— attaches
  * the tenant cookie + bearer token the same way apiGet/
  * fetchProcessModelFileContent already do, but returns the raw `Response`
  * so callers can pick `.json()`/`.text()`/`.blob()` as needed (templates
@@ -421,7 +421,7 @@ export type ProcessModelListItem = ProcessModelVersionState & {
   bpmn_process_ids?: string[];
   bpmn_processes?: BpmnProcessReference[];
   last_run_at: string | null;
-  /** null without tenant-wide instance read (submitters, M8F-534). */
+  /** null without tenant-wide instance read (submitters). */
   runs_30d: number | null;
   status: ProcessModelStatus;
 };
@@ -709,7 +709,7 @@ export type ProcessModelDetail = ProcessModelVersionState & {
   group_id: string;
   group_display_name: string;
   last_run_at: string | null;
-  /** Run metrics are null without tenant-wide instance read (submitters, M8F-534). */
+  /** Run metrics are null without tenant-wide instance read (submitters). */
   running_now: number | null;
   runs_30d: number | null;
   status: ProcessModelStatus;

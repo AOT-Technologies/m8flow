@@ -53,7 +53,7 @@ export type TemplatesGalleryListProps = {
   /**
    * Gates Import (and other template-mutating actions): template CRUD remains
    * SA-blocked server-side. "Use template" is gated separately via
-   * `canUseTemplate` (M8F-479 allows SA create-from-template with a tenant).
+   * `canUseTemplate` (super-admin create-from-template requires a tenant).
    */
   isSuperAdmin?: boolean;
   /**

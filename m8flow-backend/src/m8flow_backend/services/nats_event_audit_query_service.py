@@ -36,7 +36,7 @@ _Audit = NatsEventAuditModel
 # success is a sent email, not a started process instance.
 _TRIGGER_EVENTS = _Audit.worker == NatsEventWorker.consumer.value
 # Email (notification-worker) events get per-tenant counts of their own, never mixed into
-# the trigger counts (M8F-575).
+# the trigger counts.
 _EMAIL_EVENTS = _Audit.worker == NatsEventWorker.notification_worker.value
 
 

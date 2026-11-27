@@ -30,7 +30,7 @@ function humanizeCategory(category: string): string {
 }
 
 /** Rendered on its own, never inside the catalog block: when the catalog fails this is
- * the only diagnosis the admin gets (M8F-539). */
+ * the only diagnosis the admin gets. */
 function PingStatus({ ping, failed }: { ping: McpPing | null; failed: boolean }) {
   const { t } = useTranslation();
   if (failed) return <Pill tone="error">{t('mcpTools.ping.failed')}</Pill>;

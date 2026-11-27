@@ -1,5 +1,4 @@
-"""InMemoryAuthProvider runs the AuthProvider conformance suite (auth-provider-
-seam wayfinder map, ticket 02). See ``testing/conformance.py`` for the
+"""InMemoryAuthProvider runs the AuthProvider conformance suite. See ``testing/conformance.py`` for the
 contract itself and ``test_keycloak_conformance.py`` for the second
 implementation running the identical suite.
 """

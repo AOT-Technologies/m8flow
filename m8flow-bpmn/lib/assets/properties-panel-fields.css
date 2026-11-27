@@ -1,12 +1,12 @@
 /**
- * PROTOTYPE (ticket 03 — properties-panel field-content styling), revised
+ * PROTOTYPE (properties-panel field-content styling), revised
  * after a HITL follow-up: the panel's header block (icon, eyebrow, title)
  * and the "has content" dot indicator were assessed as "already close" to
  * `Process Modeler.dc.html` from a collapsed-state screenshot alone, but
  * once the section-expand toggle bug (see the map's own Decisions-so-far)
  * was fixed and the panel could actually be compared side-by-side against
  * the mockup properly, real gaps were visible there too — not just in the
- * expanded field content this ticket originally targeted:
+ * expanded field content originally targeted:
  *
  * - Header background: mockup is plain white with just a bottom border;
  *   the library defaults to a light gray fill (`--header-background-color`).
@@ -25,7 +25,7 @@
  * Kept in its own file, separate from `diagram-chrome.css`, and imported
  * by *both* BpmnCanvas.tsx and DmnCanvas.tsx: `diagram-chrome.css` also
  * restyles `.djs-palette`/`.djs-context-pad` for BPMN's custom canvas
- * chrome (tickets 01/02) — dmn-js's own DRD view has its own, structurally
+ * chrome— dmn-js's own DRD view has its own, structurally
  * different `.djs-palette` that the map's Notes deliberately leave as
  * dmn-js's stock default. Importing that file into DmnCanvas.tsx would
  * leak BPMN-specific palette overrides (fixed width, a 2-column grid sized
@@ -243,7 +243,7 @@ select.bio-properties-panel-input:disabled {
  *   text, a color that appears nowhere in this app's palette. Re-themed to
  *   the same neutral-pill look this file already uses for the *inactive*
  *   Connector tab badge below (`.m8flow-service-task-tab-badge`)
- *   — this badge has no "active" state to distinguish, so it only ever
+ *— this badge has no "active" state to distinguish, so it only ever
  *   needs that one neutral treatment.
  * - `.bio-properties-panel-collapsible-entry-arrow` (a list item's own
  *   expand/collapse chevron, e.g. before "Row7DataObject"): a real SVG
@@ -294,7 +294,7 @@ select.bio-properties-panel-input:disabled {
 }
 
 /**
- * Properties-panel alignment audit (node-shape-styling ticket's sibling,
+ * Properties-panel alignment audit (node shape styling,
  * "properties-panel-alignment" — Process Modeler visual fidelity map):
  * confirmed live, across every element type the seeded `wfh-approval.bpmn`
  * diagram exercises (task, gateway, sequence flow, timer boundary event,
@@ -302,7 +302,7 @@ select.bio-properties-panel-input:disabled {
  * by `bpmn-js-spiffworkflow`'s own properties provider, and its "Launch
  * Editor" button carries a hardcoded `margin: 2px 32px 6px 12px` from that
  * library's own `app/css/app.css` (not `bio-properties-panel-*` at all,
- * so the prior ticket's selectors never touched it) — a 12px *extra* left
+ * so the previous selectors never touched it) — a 12px *extra* left
  * margin stacked on top of `.bio-properties-panel-group-entries`'s own
  * 20px inset, landing the button 32px from the edge instead of 20px like
  * every label/input/description in the panel. Zeroing the left/right

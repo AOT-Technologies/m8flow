@@ -2,8 +2,7 @@ import { apiFetch, apiGet } from './api';
 
 /**
  * Client for m8flow-backend's `/v1.0/m8flow/process-instances*` routes
- * (Process Instances + task-state map, ticket 02 —
- * `.scratch/process-instances-task-state/`, backend built in ticket 01).
+ *.
  * Response shapes read directly from `process_instances_controller.py`/
  * `workflow.list_instances_for_designer`/`get_instance_detail_for_
  * designer`, snake_case (unlike Templates' camelCase) — same convention
@@ -27,7 +26,7 @@ export type ProcessInstanceListItem = {
   started_by: string;
   started_at: string | null;
   ended_at: string | null;
-  /** The caller started this instance / has a task assigned in it (M8F-653). */
+  /** The caller started this instance / has a task assigned in it. */
   started_by_me?: boolean;
   assigned_to_me?: boolean;
 };
@@ -48,7 +47,7 @@ export type ProcessInstanceListResponse = {
  * a value the backend would silently ignore. */
 export type ProcessInstanceSort = 'newest' | 'oldest' | 'recent_start' | 'status';
 
-/** Narrows to the caller's instances (M8F-653); must mirror workflow.INSTANCE_SCOPES.
+/** Narrows to the caller's instances; must mirror workflow.INSTANCE_SCOPES.
  * Callers without tenant-wide read get "mine" when it is omitted. */
 export type ProcessInstanceScope = 'mine' | 'started' | 'assigned';
 

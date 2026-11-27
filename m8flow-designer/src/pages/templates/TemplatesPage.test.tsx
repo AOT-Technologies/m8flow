@@ -200,7 +200,7 @@ describe('TemplatesPage', () => {
     renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
-    // Real navigation target (/templates/:id) doesn't exist until ticket 03 —
+    // The template detail navigation target (/templates/:id) is separate —
     // just confirm the click is wired to the Open button without throwing.
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
   });
@@ -481,7 +481,7 @@ describe('TemplatesPage', () => {
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/templates/import'))).toBe(true);
   });
 
-  // M8F-685: show the server's reason, never "POST /v1.0/... failed: 400".
+  // show the server's reason, never "POST /v1.0/... failed: 400".
   it.each([
     ['Zip must contain at least one .bpmn file', 'Zip must contain at least one .bpmn file'],
     ['Invalid zip file: File is not a zip file', 'Invalid zip file: File is not a zip file'],

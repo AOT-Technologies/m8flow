@@ -4,7 +4,7 @@ plumbing and shared constants.
 Deliberately a leaf module (only stdlib + flask). ``scheduler``, ``workflow``,
 and ``services`` import ONLY this module for tenant-context reads, not the
 rest of ``auth``, so they are not coupled to auth's Keycloak-client import
-graph. See the active-tenant deep-module map, ticket 02.
+graph.
 """
 
 from __future__ import annotations

@@ -213,7 +213,7 @@ def test_status_and_search_filters(client, db_session):
 
 
 def test_home_card_filters_active_and_completed_today(client, db_session):
-    """M8F-711: the Home Active / Completed today cards link to these filters."""
+    """the Home Active / Completed today cards link to these filters."""
     user, token = _login_user(
         client, db_session, username="editor711", groups=["t1:editor"], tenant_id="t1"
     )
@@ -1942,7 +1942,7 @@ def test_pending_tasks_show_waiting_for_and_can_complete(client, db_session):
 
 
 def test_pending_tasks_offer_go_only_to_candidates_who_can_submit(client, db_session):
-    """M8F-647: Go opens Task Review, so can_complete also needs its submit grant.
+    """Go opens Task Review, so can_complete also needs its submit grant.
     An editor works their own task; a viewer candidate would be sent to Home."""
     for username, group, expected in (
         ("editor-go", "t1:editor", True),
@@ -2530,7 +2530,7 @@ def test_task_from_another_tenant_is_404(client, db_session):
 
 
 def test_submitter_reads_task_data_of_own_instances_only(client, db_session):
-    """M8F-678: a submitter reads the task data of an instance they started, and
+    """a submitter reads the task data of an instance they started, and
     permissions-check says so for the UI; another user's instance stays 404."""
     from m8flow_core.models.json_data import JsonDataModel
 
@@ -2582,11 +2582,11 @@ _DIAGRAM_WITH_LOGIC_XML = (
 
 
 def test_submitter_reads_only_instances_they_started(client, db_session):
-    """M8F-534: a submitter lists and opens only instances they started. Another
+    """a submitter lists and opens only instances they started. Another
     user's instance is 404 on the detail and every tab, and the started-by filter
-    has no other users. M8F-651: the submitter's diagram keeps its shapes but not
+    has no other users. the submitter's diagram keeps its shapes but not
     the model logic (scripts, expressions, Spiff config). Tenant-admin still reads
-    tenant-wide, full diagram included (editor and viewer are own-only since M8F-627)."""
+    tenant-wide, full diagram included (editor and viewer are own-only)."""
     editor, _editor_token = _login_user(
         client, db_session, username="editor-534", groups=["t1:editor"], tenant_id="t1"
     )
@@ -2650,7 +2650,7 @@ def test_submitter_reads_only_instances_they_started(client, db_session):
 
 
 def test_submitter_gets_no_diagram_when_the_bpmn_does_not_parse(client, db_session):
-    """M8F-651: the diagram-only read fails closed -- never the raw source."""
+    """the diagram-only read fails closed -- never the raw source."""
     submitter, token = _login_user(
         client, db_session, username="submitter-651", groups=["t1:submitter"], tenant_id="t1"
     )
@@ -2674,7 +2674,7 @@ def test_submitter_gets_no_diagram_when_the_bpmn_does_not_parse(client, db_sessi
 
 
 def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db_session):
-    """M8F-534, AGENTS.md multi-organization case: tenant-admin in t1, submitter in t2.
+    """AGENTS.md multi-organization case: tenant-admin in t1, submitter in t2.
     In t2 the user sees only instances they started; in t1 they see everyone's.
     Onboarding and tasks stay reachable in both organizations."""
     user, _ = _login_user(client, db_session, username="multi-534", groups=["t1:tenant-admin"], tenant_id="t1")
@@ -2719,8 +2719,8 @@ def test_multi_org_user_instance_scope_follows_the_active_tenant_role(client, db
     assert client.get("/v1.0/tasks", headers=headers).status_code == 200
 
 
-def test_m8f_627_editor_and_viewer_read_only_instances_they_started(client, db_session):
-    """M8F-627: editor and viewer are own-instance readers like submitter (M8F-534):
+def test_editor_and_viewer_read_only_instances_they_started(client, db_session):
+    """editor and viewer are own-instance readers like submitter:
     list, filters, pagination, owners, Home recent and every instance URL. Tenant-admin
     keeps tenant-wide read."""
     editor, editor_token = _login_user(client, db_session, username="editor-627", groups=["t1:editor"], tenant_id="t1")
@@ -2765,8 +2765,8 @@ def test_m8f_627_editor_and_viewer_read_only_instances_they_started(client, db_s
     assert get(f"/v1.0/m8flow/process-instances/{other.id}", admin_token).status_code == 200
 
 
-def test_m8f_627_multi_org_editor_reads_only_own_instances_in_each_organization(client, db_session):
-    """M8F-627, AGENTS.md multi-organization case: an editor who joins a second
+def test_multi_org_editor_reads_only_own_instances_in_each_organization(client, db_session):
+    """AGENTS.md multi-organization case: an editor who joins a second
     organization sees only instances they started in both, and onboarding and
     tasks stay reachable after tenant selection."""
     user, _ = _login_user(client, db_session, username="multi-627", groups=["t1:editor"], tenant_id="t1")
@@ -2800,8 +2800,8 @@ def test_m8f_627_multi_org_editor_reads_only_own_instances_in_each_organization(
         assert client.get("/v1.0/tasks", headers=headers).status_code == 200, tenant_id
 
 
-def test_m8f_627_editor_cannot_change_or_delete_an_instance_they_did_not_start(client, db_session):
-    """M8F-627: an own-instance reader cannot act on someone else's instance by ID
+def test_editor_cannot_change_or_delete_an_instance_they_did_not_start(client, db_session):
+    """an own-instance reader cannot act on someone else's instance by ID
     either: suspend/resume/terminate/delete are 404, and the instance is untouched."""
     from m8flow_core.models.process_instance import ProcessInstanceModel
 
@@ -2835,8 +2835,8 @@ def test_m8f_627_editor_cannot_change_or_delete_an_instance_they_did_not_start(c
     assert db_session.get(ProcessInstanceModel, finished.id) is not None
 
 
-def test_m8f_653_own_instance_readers_also_see_instances_assigned_to_them(client, db_session):
-    """M8F-653: an own-instance reader sees instances they started or have a task
+def test_own_instance_readers_also_see_instances_assigned_to_them(client, db_session):
+    """an own-instance reader sees instances they started or have a task
     assigned in (still open or already done), filters them with ``scope``, and each
     row says which. A task assigned to someone else doesn't make an instance visible."""
     admin, admin_token = _login_user(
@@ -2898,7 +2898,7 @@ def test_m8f_653_own_instance_readers_also_see_instances_assigned_to_them(client
     assert listed("?scope=assigned", admin_token) == {}
 
 
-def test_m8f_653_an_assigned_editor_cannot_change_an_instance_they_did_not_start(client, db_session):
+def test_an_assigned_editor_cannot_change_an_instance_they_did_not_start(client, db_session):
     """Being assigned a task makes an instance readable, not manageable: suspend,
     resume, terminate and delete stay with the starter (and tenant-wide roles)."""
     admin, _admin_token = _login_user(

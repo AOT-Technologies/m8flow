@@ -179,7 +179,7 @@ describe('AppShell', () => {
     expect(screen.queryByText('Setup')).not.toBeInTheDocument();
   });
 
-  it('shows Task Review when the backend permits the inbox read even without task-work rights (M8F-570)', async () => {
+  it('shows Task Review when the backend permits the inbox read even without task-work rights', async () => {
     mockIsSuperAdmin.mockReturnValue(true);
     mockFetchCapabilities.mockResolvedValue({ can_review_tasks: false });
     mockCheckPermissions.mockResolvedValue({
@@ -217,7 +217,7 @@ describe('AppShell', () => {
     ['/task-review//', 'home-outlet'],
     ['/task-review/42', 'task-outlet'],
     ['/task-review/42/', 'task-outlet'],
-  ])('keeps the Task Review inbox from Editors but opens a task they can submit: %s (M8F-647)', async (path, outlet) => {
+  ])('keeps the Task Review inbox from Editors but opens a task they can submit: %s', async (path, outlet) => {
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true, POST: false },
       '/process-instances': { GET: true },
@@ -320,7 +320,7 @@ describe('AppShell', () => {
     expect(screen.queryByText('System')).not.toBeInTheDocument();
   });
 
-  it('shows System → NATS only when the backend grants NATS monitoring (M8F-700)', async () => {
+  it('shows System → NATS only when the backend grants NATS monitoring', async () => {
     // Tenant-admin: the backend denies NATS monitoring.
     mockCheckPermissions.mockResolvedValue({
       '/process-models': { GET: true },

@@ -37,7 +37,7 @@ describe('recolorTaskIcon', () => {
   // attribute (via its own `lineStyle()` helper) — a plain
   // `getAttribute('stroke')` read on the *source* element always came back
   // `null` and silently skipped every icon path, so this task-icon recolor
-  // "never actually fired since ticket 03" until found live. This fixture
+  // "never actually fired after the initial styling change" until found live. This fixture
   // reproduces that same inline-style shape on the input nodes.
   it('recolors the tail icon children whose color/stroke live in an inline style attribute', () => {
     const parentGfx = withChildren(svg('g'), [
@@ -190,7 +190,7 @@ describe('CustomBpmnRenderer untyped end event ring', () => {
     expect(drawEndEvent()).toBe('var(--color-success)');
   });
 
-  it('is neutral when the instance viewer asks for it (M8F-579)', () => {
+  it('is neutral when the instance viewer asks for it', () => {
     expect(drawEndEvent({ neutralEndEvents: true })).toBe('var(--color-muted-foreground)');
   });
 });

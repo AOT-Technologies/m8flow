@@ -27,7 +27,7 @@
 }
 
 /**
- * Selection outline color (node-shape-styling ticket): diagram-js's own
+ * Selection outline color (node shape styling): diagram-js's own
  * base CSS drives `.djs-outline`'s stroke entirely off this custom
  * property, set on `.djs-parent` — overriding it here is a one-line
  * change, no CSS specificity fight or JS renderer override needed.
@@ -56,7 +56,7 @@
   border: 1px solid var(--color-border);
   border-radius: 12px;
   /* Left as literal rgba(), not routed through a token (per the CSS
-     convention ticket): this is a generic elevation drop-shadow, not a
+     conventions): this is a generic elevation drop-shadow, not a
      themed surface color — the same reason Tailwind's own `shadow-*`
      utilities hardcode black-alpha rather than exposing a swappable
      "shadow color" token. Reused identically on `.djs-context-pad` below. */
@@ -105,7 +105,7 @@
   /* !important: bpmn-js's own default palette CSS targets the same
      `.djs-palette .entry` selector at equal specificity (46x46px) — which
      stylesheet wins depends on injection order, not guaranteed stable
-     across dev-server reloads (observed flipping during this ticket's own
+     across dev-server reloads (observed flipping during the original
      live verification). Same defensive pattern already used below by
      `.highlighted-entry`. */
   width: 32px !important;
@@ -177,7 +177,7 @@
  * above set `.entry`'s own `background` for the highlight box: painting the
  * icon there too would make icon-fill and highlight-box share one
  * `background-color`, so hovering would tint the icon invisible against its
- * own highlight (caught live during this ticket's own verification — the
+ * own highlight (caught live during the original verification — the
  * icon vanished under the palette's hover state). Keeping the icon on its
  * own `::before` layer keeps the highlight box and the icon fill
  * independent, exactly like the original font-glyph layering.
@@ -295,7 +295,7 @@
 
 .djs-context-pad.open {
   /* !important: same source-order fragility as the palette's own width
-     override (ticket 01) — diagram-js's base CSS also targets
+     override— diagram-js's base CSS also targets
      `.djs-context-pad.open` (for its own `display: block`). */
   display: grid !important;
   grid-template-columns: repeat(auto-fit, var(--m8flow-context-pad-entry));
@@ -334,7 +334,7 @@
  * killed bpmn-font's glyph (`content: none`) and applied the mask paint to
  * *every* entry, including actions with no `mask-image` rule below (e.g. a
  * lane's `lane-insert-above`/`lane-insert-below`/`lane-divide-two`, a
- * different context-pad provider than the shape one this ticket was built
+ * different context-pad provider than the shape one this provider was built
  * against). An entry with `background-color: currentColor` and no
  * mask-image at all has nothing to clip its paint to — it rendered as a
  * solid opaque square, not a broken-looking blank, which is exactly why it
@@ -372,7 +372,7 @@
 }
 
 /* append.end-event, append.gateway, append.append-task, and connect reuse
-   the exact same glyphs as their palette counterparts (ticket 01) — same
+   the exact same glyphs as their palette counterparts— same
    shape, same meaning, just invoked from an element's context pad instead
    of the canvas-wide palette. */
 .djs-context-pad .entry[data-action='append.end-event']:before {
@@ -395,10 +395,10 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M17 7L7 17'/%3E%3Ccircle cx='6' cy='18' r='2.2'/%3E%3Ccircle cx='18' cy='6' r='2.2'/%3E%3C/svg%3E");
 }
 
-/* New glyphs this ticket needed (no palette equivalent): double-ring
+/* New glyphs without a palette equivalent: double-ring
    intermediate event, a bracket+lines text annotation, a wrench (change
    element type), and a trash can (delete) — drawn in the same 24x24,
-   ~1.8px rounded-stroke line-art style as tickets 01's set. */
+   ~1.8px rounded-stroke line-art style as the original icon set. */
 .djs-context-pad .entry[data-action='append.intermediate-event']:before {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Ccircle cx='12' cy='12' r='5.3'/%3E%3C/svg%3E");
@@ -440,7 +440,7 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='5' width='16' height='14' rx='1'/%3E%3Cpath d='M4 12h16' stroke-dasharray='2 2'/%3E%3C/svg%3E");
 }
 
-/* Pre/Post-script entries (scriptContextPad.ts, M8F-564). The same `<>`
+/* Pre/Post-script entries (scriptContextPad.ts). The same `<>`
    code mark around a right-pointing arrow, mirrored: arrow on the left = runs
    before the task, arrow on the right = runs after. They read apart without
    hovering. Same 24x24, 1.8px rounded-stroke style as the set above; every

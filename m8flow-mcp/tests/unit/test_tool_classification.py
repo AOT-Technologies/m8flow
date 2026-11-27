@@ -56,7 +56,7 @@ async def test_every_tool_has_tags_and_annotations(mcp: FastMCP):
 
     assert not failures, (
         "Every MCP tool must declare a non-empty tags set and annotations with an "
-        "explicit readOnlyHint (see AGENTS.md tool classification / M8F-404). "
+        "explicit readOnlyHint (see AGENTS.md tool classification). "
         "Offending tool(s):\n" + "\n".join(failures)
     )
 

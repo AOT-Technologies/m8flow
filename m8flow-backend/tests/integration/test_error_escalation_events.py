@@ -1,6 +1,6 @@
-"""Error and escalation events through the host modules on real core and Postgres (M8F-665).
+"""Error and escalation events through the host modules on real core and Postgres.
 
-Ticket cases A-D, plus the event-subprocess checks that only a final status can't prove: a handler
+Error and escalation cases A-D, plus the event-subprocess checks that only a final status can't prove: a handler
 must not run when nothing is thrown, and an interrupting one cancels a waiting user task.
 """
 
@@ -76,7 +76,7 @@ def _start(body: str) -> tuple[str, int, int]:
     """Save ``body`` as a model, start it as an editor, and return (tenant_id, user_id, instance_id)."""
     from m8flow_backend import workflow
 
-    tenant_id = new_tenant_id("m8f665")
+    tenant_id = new_tenant_id("error_escalation")
     with tenant_session(tenant_id) as session:
         editor = provision_member(session, tenant_id=tenant_id, role="editor")
         save_model(session, tenant_id=tenant_id, user_id=editor.id, path=MODEL, fixture="", xml=_bpmn(body))

@@ -299,6 +299,45 @@ def _seed_actor(
     return tenant, user
 
 
+def test_persisted_workflow_keeps_relationships_and_file_access_after_reload(db_session, tmp_path, monkeypatch):
+    """Reload a persisted workflow and its original files without renaming either."""
+    from sqlalchemy import text
+    from m8flow_core.models.bpmn_process_definition import BpmnProcessDefinitionModel
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    identifier = "persisted_approval"
+    model_id = f"existing/{identifier}"
+    file_name = f"{identifier}.bpmn"
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
+    tenant, user = _seed_actor(db_session)
+    tenant_id, user_id = tenant.id, user.id
+    xml = BPMN.read_text(encoding="utf-8").replace("simple_approval", identifier)
+    catalog.save(db_session, path=model_id, file_name=file_name, xml=xml, tenant_id=tenant_id, user_id=user_id)
+    instance = workflow.start(db_session, tenant_id=tenant_id, user_id=user_id, process_model_identifier=model_id)
+    instance_id, definition_id = instance.id, instance.bpmn_process_definition_id
+    disk_file = tmp_path / tenant_id / model_id / file_name
+    original_bytes = disk_file.read_bytes()
+    assert original_bytes == xml.encode("utf-8")
+    db_session.commit()
+    db_session.expunge_all()
+
+    instance = db_session.get(ProcessInstanceModel, instance_id)
+    definition = db_session.get(BpmnProcessDefinitionModel, definition_id)
+    assert instance.bpmn_process_definition_id == definition.id
+    assert instance.m8f_tenant_id == definition.m8f_tenant_id == tenant_id
+    assert definition.process_model_identifier == model_id
+    assert definition.bpmn_identifier == identifier
+    task, = workflow.list_pending_tasks(db_session, tenant_id=tenant_id, user_id=user_id)
+    workflow.claim(db_session, tenant_id=tenant_id, work_item_id=task.id, user_id=user_id)
+    workflow.complete(db_session, tenant_id=tenant_id, work_item_id=task.id, user_id=user_id)
+    db_session.refresh(instance)
+    assert instance.status == "complete"
+    assert catalog.read_model_file(tenant_id=tenant_id, process_model_identifier=model_id, file_name=file_name) == original_bytes
+    assert catalog.read_model_file(tenant_id="another-tenant", process_model_identifier=model_id, file_name=file_name) is None
+    assert disk_file.read_bytes() == original_bytes
+    assert db_session.execute(text("PRAGMA foreign_key_check")).all() == []
+
+
 def _add_malformed_published_definition(
     session,
     tenant_id: str,
@@ -713,7 +752,7 @@ def test_failed_recovery_write_rolls_back_before_restoring_temporary_membership(
     """The cross-tenant membership scope commits on entry and exit. If any
     recovery write fails, every recovery write is rolled back before the exit
     commit, so the super-admin's temporary membership is still restored and the
-    instance is never left half in Error (M8F-675 review)."""
+    instance is never left half in Error."""
     from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
     from m8flow_core.models.user import UserModel
@@ -840,7 +879,7 @@ def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attemp
     """Error -> retry -> Error with different tasks and messages, then (when the
     last attempt records no task_failed) an Error with no failure of its own.
     Each Error event row shows its own attempt's message, never another
-    attempt's, and the banner follows the latest Error (M8F-675 review). The
+    attempt's, and the banner follows the latest Error. The
     host's script paths record task_failed after the Error event and core's
     service-task path before it; both belong to the same attempt. The rows are
     from before ``created_at`` existed, so they use the whole-second fallback."""
@@ -924,8 +963,7 @@ def test_each_error_event_shows_its_own_attempts_failure(db_session, last_attemp
 def test_same_second_retry_on_the_same_task_keeps_each_attempts_failure(db_session):
     """Error -> retry -> Error inside one second, failing the same task GUID
     both times. Whole-second rows would put the second failure in both
-    attempts; the full ``created_at`` keeps each Error on its own message
-    (M8F-675 review)."""
+    attempts; the full ``created_at`` keeps each Error on its own message."""
     from datetime import timedelta
 
     from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
@@ -1034,7 +1072,7 @@ def test_caught_service_task_error_is_not_shown_for_a_later_failure(db_session):
     """A boundary caught `lookup`'s connector error, so its row exists but core
     logged no task_failed for it. The run later failed at another task that
     left no message: neither the banner nor the Error event may show the
-    caught error as the failure (M8F-675 review). Once that failure has its
+    caught error as the failure. Once that failure has its
     own message, that one is shown."""
     from m8flow_core.models.process_instance import ProcessInstanceModel, ProcessInstanceStatus
     from m8flow_core.models.process_instance_event import ProcessInstanceEventModel
@@ -1602,7 +1640,7 @@ def _decision_dmn(decision_id: str) -> str:
 
 def _seed_two_dmn_model(tmp_path, tenant_id: str, model_id: str) -> str:
     """Model whose business rule task calls the decision in the second DMN file
-    by name; the first one ("a-other.dmn") is unrelated (M8F-657)."""
+    by name; the first one ("a-other.dmn") is unrelated."""
     model_dir = tmp_path / tenant_id / model_id
     model_dir.mkdir(parents=True)
     (model_dir / "a-other.dmn").write_text(_decision_dmn("other_decision"), encoding="utf-8")
@@ -2003,7 +2041,7 @@ def test_adding_an_unrelated_dmn_keeps_the_called_one(db_session, tmp_path, monk
 
 def test_model_files_list_the_decision_id_a_business_rule_task_calls(tmp_path, monkeypatch):
     """The designer's decision dropdown writes this id, not the file name, into
-    calledDecisionId -- a file name fails Start with "No DMN Diagram" (M8F-657)."""
+    calledDecisionId -- a file name fails Start with "No DMN Diagram"."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     _seed_two_dmn_model(tmp_path, "tenant-dmn-list", "invoices/decide")
     (tmp_path / "tenant-dmn-list" / "invoices/decide" / "decide.bpmn").write_text(_DECISION_BPMN, encoding="utf-8")
@@ -2203,7 +2241,7 @@ def test_catalog_accepts_multi_instance_task(db_session, tmp_path, monkeypatch, 
     assert saved_file.read_text(encoding="utf-8") == xml
 
 
-@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-m8f-640", "core-1.0.0b3"])
+@pytest.mark.parametrize("core_supports", [True, False], ids=["core-with-multi-instance-runtime", "core-1.0.0b3"])
 def test_catalog_saves_parallel_multi_instance_completion_condition_only_on_a_supporting_core(
     db_session, tmp_path, monkeypatch, core_supports
 ):
@@ -2705,7 +2743,7 @@ def _seed_submitter(session, tenant):
 
 
 def _write_unimported_model(tenant_id: str, path: str = "invoices/approval") -> None:
-    """The M8F-566 state: the model is on disk (bind mount survives a clean build)
+    """The missing-definition state: the model is on disk (bind mount survives a clean build)
     but its definition is gone from the wiped database."""
     catalog.write_spec_file(
         tenant_id=tenant_id,
@@ -3038,7 +3076,7 @@ def test_task_data_replay_applies_deletions_and_starts_subprocesses_at_their_roo
 
 
 def test_terminate_instance_cancels_its_open_external_form_links(db_session, tmp_path, monkeypatch):
-    """M8F-575 issue 3: after a terminate the emailed link still reported actionable=true."""
+    """after a terminate the emailed link still reported actionable=true."""
     from m8flow_backend.models.external_form_request import ExternalFormRequestModel
 
     tenant, user, instance = _start_invoice_instance(db_session, tmp_path, monkeypatch)
@@ -3086,14 +3124,14 @@ _DATA_OBJECT_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
 def _start_first_task(db_session, tmp_path, monkeypatch, xml):
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    catalog.save(db_session, path="p/m8f680", xml=xml, tenant_id=tenant.id, user_id=user.id)
-    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/m8f680")
+    catalog.save(db_session, path="p/task_data_round_trip", xml=xml, tenant_id=tenant.id, user_id=user.id)
+    instance = workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/task_data_round_trip")
     (task,) = workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id)
     return tenant, user, instance, task
 
 
 def test_task_form_values_do_not_expose_the_engine_data_object_store(db_session, tmp_path, monkeypatch):
-    """M8F-680: the designer posts every form value back on submit, so engine
+    """the designer posts every form value back on submit, so engine
     state in the values ends up in the completion payload."""
     from m8flow_core.models.work_item import WorkItemModel
 
@@ -3109,7 +3147,7 @@ def test_task_form_values_do_not_expose_the_engine_data_object_store(db_session,
 
 
 def test_submitted_data_objects_key_cannot_replace_the_engine_store(db_session, tmp_path, monkeypatch):
-    """M8F-680: a posted ``data_objects`` reached core as a string, replaced
+    """a posted ``data_objects`` reached core as a string, replaced
     Spiff's data-object store and crashed the next data-output step with
     TypeError -- a generic 500 with nothing saved."""
     from m8flow_core.models.json_data import JsonDataModel
@@ -3205,7 +3243,7 @@ _FAILING_SCRIPT_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp_path, monkeypatch):
-    """M8F-680: a real SpiffWorkflow task id is a UUID, not a str, so the
+    """a real SpiffWorkflow task id is a UUID, not a str, so the
     script-failure branch never matched and the user got the generic 500 with
     nothing recorded: no Error status, no red step, no Events entry."""
     from m8flow_core.models.process_instance import ProcessInstanceModel
@@ -3239,7 +3277,7 @@ def test_script_failure_after_submit_is_shown_on_the_failed_step(db_session, tmp
 
 
 def test_designer_list_active_and_completed_today_filters_match_home_counts(db_session):
-    """M8F-711: Home stat cards link to these list filters, so they must return
+    """Home stat cards link to these list filters, so they must return
     exactly the instances the cards count."""
     from datetime import timedelta
 
@@ -3259,7 +3297,7 @@ def test_designer_list_active_and_completed_today_filters_match_home_counts(db_s
     for name, (status, ended_at) in seeded.items():
         instance = ProcessInstanceModel(
             m8f_tenant_id=tenant.id,
-            process_model_identifier=f"m8f711/{name}",
+            process_model_identifier=f"home_filters/{name}",
             process_model_display_name=name,
             process_initiator_id=user.id,
             status=status.value,
@@ -3310,10 +3348,10 @@ _MI_REVIEW_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def test_multi_instance_review_forms_show_their_own_item(db_session, tmp_path, monkeypatch):
-    """M8F-640: an iteration's input item and counters exist only on its task,
+    """an iteration's input item and counters exist only on its task,
     so its form values and instructions must come from the task's own scope."""
     pytest.importorskip(
-        "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with M8F-640"
+        "m8flow_core.services.multi_instance_runtime", reason="needs the m8flow-core release with multi-instance runtime support"
     )
     from m8flow_core.models.work_item import WorkItemModel
 
@@ -3321,8 +3359,8 @@ def test_multi_instance_review_forms_show_their_own_item(db_session, tmp_path, m
 
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path))
     tenant, user = _seed_actor(db_session)
-    catalog.save(db_session, path="p/m8f640", xml=_MI_REVIEW_BPMN, tenant_id=tenant.id, user_id=user.id)
-    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/m8f640")
+    catalog.save(db_session, path="p/multi_instance", xml=_MI_REVIEW_BPMN, tenant_id=tenant.id, user_id=user.id)
+    workflow.start(db_session, tenant_id=tenant.id, user_id=user.id, process_model_identifier="p/multi_instance")
     reviews = sorted(
         workflow.list_pending_tasks(db_session, tenant_id=tenant.id, user_id=user.id), key=lambda task: task.id
     )
@@ -3374,7 +3412,7 @@ _REWORK_BPMN = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def test_form_values_follow_a_script_change_after_an_earlier_submission(db_session, tmp_path, monkeypatch):
-    """M8F-640: the first form posts ``rounds`` back as process metadata; when a
+    """the first form posts ``rounds`` back as process metadata; when a
     script raises it later, the next form must show the new value."""
     from m8flow_core.models.work_item import WorkItemModel
 

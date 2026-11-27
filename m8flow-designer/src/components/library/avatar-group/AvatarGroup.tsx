@@ -31,8 +31,7 @@ export interface AvatarGroupProps
    * avatar). Defaults to `"sm"` (28px) — the closest entry in
    * `ui/avatar.tsx`'s size scale (sm 28 / md 36 / lg 44) to the mockup's
    * 32px overlapping-stack avatars. Neither scale step lands on 32px
-   * exactly; `sm` was picked per this ticket's explicit instruction. See
-   * ticket 10's Answer for the full note.
+   * exactly; `sm` follows the avatar sizing used by this component.
    */
   size?: "sm" | "md" | "lg"
   /**

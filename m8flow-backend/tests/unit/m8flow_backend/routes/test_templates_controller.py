@@ -381,7 +381,7 @@ def test_super_admin_can_create_process_model_from_published_template(
 def test_create_process_model_with_template_file_missing_from_storage(
     client, db_session, app, tmp_path, monkeypatch
 ):
-    """M8F-650: a template file missing from storage fails with an actionable
+    """a template file missing from storage fails with an actionable
     message and leaves nothing on disk, so a retry with the same id works."""
     monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
     app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")

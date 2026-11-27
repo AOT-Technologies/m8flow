@@ -68,7 +68,7 @@ async function start(browser: Browser, persona: DesignerPersona = submitterCrede
 }
 
 async function instanceCount(browser: Browser): Promise<number> {
-  // Tenant admin: the only role that lists every instance of the tenant (M8F-627).
+  // Tenant admin: the only role that lists every instance of the tenant.
   return withPage(browser, tenantAdminCredentials(), async (ed) => {
     const name = flow.model('approval').name;
     const result = await backendFetch(ed, `/v1.0/m8flow/process-instances?search=${encodeURIComponent(name)}&per_page=100`);
@@ -306,7 +306,7 @@ test.describe('Process flow: reliability', { tag: ['@reliability'] }, () => {
     await waitForStatus(page, id, 'complete');
 
     // The same cleanup the suite uses, as the tenant admin (the submitter
-    // started the instance; since M8F-627 only it or a tenant admin may delete it).
+    // started the instance; only it or a tenant admin may delete it).
     const left = await asOrgAdmin(browser, async (admin) => {
       await removeMockModelCompletely(admin, route);
       await deleteMockGroup(admin, groupId);

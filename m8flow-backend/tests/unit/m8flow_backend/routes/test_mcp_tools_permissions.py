@@ -1,4 +1,4 @@
-"""MCP tools admin API access, end to end (M8F-539).
+"""MCP tools admin API access, end to end.
 
 Locks in: catalog, ping and execute are tenant-admin + super-admin only; editor and
 reviewer get 403 everywhere; the read grants are exact URIs, so they can never reach

@@ -399,7 +399,7 @@ class NatsMonitoringService:
         }
 
 
-# Trigger events published before M8F-574 carry the publisher's raw NATS api_key in the
+# Trigger events published before signed trigger payloads carry the publisher's raw NATS api_key in the
 # body, and the stream still holds them, so a preview must never echo it back to the
 # browser. This is known-field-name redaction, not a secrets scanner:
 # - A name matches anywhere in a JSON key or header name (client_secret, x-api-key,
@@ -416,10 +416,10 @@ class NatsMonitoringService:
 #   sent under an unrelated name is still caught. Other credentials, with no credential
 #   word next to them, are not: this is a denylist, so keep payloads small.
 # - reference_id(s) is the external-form secure-link credential. Notification events no
-#   longer carry it (M8F-574), but messages published before that are still retained.
+#   longer carry it, but messages published before that are still retained.
 #   It must not follow a letter, so business keys such as user_preference_id stay visible.
 # It governs only what this endpoint shows: the broker keeps the raw message, which is
-# why inspection is off by default. Only super-admins can read payloads (M8F-700), but
+# why inspection is off by default. Only super-admins can read payloads, but
 # this redaction still keeps credentials off their screen.
 # Every pattern below is linear in the text: a key may only start a match where a token
 # starts, and key and scheme lengths are bounded. An unbounded `[\w.-]*` before the

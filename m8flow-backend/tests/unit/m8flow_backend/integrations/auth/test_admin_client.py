@@ -128,7 +128,7 @@ def test_transport_error_maps_to_provider_unavailable(monkeypatch):
 def test_master_token_cache_expires_by_wall_clock_even_if_monotonic_clock_paused(
     monkeypatch, master_token_endpoint
 ):
-    # M8F-544: a Docker Desktop VM is paused while the host sleeps, so the
+    # a Docker Desktop VM is paused while the host sleeps, so the
     # monotonic clock stops but Keycloak judges `exp` by wall clock on wake.
     clock = SimpleNamespace(time=lambda: 1_000.0, monotonic=lambda: 5.0)
     monkeypatch.setattr(client_auth, "time", clock)

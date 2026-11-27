@@ -193,7 +193,7 @@ def test_blocks_outside_a_request_context(app, db_session):
 
 @pytest.mark.parametrize("link_status", [None, "expired"])
 def test_allows_in_app_completion_without_an_open_link(app, db_session, link_status):
-    """M8F-574: an assignee with no email is never sent a link, and an expired link can no
+    """an assignee with no email is never sent a link, and an expired link can no
     longer be used. Blocking either case would strand the task with no way to finish it."""
     task = _human_task(db_session, json_metadata=EXTERNAL_FORM_METADATA)
     if link_status:

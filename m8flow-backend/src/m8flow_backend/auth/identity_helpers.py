@@ -74,8 +74,7 @@ def user_belongs_to_current_tenant(
 def local_user_from_claims(claims: VerifiedClaims | None) -> Any | None:
     """Resolve the local mirrored user row for a verified session's claims.
 
-    Replaces the former ``local_user_from_payload(payload)`` (auth-provider-
-    seam wayfinder map, ticket 10): ``claims.issuer``/``claims.subject`` are
+    Replaces the former ``local_user_from_payload(payload)``: ``claims.issuer``/``claims.subject`` are
     the same values a raw payload's ``iss``/``sub`` claims held, now read
     from the typed contract instead of a raw dict.
     """

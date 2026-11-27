@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 // Presence-driven mount/unmount needs a real ref).
 //
 // A note on which `data-*` variant form is used where, learned the hard way
-// while building ui/tooltip.tsx (ticket 02): Radix's *content* elements set
+// while building ui/tooltip.tsx: Radix's *content* elements set
 // `data-state="open"|"closed"` (a **valued** attribute — needs the bracket
 // form `data-[state=open]:`), but its *item* elements set `data-highlighted`
 // and `data-disabled` as **boolean presence** attributes (`data-highlighted=""`

@@ -77,7 +77,7 @@ def test_a_rejected_message_cannot_rewrite_another_tenants_row(worker, db_sessio
 
 @pytest.mark.parametrize("not_sent", ["failed:Connection timed out", "skipped:smtp_unconfigured"])
 def test_an_email_that_was_not_sent_is_audited_as_a_failure(worker, db_session, monkeypatch, not_sent):
-    """M8F-575 issue 4: notify() reports an unsent email as a result string instead of
+    """notify() reports an unsent email as a result string instead of
     raising, so the event was audited as "Sent" and NATS tenant counts hid email failures."""
     results = {11: "sent", 12: not_sent}
     monkeypatch.setattr(worker, "_notify_one", lambda _tenant_id, request_id: results[request_id])
@@ -169,7 +169,7 @@ def test_a_requests_created_event_notifies_each_row_id(worker, db_session, monke
     ids=["legacy-reference-ids", "bool", "string", "scalar"],
 )
 def test_a_legacy_or_malformed_event_is_discarded_for_the_sweep(worker, db_session, monkeypatch, ids):
-    """Messages published before M8F-574 carry reference ids. They, and any event without a
+    """Messages published before signed trigger payloads carry reference ids. They, and any event without a
     list of integer row ids, are dropped unread; the sweep emails the rows after the grace
     period, so nothing is lost on a rolling deploy."""
     calls = []
@@ -197,7 +197,7 @@ def test_a_legacy_or_malformed_event_is_discarded_for_the_sweep(worker, db_sessi
 
 
 def test_a_discarded_legacy_event_leaves_its_row_for_the_sweep(worker, db_session):
-    """M8F-574 review: dropping a pre-upgrade ``reference_ids`` message loses nothing. The
+    """dropping a pre-upgrade ``reference_ids`` message loses nothing. The
     row it named is left as created, so once the grace period passes the sweep claims it
     exactly as it would after a publish that never arrived."""
     from m8flow_backend.config import notification_sweep_grace_seconds
@@ -286,7 +286,7 @@ def test_the_sweep_parks_a_tenant_without_smtp_by_row_id(worker, monkeypatch):
 
 
 def test_without_nats_the_worker_still_runs_the_email_sweep(worker, app, monkeypatch):
-    """M8F-574 Issue V: the sweep reads only the database, so it must deliver external-form
+    """the sweep reads only the database, so it must deliver external-form
     emails when NATS is off instead of the worker idling."""
     swept = []
 

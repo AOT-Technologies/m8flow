@@ -108,7 +108,7 @@ still running, including their user tasks. Iterations that didn't finish aren't
 in the output collection.
 
 The loop counters and completion conditions on parallel loops need an
-m8flow-core release that includes M8F-640. On an older core, such as `1.0.0b3`,
+m8flow-core release that includes multi-instance runtime support. On an older core, such as `1.0.0b3`,
 saving a model with a completion condition on a parallel loop fails with
 `unsupported_bpmn`, and a sequential condition that uses a counter fails when
 it's evaluated.

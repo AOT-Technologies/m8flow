@@ -21,12 +21,11 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Process Instances list — wired to GET /v1.0/m8flow/process-instances
- * (Process Instances + task-state map, ticket 02 —
- * `.scratch/process-instances-task-state/`). Same tenant-gating posture as
+ *. Same tenant-gating posture as
  * Processes/Templates: super-admin must pick a concrete tenant, no merged
  * all-tenant catalog view.
  *
- * `?search=` seeds the initial search box (capstone ticket, read once on
+ * `?search=` seeds the initial search box (navigation implementation, read once on
  * mount, not kept in sync afterward — same one-way "deep link in, free
  * text out" convention `ProcessesPage`'s own `?group=` uses). Lets
  * `ProcessModelOverview`'s "View all N" link land here pre-filtered to
@@ -36,13 +35,13 @@ const SEARCH_DEBOUNCE_MS = 300;
 export default function ProcessInstancesPage() {
   const { scopedTenantId, isSuperAdmin } = useActiveTenant();
   // Tenant-wide readers see every instance unless they pick a scope; everyone
-  // else sees instances they started or have a task in (M8F-653).
+  // else sees instances they started or have a task in.
   const { canReadAllProcessInstances } = useCapabilities();
   // All Tenants (super-admin, no concrete tenant) renders the merged
   // cross-tenant list instead of a "choose a tenant" gate.
   const allTenants = isSuperAdmin && !scopedTenantId;
   const navigate = useNavigate();
-  // status / completed live in the URL so Home stat cards can deep-link a filtered list (M8F-711).
+  // status / completed live in the URL so Home stat cards can deep-link a filtered list.
   const [searchParams, setSearchParams] = useSearchParams();
   const status = searchParams.get('status') ?? '';
   const completedToday = searchParams.get('completed') === 'today';

@@ -1,4 +1,4 @@
-"""Trigger events never carry the raw NATS API key (M8F-574)."""
+"""Trigger events never carry the raw NATS API key."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def test_a_trigger_event_carries_a_signed_key_id_never_the_raw_key(monkeypatch):
 
 def test_publish_event_takes_tenant_owner_and_key_from_the_authenticated_key(app, db_session, monkeypatch):
     """The caller cannot name who owns the process: everything identity-related comes from
-    the key the route authenticated (M8F-574 review)."""
+    the key the route authenticated."""
     from sqlalchemy import select
 
     from m8flow_backend.models.nats_event_audit import NatsEventAuditModel

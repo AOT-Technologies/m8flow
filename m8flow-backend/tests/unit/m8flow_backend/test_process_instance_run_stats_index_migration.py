@@ -1,4 +1,4 @@
-"""M8F-703: composite index for the Processes page run stats."""
+"""composite index for the Processes page run stats."""
 
 from __future__ import annotations
 
@@ -173,13 +173,13 @@ def test_postgres_validity_check_ignores_a_same_named_index_in_another_schema(mo
     engine = sa.create_engine(_PG_URI)
     command.upgrade(cfg, "head")
     with engine.begin() as connection:
-        connection.execute(sa.text("DROP SCHEMA IF EXISTS m8f703_decoy CASCADE"))
-        connection.execute(sa.text("CREATE SCHEMA m8f703_decoy"))
-        connection.execute(sa.text("CREATE TABLE m8f703_decoy.process_instance (m8f_tenant_id text)"))
-        connection.execute(sa.text(f"CREATE INDEX {_INDEX} ON m8f703_decoy.process_instance (m8f_tenant_id)"))
+        connection.execute(sa.text("DROP SCHEMA IF EXISTS run_stats_decoy CASCADE"))
+        connection.execute(sa.text("CREATE SCHEMA run_stats_decoy"))
+        connection.execute(sa.text("CREATE TABLE run_stats_decoy.process_instance (m8f_tenant_id text)"))
+        connection.execute(sa.text(f"CREATE INDEX {_INDEX} ON run_stats_decoy.process_instance (m8f_tenant_id)"))
         connection.execute(
             sa.text("UPDATE pg_index SET indisvalid = false WHERE indexrelid = to_regclass(:name)"),
-            {"name": f"m8f703_decoy.{_INDEX}"},
+            {"name": f"run_stats_decoy.{_INDEX}"},
         )
     try:
         command.downgrade(cfg, _PREVIOUS)
@@ -188,7 +188,7 @@ def test_postgres_validity_check_ignores_a_same_named_index_in_another_schema(mo
         command.upgrade(cfg, "head")
 
         assert _index_state(engine) is True
-        assert _index_state(engine, schema="m8f703_decoy") is False  # left alone
+        assert _index_state(engine, schema="run_stats_decoy") is False  # left alone
     finally:
         with engine.begin() as connection:
-            connection.execute(sa.text("DROP SCHEMA IF EXISTS m8f703_decoy CASCADE"))
+            connection.execute(sa.text("DROP SCHEMA IF EXISTS run_stats_decoy CASCADE"))

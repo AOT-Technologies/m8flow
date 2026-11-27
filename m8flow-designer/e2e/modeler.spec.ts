@@ -126,7 +126,7 @@ test.describe('Process Modeler: open, edit and save', () => {
     await page.getByRole('button', { name: 'View XML' }).click();
     const dialog = page.getByRole('dialog', { name: 'View XML' });
     await expect(dialog).toBeVisible();
-    // M8F-524: View XML is now an editable Monaco editor, not a read-only <pre>.
+    // View XML is now an editable Monaco editor, not a read-only <pre>.
     // Monaco only renders visible lines, so check the top of the document.
     await expect(dialog.getByText(SEED_PRIMARY_FILE, { exact: true })).toBeVisible();
     const editor = dialog.locator('.monaco-editor');

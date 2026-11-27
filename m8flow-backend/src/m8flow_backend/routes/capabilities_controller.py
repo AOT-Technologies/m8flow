@@ -63,7 +63,7 @@ def get_capabilities():
     the publish lifecycle (draft / published / paused). Computed from the same
     PUT /process-models check `update_process_model` authorizes with, so
     Publish / Pause / Unpublish stay hidden from roles that would get a 403
-    instead of being shown and then rejected (M8F-508).
+    instead of being shown and then rejected.
     """
     user = require_current_user()
     session = g.db_session

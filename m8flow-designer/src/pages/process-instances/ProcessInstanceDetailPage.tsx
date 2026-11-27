@@ -95,7 +95,7 @@ function MetaCell({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 06). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>
@@ -140,7 +140,7 @@ export default function ProcessInstanceDetailPage() {
   const [confirmingTerminate, setConfirmingTerminate] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   // Every instance reader gets a diagram; without model-file read the backend
-  // sends it without model logic (M8F-651).
+  // sends it without model logic.
   const [tab, setTab] = useState<DetailTab>('diagram');
   const [searchParams] = useSearchParams();
   const toTaskGuid = searchParams.get('to_task_guid');
@@ -246,7 +246,7 @@ export default function ProcessInstanceDetailPage() {
   const timeTravelTarget = toTaskGuid ? detail?.tasks.find((task) => task.guid === toTaskGuid) ?? null : null;
 
   // A task assigned in someone else's instance lets you read it, not manage it:
-  // the backend 404s lifecycle writes there (M8F-653), so don't offer them.
+  // the backend 404s lifecycle writes there, so don't offer them.
   const canManageInstance = canReadAllProcessInstances || detail?.started_by_me !== false;
   const statusActions = detail ? processInstanceLifecycleVisibility(detail.status) : null;
   const actions = statusActions ? {

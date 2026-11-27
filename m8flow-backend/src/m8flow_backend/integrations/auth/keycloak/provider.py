@@ -1,7 +1,6 @@
 """Keycloak realization of ``AuthProvider``, on top of ``OidcAuthProvider``.
 
-Session/OIDC + JWKS ``verify_token`` are inherited (auth-provider-seam
-wayfinder map, ticket 04); this module supplies claims mapping, directory
+Session/OIDC + JWKS ``verify_token`` are inherited; this module supplies claims mapping, directory
 user get/search/create/delete, tenant/membership operations, group/role
 mapping, and realm provisioning.
 """
@@ -56,7 +55,7 @@ def _same_tenant(a: TenantRef, b: TenantRef) -> bool:
 
 class KeycloakAuthProvider(OidcAuthProvider):
     """Concrete Keycloak provider. Session/OIDC + verify_token are inherited
-    from OidcAuthProvider (auth-provider-seam wayfinder map, ticket 04) --
+    from OidcAuthProvider  --
     this class supplies map_claims plus everything Keycloak-specific:
     directory reads, self-description, and the directory-admin/provisioning
     capabilities."""
@@ -219,7 +218,7 @@ class _KeycloakDirectoryAdmin(SupportsDirectoryAdmin):
     """Directory mutations: users, tenants, memberships, and groups. One class
     implementing all four narrow capabilities (SupportsDirectoryAdmin's
     composing aggregate) -- Keycloak supports everything, so there's no
-    reason to split the implementation, only the interface (ticket 13)."""
+    reason to split the implementation, only the interface."""
 
     def create_user(
         self,

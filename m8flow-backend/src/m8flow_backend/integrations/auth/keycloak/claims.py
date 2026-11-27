@@ -12,8 +12,8 @@ from m8flow_backend.integrations.auth.keycloak.role_mapping import tenant_roles_
 # m8flow_backend.auth.claims's realm_name_from_payload/extract_realm_from_issuer
 # -- that module is host code and this runs inside the adapter, which must
 # never depend on the host (auth.claims already depends on this module, so a
-# reverse import would cycle). Ticket 10 (Neutralize the token shape) is
-# expected to consolidate onto this copy and retire the host one.
+# reverse import would cycle). Consolidate onto this copy when retiring
+# the host-specific token parsing.
 _AUTHENTICATION_IDENTIFIER_CLAIM = "m8flow_authentication_identifier"
 _REALM_NAME_CLAIM = "m8flow_realm_name"
 _TENANT_NAME_CLAIM = "m8flow_tenant_name"  # legacy RealmInfoMapper claim
@@ -145,12 +145,13 @@ def memberships_from_organization_claim(payload: dict[str, Any]) -> list[Members
 
 
 def _active_tenant_ref_from_payload(payload: dict[str, Any], memberships: list[Membership]) -> TenantRef | None:
-    """The RealmInfoMapper's explicit finalized-tenant signal (ticket 01's
-    decision 6): `m8flow_tenant_id`/`m8flow_tenant_alias`, falling back to the
-    sole membership when there's exactly one -- mirrors
-    active_organization_from_payload's existing single-org shortcut on the
-    host side (auth/claims.py), so a single-tenant user needs no explicit
-    claim at all."""
+    """Resolve the active tenant from the RealmInfoMapper's explicit claims.
+
+    Use `m8flow_tenant_id`/`m8flow_tenant_alias`, falling back to the sole
+    membership when there's exactly one. This mirrors
+    active_organization_from_payload's single-organization shortcut in
+    auth/claims.py, so a single-tenant user needs no explicit tenant claim.
+    """
     tenant_id = _string(payload.get("m8flow_tenant_id"))
     tenant_alias = _string(payload.get("m8flow_tenant_alias"))
     if tenant_id or tenant_alias:

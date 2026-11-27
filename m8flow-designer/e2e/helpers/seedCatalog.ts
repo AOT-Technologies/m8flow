@@ -25,7 +25,7 @@ import { deleteProcessModelFile, readProcessModelFile, seedProcessModelFile } fr
 import { loadBaseline, seedBaselineOnce, type CatalogModel } from '../seed/seed';
 
 /**
- * Seeded process catalog (M8F-677).
+ * Seeded process catalog.
  *
  * The baseline seed keeps the group, templates and models listed under
  * "catalog" in seed/baseline.json. Every process is a template with its own
@@ -520,7 +520,7 @@ export function useSeededModelCopy(test: TestType<any, any>, label: string, sour
   });
 
   test.afterAll(async ({ browser }) => {
-    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an instance.
+    // Tenant admin: only the starter or a tenant admin may delete an instance.
     if (!ready) return;
     await withAdminPage(browser, async (page) => {
       await removeMockModelCompletely(page, route);

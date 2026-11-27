@@ -37,7 +37,7 @@ groups:
   "submitter":
     users: []
   # The "everybody" group is a special group that includes all users, and is used to assign permissions that should be available to everyone.
-  
+
 # Permissions defined here are appended to the permissions in the database on login, so changes to this file will take effect on the next login of each user.
 permissions:
   # Very basic permissions for general access to the frontend and onboarding, assigned to everybody.
@@ -170,7 +170,7 @@ permissions:
   # Process model definition content: BPMN/DMN/form-schema files, script unit
   # tests, and an instance's BPMN diagram. Its own route on purpose: the
   # /process-models list grant above matches every /process-models/... path, so a
-  # target under it could never exclude submitters (M8F-534).
+  # target under it could never exclude submitters.
   read-process-model-files:
     groups: ["tenant-admin", "editor", "viewer", "super-admin"]
     actions: [read]
@@ -195,8 +195,8 @@ permissions:
     command: message.correlate
   # Tenant-wide instance read: every user's instances, plus run metrics. A plain
   # route grant also matches every path below it, so /process-instances already
-  # covers /process-instances/{id}. Only tenant-admin holds it: submitter (M8F-534),
-  # editor and viewer (M8F-627) read only instances they started.
+  # covers /process-instances/{id}. Only tenant-admin holds it: submitter,
+  # editor and viewer read only instances they started.
   read-process-instance-list:
     groups: ["tenant-admin"]
     actions: [read]
@@ -313,7 +313,7 @@ permissions:
     groups: ["tenant-admin", "editor", "integrator", "super-admin"]
     actions: [read]
     uri: /m8flow/mcp-connection
-  # MCP Tools admin page (M8F-404, restored for next-gen in M8F-539). Admin-only:
+  # MCP Tools admin page (restored for the designer). Admin-only:
   # execute runs arbitrary MCP tools as the caller. Exact URIs on purpose -- the read
   # grants can never reach POST .../execute, which needs the separate "create" grant.
   read-mcp-tools-catalog:
@@ -436,8 +436,8 @@ permissions:
     groups: ["tenant-admin", "reviewer", "submitter"]
     actions: [read]
     uri: /m8flow/task-review-access
-  # Editors have no inbox (M8F-558) but open and submit tasks assigned to them,
-  # e.g. the first form of a process they started (M8F-647). For every role, the
+  # Editors have no inbox but open and submit tasks assigned to them,
+  # e.g. the first form of a process they started. For every role, the
   # detail route shows only tasks assigned to the caller (super-admin: any task).
   read-task-review-details:
     groups: ["tenant-admin", "editor", "reviewer", "submitter"]
@@ -458,7 +458,7 @@ permissions:
     command: task.read
   # Task data (form values) shown on the Process Instance page when a task is clicked.
   # super-admins/viewers inspect task data across tenants; submitters see their own
-  # submissions' data (M8F-678). The route still 404s an instance the caller neither
+  # submissions' data. The route still 404s an instance the caller neither
   # started nor has a task assigned in, so this never opens other users' instances.
   # READ ONLY by design -- do NOT add update/PUT: super-admin RLS bypass is SELECT-only, and
   # cross-tenant task-data must stay read-only. (tenant-admin/editor still get read+update via
@@ -472,16 +472,16 @@ permissions:
   # /process-models/* and /process-groups/* but NOT /logs (the /logs segment is
   # "all"-only in PATH_SEGMENTS_FOR_PERMISSION_ALL). Grant explicit read here so the
   # Events/Milestones tabs render and the log/events list loads cross-tenant.
-  # READ ONLY by design -- super-admin RLS bypass is SELECT-only. (M8F-449)
+  # READ ONLY by design -- super-admin RLS bypass is SELECT-only.
   read-logs:
     groups: ["viewer", "super-admin"]
     actions: [read]
     uri: /logs/*
   # NATS monitoring splits by what the data can honestly be scoped to. READ ONLY
   # throughout -- these endpoints never mutate NATS. Routes gate with
-  # group_fallback=False so other tenant roles cannot fall through. (M8F-244)
+  # group_fallback=False so other tenant roles cannot fall through.
   #
-  # Every NATS monitoring route, event history included, is super-admin only (M8F-700):
+  # Every NATS monitoring route, event history included, is super-admin only:
   # broker state is reported per JetStream account, not per tenant. Tenant-admins lost
   # their own-tenant event history grant; migration c7e9a1b3d5f7 revokes it in existing
   # tenants. The trailing slash keeps this from matching /m8flow/nats-tokens, whose
@@ -492,7 +492,7 @@ permissions:
     uri: /m8flow/nats/*
   # Celery monitoring is READ ONLY and super-admin only: worker state covers every
   # tenant, and Celery carries no tenant marker in it. Routes gate with
-  # group_fallback=False so other tenant roles cannot fall through. (M8F-602)
+  # group_fallback=False so other tenant roles cannot fall through.
   read-celery-monitoring:
     groups: ["super-admin"]
     actions: [read]

@@ -25,9 +25,7 @@ export type TenantSwitcherProps = {
  * tenant_finalization=1): the backend records the active org, refresh-remints a
  * Keycloak token carrying the target tenant's claims, updates the
  * m8flow_selected_tenant cookie, and redirects back here -- so the page reloads
- * itself with the new tenant, no manual reload and no iframe. (The former
- * prompt=none hidden-iframe mechanism was retired: Keycloak 26 cannot silently
- * re-mint an org-scoped token -- active-tenant deep-module map, ticket 08/10/11.)
+ * itself with the new tenant, no manual reload and no iframe.
  */
 export function TenantSwitcher({ activeTenantLabel, organizations }: TenantSwitcherProps) {
   const { t } = useTranslation();

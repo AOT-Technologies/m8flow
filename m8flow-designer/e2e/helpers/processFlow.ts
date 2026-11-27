@@ -307,7 +307,7 @@ export function useFlowCatalog(
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(300_000);
-    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an instance.
+    // Tenant admin: only the starter or a tenant admin may delete an instance.
     await withPage(browser, tenantAdminCredentials(), async (page) => {
       await deleteInstanceIds(page, catalog.track.instances);
       // Each model: all its instances deleted, unpublished, then deleted.
@@ -404,7 +404,7 @@ export async function startStatus(page: Page, route: string): Promise<number> {
 }
 
 /**
- * Since M8F-627 only a tenant admin reads every instance of the tenant; editor,
+ * only a tenant admin reads every instance of the tenant; editor,
  * viewer and submitter see only instances they started or have a task in.
  * Status and task-data checks are "what the server holds" checks, not access
  * checks, so they always read as the tenant admin (cached login per worker).
@@ -415,7 +415,7 @@ async function orgReader(page: Page): Promise<Page> {
   return browser ? rolePage(browser, tenantAdminCredentials()) : page;
 }
 
-/** Runs `fn` as the tenant admin, who can see and act on every instance (M8F-627). */
+/** Runs `fn` as the tenant admin, who can see and act on every instance. */
 export async function asOrgAdmin<T>(browser: Browser, fn: (page: Page) => Promise<T>): Promise<T> {
   return withPage(browser, tenantAdminCredentials(), fn);
 }

@@ -288,7 +288,7 @@ export function ProcessesModelsList({
       render: (model) => <ProcessModelVersionStatus {...model} stacked />,
     },
     // Run metrics are tenant-wide; the backend sends null to callers who may see
-    // only their own instances (M8F-534), so the columns follow the data.
+    // only their own instances, so the columns follow the data.
     ...(showRunMetrics
       ? [
           {
@@ -414,9 +414,8 @@ export function ProcessesModelsList({
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
           {/* No "Browse groups" button — the "Showing [scope] ▾" pill below opens
-              the same picker. Creating a group is a different matter (M8F-530
-              #6): the pill reads as a filter, so the only path to New group was
-              one people did not find. */}
+              the same picker. Creating a group is a different matter: the pill reads
+              as a filter, so the only path to New group was one people did not find. */}
           {onCreateGroup ? (
             <Button
               type="button"

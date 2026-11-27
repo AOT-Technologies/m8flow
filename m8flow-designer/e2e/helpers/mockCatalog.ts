@@ -69,7 +69,7 @@ export async function setPrimaryFile(page: Page, routeId: string, fileName: stri
 
 /**
  * Every instance of a model, found through the instance list (paged), plus
- * the model's recent instances. Use a tenant admin page: since M8F-627 other
+ * the model's recent instances. Use a tenant admin page: other
  * roles only see instances they started or have a task in.
  */
 export async function listModelInstanceIds(page: Page, routeId: string): Promise<number[]> {
@@ -183,7 +183,7 @@ export async function deleteMockTemplate(page: Page, templateId: number): Promis
 
 /**
  * The shared "E2E Mock Catalog" / "E2E Mock Model" that the Modeler specs used
- * before the seeded catalog (M8F-677). The seed removes it from older stacks.
+ * before the seeded catalog. The seed removes it from older stacks.
  */
 const LEGACY_MOCK_GROUP_ID = 'e2e-mock-catalog';
 
@@ -342,7 +342,7 @@ let leftoversSwept = false;
 export async function sweepLeftoversOnce(page: Page): Promise<void> {
   if (leftoversSwept) return;
   leftoversSwept = true;
-  // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
+  // Tenant admin: only the starter or a tenant admin may delete
   // an instance, and leftovers were started by several users.
   const browser = page.context().browser();
   if (!browser) {
@@ -437,7 +437,7 @@ export function useActiveCatalog(
 
   test.afterAll(async ({ browser }) => {
     test.setTimeout(300_000);
-    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete
+    // Tenant admin: only the starter or a tenant admin may delete
     // an instance. Each model loses all its instances, is unpublished, then deleted.
     await withAdminPage(browser, async (page) => {
       await deleteInstanceIds(page, tracker.instances);

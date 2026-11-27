@@ -36,7 +36,7 @@ type TabValue = 'streams' | 'tenants' | 'events';
  *
  * What a user sees follows the backend permission check, never a role name: the whole
  * page, event history included, needs the `/m8flow/nats/*` read grant, which only
- * super-admin holds (M8F-700), since JetStream reports state per account rather than per
+ * super-admin holds, since JetStream reports state per account rather than per
  * tenant. Tab and event filters live in the URL so "View events" from Tenants and reloads
  * keep their place.
  */

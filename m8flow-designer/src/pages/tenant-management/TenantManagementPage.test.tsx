@@ -283,7 +283,7 @@ describe('TenantManagementPage', () => {
     );
     await screen.findByText('Ed Itor');
 
-    // Invite User lives in the header row next to Edit Tenant (M8F-530 #2),
+    // Invite User lives in the header row next to Edit Tenant,
     // not in a per-tab toolbar, so exactly one exists and it survives a tab
     // switch away from Users.
     expect(screen.getAllByTestId('tenant-invite-user-button')).toHaveLength(1);
@@ -406,7 +406,7 @@ describe('TenantManagementPage', () => {
     const groupsButton = screen.getByTestId('tenant-member-manage-groups-button-editor');
     const removeButton = screen.getByTestId('tenant-member-remove-button-editor');
     // Baseline alignment in a plain text cell pushed the icon-first Groups
-    // button ~3px above Remove (M8F-586); a shared items-center flex row fixes it.
+    // button ~3px above Remove; a shared items-center flex row fixes it.
     expect(removeButton.parentElement).toBe(groupsButton.parentElement);
     expect(removeButton.parentElement).toHaveClass('flex', 'items-center');
     expect(removeButton).toHaveAttribute('data-variant', 'ghost-destructive');

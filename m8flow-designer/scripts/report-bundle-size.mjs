@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Repeatable build-size report: walks dist/, prints raw/gzip/brotli size per
 // output file (biggest first) plus totals by extension. This is the tool
-// every performance-track ticket in the m8flow-designer optimization map
+// every performance analysis in the m8flow-designer optimization map
 // (.scratch/m8flow-designer-optimization/map.md) uses for its required
-// before/after comparison — build once here (ticket 01: bundle-and-component
-// audit), reused by every ticket after it, so it's never rebuilt per-ticket.
+// before/after comparison — build once here (bundle-and-component
+// audit), reused by later analyses, so it's never rebuilt for each analysis.
 //
 // Usage: npm run build && npm run build:report
 // Optionally writes machine-readable output too: npm run build:report -- --json > report.json
@@ -42,7 +42,7 @@ try {
 }
 
 const rows = files
-  // .gz/.br are compressed-output-ticket's own artifacts (see ticket 03) —
+  //.gz/.br are compressed build artifacts —
   // measuring their raw size against themselves would be meaningless, and
   // their whole point is captured by measuring the uncompressed original.
   // stats.html is the bundle-analyzer's own dev-time report (only produced

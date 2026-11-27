@@ -39,7 +39,7 @@ import { urlPathEndsWith } from './helpers/urls';
 import { loadBaseline, seedBaselineOnce } from './seed/seed';
 
 /**
- * Seeded catalog run check (M8F-677). Every route in the paths.json files of
+ * Seeded catalog run check. Every route in the paths.json files of
  * the seeded catalog (e2e/seed/catalog/<model>/ and .../templates/<key>/) is run
  * on the seeded model itself, through the screens as a person does: the
  * submitter clicks "Start process" on the model page, and each task is opened
@@ -322,7 +322,7 @@ test.describe('Seeded catalog: every route through every seeded process', () => 
   });
 
   test.afterAll(async ({ browser }) => {
-    // Tenant admin: since M8F-627 only the starter or a tenant admin may delete an instance.
+    // Tenant admin: only the starter or a tenant admin may delete an instance.
     await withPage(browser, tenantAdminCredentials(), (page) => deleteInstanceIds(page, started.splice(0)));
     await closeRolePages();
   });

@@ -45,7 +45,7 @@ as production. The database and role are dropped when the worker finishes.
 ### Test a local collaboration-capable core wheel
 
 The backend lock remains on the published core version until a release
-includes BPMN-08. To verify against a locally built wheel, add it to the
+includes collaboration support. To verify against a locally built wheel, add it to the
 Python import path for a test invocation. On PowerShell, from
 `m8flow-backend` with the backend virtual environment already synced:
 
@@ -69,8 +69,8 @@ with that core. The existing scheduler poller delivers collaboration messages.
 | `test_service_tasks.py` | Service tasks through the host registry and a stub connector proxy: success, secret sentinels, failure recording |
 | `test_scheduler.py` | Intermediate timer jobs created by core and released by `workflow.run_due` |
 | `test_vault_tenant_isolation.py` | Live Vault tenant-token isolation, concurrent first-use provisioning, and fresh-client reconciliation after restart |
-| `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it (M8F-665) |
-| `test_multi_instance_bpmn.py` | Sequential and parallel multi-instance loops: collection and cardinality inputs, output mapping errors, completion conditions, and a parallel review through claim and complete in which each iteration keeps its own data (M8F-640) |
+| `test_error_escalation_events.py` | Uncaught escalation and error end events finish the instance; error and escalation event subprocesses run only when thrown, and an interrupting one cancels the waiting user task beside it |
+| `test_multi_instance_bpmn.py` | Sequential and parallel multi-instance loops: collection and cardinality inputs, output mapping errors, completion conditions, and a parallel review through claim and complete in which each iteration keeps its own data |
 | `test_schema_matches_core.py` | The migrated schema matches core's ORM; the runtime role is subject to RLS |
 | `test_message_correlation.py` | HTTP delivery, replay, ambiguous or missing matches, tenant isolation, and upgrades from both previous host heads |
 | `test_collaboration.py` | Modeled collaboration messages and delivery across isolated tenants |

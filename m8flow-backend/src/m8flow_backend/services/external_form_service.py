@@ -28,7 +28,7 @@ from m8flow_backend.observability.log_sanitize import sanitize_log_value
 LOGGER = logging.getLogger("m8flow.external_forms.service")
 
 # A claim this old belongs to a worker that died mid-send: smtp_client allows 30s per SMTP
-# operation, so no live send gets near it. The sweep reclaims such rows (M8F-575).
+# operation, so no live send gets near it. The sweep reclaims such rows.
 # Lives here (not in external_form_notification_service) so the two modules don't import each other.
 # ponytail: fixed lease; a relay slower than this can be emailed twice -- tune if seen.
 SEND_LEASE_SECONDS = 120
@@ -38,7 +38,7 @@ SEND_LEASE_SECONDS = 120
 # json_metadata["task_definition_properties"]["extensions"]["properties"].
 EXTERNAL_FORM_URL_PROPERTY = "externalFormUrl"
 
-# last_error of a link retired because its task closed without it (M8F-575).
+# last_error of a link retired because its task closed without it.
 TASK_CLOSED_REASON = "The task this link was issued for is no longer open."
 
 
@@ -210,7 +210,7 @@ class ExternalFormService:
     @classmethod
     def reissue(cls, request_id: int, *, tenant_id: str) -> ExternalFormRequestModel:
         """Admin resend: give the recipient a fresh link -- new reference_id, new expiry --
-        and queue it for the notification worker's next sweep (M8F-575).
+        and queue it for the notification worker's next sweep.
 
         Works for any request whose task is still open, including expired, parked, failed
         and delivered ones; otherwise a 409 that says why. Rotating reference_id kills every
@@ -622,7 +622,7 @@ def _publish_requests_created(
             "process_instance_id": process_instance_id,
             "task_guid": task_guid,
             # Row ids, never reference_id: that is the bearer credential in the emailed
-            # link, and the broker retains this message indefinitely (M8F-574).
+            # link, and the broker retains this message indefinitely.
             "request_ids": [row.id for row in created],
             "created_at": datetime.now(timezone.utc).isoformat(),
         },

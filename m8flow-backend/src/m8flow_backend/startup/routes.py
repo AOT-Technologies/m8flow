@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 
 def register_root_route(app) -> None:
-    """Register the public backend root landing page (M8F-409).
+    """Register the public backend root landing page.
 
     The view function from root_controller is registered directly (not wrapped)
     so AuthorizationService.get_fully_qualified_api_function_from_request resolves

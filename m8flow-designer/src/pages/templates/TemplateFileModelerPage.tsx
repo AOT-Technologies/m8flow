@@ -31,7 +31,7 @@ type SavePhase = ModelerSavePhase;
 const ERROR_FLASH_MS = 2500;
 
 /** Adapter passed to `Breadcrumbs`' `LinkComponent` for client-side
- * navigation (component-adoption map, ticket 11). */
+ * navigation. */
 function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps) {
   return (
     <Link to={href} className={className}>
@@ -42,7 +42,7 @@ function RouterBreadcrumbLink({ href, className, children }: BreadcrumbLinkProps
 
 /**
  * One template file in DiagramCanvas — `/templates/:id/modeler/:fileName`
- * (Templates to 100%, ticket 07). Dispatch is the process modeler's
+ * (Templates to 100%). Dispatch is the process modeler's
  * (`bpmn` / `dmn` / `form` / `text`). Saving a published template forks a
  * draft; this page re-anchors on the returned id.
  */
@@ -302,7 +302,7 @@ export default function TemplateFileModelerPage() {
       {saveError ? <Alert tone="error">{saveError}</Alert> : null}
 
       {/* `isolate`: same stacking containment as ProcessModelModelerPage —
-          see the comment there (M8F-524). */}
+          see the comment there. */}
       <main className="isolate min-h-0 flex-1">
         {notFound ? (
           <p className="p-6 text-sm text-muted-foreground" role="status">

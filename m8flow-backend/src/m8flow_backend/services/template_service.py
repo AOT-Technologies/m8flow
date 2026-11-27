@@ -64,10 +64,10 @@ class TemplateService:
             m8f_tenant_id=tenant_id
         )
         rows = query.all()
-        
+
         if not rows:
             return "V1"
-        
+
         latest = max(rows, key=lambda r: cls._version_key(r.version))
         latest_version = (latest.version or "").strip()
 
@@ -273,13 +273,13 @@ class TemplateService:
         # Apply filters
         if category:
             query = query.filter(TemplateModel.category == category)
-        
+
         if owner:
             query = query.filter(TemplateModel.created_by == owner)
-        
+
         if visibility:
             query = query.filter(TemplateModel.visibility == visibility)
-        
+
         if template_key:
             query = query.filter(TemplateModel.template_key == template_key)
 
@@ -297,7 +297,7 @@ class TemplateService:
             )
 
         results: list[TemplateModel] = query.all()
-        
+
         # Filter by tags if provided (after query execution for JSON array compatibility)
         if tag:
             tag_list = [t.strip() for t in tag.split(",") if t.strip()]
@@ -313,7 +313,7 @@ class TemplateService:
                         if any(t in str(row.tags) for t in tag_list):
                             filtered_results.append(row)
                 results = filtered_results
-        
+
         if latest_only:
             # Scope latest versions by tenant + template_key combination
             latest_per_tenant_key: dict[tuple[str, str], TemplateModel] = {}
@@ -370,7 +370,7 @@ class TemplateService:
 
         if not include_deleted:
             query = query.filter(TemplateModel.is_deleted.is_(False))
-        
+
         if not suppress_visibility:
             query = TemplateAuthorizationService.filter_query_by_visibility(query, user=user)
 
@@ -397,10 +397,10 @@ class TemplateService:
         template = query.first()
         if template is None:
             return None
-        
+
         if not TemplateAuthorizationService.can_view(template, user):
             return None
-        
+
         return template
 
     @classmethod
@@ -524,7 +524,7 @@ class TemplateService:
         existing_template = cls.get_template_by_id(template_id, user=user)
         if existing_template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
-        
+
         if not TemplateAuthorizationService.can_edit(existing_template, user):
             raise ApiError("forbidden", "You cannot edit this template", status_code=403)
 
@@ -536,7 +536,7 @@ class TemplateService:
         username_str = username.username if username and hasattr(username, "username") else None
         if username_str is None:
             raise ApiError("unauthorized", "User username not found in request context", status_code=403)
-        
+
         tenant = existing_template.m8f_tenant_id
         key = existing_template.template_key
         version = existing_template.version
@@ -1027,7 +1027,7 @@ class TemplateService:
 
         # Read every template file before creating anything on disk: a file
         # missing from template storage must not leave an empty model
-        # directory behind that blocks a retry with the same id (M8F-650).
+        # directory behind that blocks a retry with the same id.
         contents: dict[str, bytes] = {}
         for file_entry in template.files:
             file_name = file_entry.get("file_name")

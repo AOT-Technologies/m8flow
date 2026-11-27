@@ -1,7 +1,7 @@
 """Pin one authorization idiom in routes/: gates via @require_permission,
 queries via user_has_permission — no inline allow_uri gates.
 
-Architecture review C3 / wayfinder finish-require-permission ticket 06.
+Protect the require_permission authorization idiom.
 """
 
 from __future__ import annotations

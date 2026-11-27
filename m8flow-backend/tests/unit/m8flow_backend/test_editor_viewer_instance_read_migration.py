@@ -1,4 +1,4 @@
-"""Regression tests for revoking editor/viewer tenant-wide instance read (M8F-627)."""
+"""Regression tests for revoking editor/viewer tenant-wide instance read."""
 
 from __future__ import annotations
 

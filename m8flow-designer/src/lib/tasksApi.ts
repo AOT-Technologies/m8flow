@@ -136,7 +136,7 @@ export type TaskReviewInstanceSummary = {
   started_at: string | null;
   last_milestone_bpmn_name: string | null;
   /** Frontend route to the full process-instance detail; null when the caller
-   * may not open that instance (e.g. a submitter on someone else's, M8F-534). */
+   * may not open that instance (e.g. a submitter on someone else's). */
   detail_path: string | null;
 };
 

@@ -2,7 +2,7 @@
 
 Every endpoint is gated by ``@require_permission`` against the ``/m8flow/nats/*`` grant in
 ``config/permissions/m8flow.yml`` (super-admin only, no group fallback). That grant is the
-only authority here, with no role check of its own (M8F-700): broker-wide state and raw
+only authority here, with no role check of its own: broker-wide state and raw
 streams are reported per NATS account, not per tenant, so holding it already means seeing
 every tenant's traffic.
 

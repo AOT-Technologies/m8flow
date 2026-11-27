@@ -33,7 +33,7 @@ import { PARITY_SECOND_TENANT_SLUG, SEED_TENANT_SLUG } from './helpers/fixtures'
 import { seedBaselineOnce } from './seed/seed';
 
 /**
- * Identity + Auth parity (ticket 06). Closed spec: PAR-01–07. Arrange
+ * Identity + Auth parity. Closed spec: PAR-01–07. Arrange
  * invitations/tenants/members via host APIs; act on the designer → backend →
  * Keycloak seam.
  */

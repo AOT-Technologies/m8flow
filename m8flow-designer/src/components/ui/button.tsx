@@ -37,7 +37,7 @@ const buttonVariants = cva(
         // see .scratch/m8flow-designer-optimization/issues/08-consolidate-button-markup.md.
         pill: "gap-2 rounded-full bg-nav-active px-5 py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-foreground uppercase shadow-xs",
         // `--foreground` flips to near-white in dark mode, so the label flips
-        // to `--background` there; a fixed `text-white` vanished (M8F-660).
+        // to `--background` there; a fixed `text-white` vanished.
         "pill-dark":
           "inline-flex items-center gap-2 rounded-full bg-foreground px-[18px] py-2.5 text-[12.5px] font-semibold tracking-[0.04em] text-white uppercase dark:text-background",
         "pill-outline":

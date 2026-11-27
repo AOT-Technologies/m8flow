@@ -39,7 +39,7 @@ export const FilterChips: Story = {
   ),
 }
 
-// Mockup's "selected filter chip" pattern (used later by ticket 07's
+// Mockup's "selected filter chip" pattern (used later by 's
 // MultiSelectDropdown): trailing X instead of a chevron.
 export const Removable: Story = {
   args: {
@@ -66,7 +66,7 @@ export const RemovableChips: Story = {
 }
 
 // Visually-present, non-interactive "inert" chip (`processes`/`templates`
-// page adoption, ticket 20) — a filter chip that exists as chrome but isn't
+// page adoption) — a filter chip that exists as chrome but isn't
 // wired to a real dropdown yet.
 export const Disabled: Story = {
   args: { children: 'Any status', disabled: true, onClick: () => {} },

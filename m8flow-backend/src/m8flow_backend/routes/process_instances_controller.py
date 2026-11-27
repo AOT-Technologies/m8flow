@@ -14,7 +14,7 @@ from m8flow_backend.auth import require_tenant_id, resolve_read_tenant_id
 _EMPTY_PAGE = {"results": [], "pagination": {"count": 0, "total": 0, "pages": 0}}
 # Read gate for every instance view: tenant-wide readers match it through their
 # /process-instances grant, submitters through their own-instance grant. Handlers
-# then narrow to the caller's own instances via instance_initiator_scope (M8F-534).
+# then narrow to the caller's own instances via instance_initiator_scope.
 _OWN_INSTANCES_URI = "/v1.0/process-instances/for-me"
 
 
@@ -52,7 +52,7 @@ def _instance_or_404(
     their follow-up reads onto its own concrete tenant.
 
     With ``user``, a caller without tenant-wide instance read also gets 404 for an
-    instance they neither started nor have a task assigned in (M8F-534/M8F-653);
+    instance they neither started nor have a task assigned in;
     with ``manage`` (lifecycle writes), for any instance they did not start.
 
     Replaces the identical three-line block formerly repeated in every
@@ -116,7 +116,7 @@ def list_process_instances():
         sort=sort,
         page=page,
         per_page=per_page,
-        # Own-instance readers are always narrowed (M8F-653: started or assigned);
+        # Own-instance readers are always narrowed (started or assigned);
         # tenant-wide readers only when they pick a scope.
         viewer_id=user.id if scope or instance_initiator_scope(user, session=session) else None,
         scope=scope,
@@ -180,9 +180,9 @@ def get_process_instance(process_instance_id: int):
     )
     if detail is None:
         raise ApiError("not_found", "Process instance not found", 404)
-    # The diagram is the model's BPMN source: the full XML follows file-read
-    # (M8F-534); other instance readers get it without model logic (M8F-651).
-    # A called child's diagram follows file-read on the child model.
+    # Full BPMN XML requires file-read permission on the diagram's model.
+    # Other instance readers receive a diagram with model logic removed.
+    # A called child's diagram requires file-read permission on the child model.
     diagram_model_identifier = (detail["called_process"] or {}).get(
         "process_model_identifier", detail["process_model_identifier"]
     )
@@ -353,7 +353,7 @@ def list_process_instance_pending_tasks(process_instance_id: int):
         user_id=user.id,
     )
     # Go opens Task Review: a candidate who cannot submit there would land on
-    # Home instead (M8F-647), so can_complete also needs the submit grant.
+    # Home instead, so can_complete also needs the submit grant.
     can_submit = user_has_permission(
         user, "POST", "/v1.0/m8flow/task-review-access/{id}/submit", session=session
     )
@@ -396,7 +396,7 @@ def _lifecycle_write(process_instance_id: int, action: str):
     Route wrappers deny missing execute permission with 403 before looking up
     the instance. For permitted callers, missing, cross-tenant, or out-of-scope
     instances return 404. Own-instance readers can manage only instances they
-    started, even if they have a task in another instance (M8F-627/M8F-653).
+    started, even if they have a task in another instance.
     Invalid lifecycle states return 409.
     """
     user = require_current_user()
@@ -476,7 +476,7 @@ def delete_process_instance(process_instance_id: int):
     """Permanently delete a finished (complete / terminated / error) instance.
     RBAC: DELETE on the instance URI (YAML delete on ``/process-instances/*``).
     Missing, other tenant, or (for own-instance readers) started by someone
-    else, even one they have a task in -> 404 (M8F-627/M8F-653); still active or suspended -> 409.
+    else, even one they have a task in -> 404; still active or suspended -> 409.
     """
     user = require_current_user()
     session = g.db_session

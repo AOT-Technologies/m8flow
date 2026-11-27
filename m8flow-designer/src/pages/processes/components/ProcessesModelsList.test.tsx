@@ -44,7 +44,7 @@ describe('ProcessesModelsList', () => {
     expect(onOpen).toHaveBeenCalledWith(MODELS[0]);
   });
 
-  it('drops the run-metric columns when the backend sends none (M8F-534)', () => {
+  it('drops the run-metric columns when the backend sends none', () => {
     render(
       <ProcessesModelsList
         models={MODELS.map((model) => ({ ...model, runs_30d: null, last_run_at: null }))}
@@ -140,7 +140,7 @@ describe('ProcessesModelsList', () => {
     expect(screen.queryByRole('menuitem', { name: 'Delete' })).not.toBeInTheDocument();
   });
 
-  // --- Publish lifecycle (M8F-508) -------------------------------------
+  // --- Publish lifecycle -------------------------------------
 
   it('renders the real status for each model instead of a blank cell', () => {
     render(<ProcessesModelsList models={MODELS} />);
@@ -239,7 +239,7 @@ describe('ProcessesModelsList', () => {
   });
 
   it('treats a model with no status as published, matching the backend default', () => {
-    // Version skew: a backend older than M8F-508 sends no `status`. Defaulting
+    // Version skew: a backend without publish lifecycle support sends no `status`. Defaulting
     // to draft here would mark every legacy model Draft and strip its Start
     // button while the backend starts it happily (api.yml documents
     // absent => published).

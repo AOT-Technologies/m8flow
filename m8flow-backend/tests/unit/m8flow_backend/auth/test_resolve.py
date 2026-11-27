@@ -1,7 +1,7 @@
 """Direct unit tests on the active-tenant SELECTION core (resolve.py).
 
 No Flask, no DB, no Keycloak -- `Directory` and `TenantRepo` are in-memory
-fakes, per the active-tenant deep-module map (ticket 02's design, ticket 03's
+fakes, per the active-tenant deep-module map ('s design's
 collapse). This is the test surface the multi-org RBAC rules (AGENTS.md) now
 run through, instead of only a 1700-line route test.
 """

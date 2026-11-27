@@ -3,7 +3,7 @@
 // .scratch/m8flow-designer-optimization/issues/07-derive-bundle-size-budgets.md:
 // the combined gzip size of the main entry chunk + `vendor-react` +
 // `vendor-ui` (everything a user's first paint pays for, before any route
-// lazy-loads) must stay under 155 KB gzip (150 KB until M8F-533 added the
+// lazy-loads) must stay under 155 KB gzip (150 KB before the addition of the
 // i18next runtime, agreed in PR #266). Reuses report-bundle-size.mjs's
 // own gzip computation (spawned with --json) rather than re-implementing
 // it, so the two scripts can't silently drift apart.
@@ -11,8 +11,8 @@
 // Usage: npm run build && npm run check:initial-load-budget
 //
 // Deliberately does NOT cover the modeler-route chunks (BpmnCanvas/
-// DmnCanvas/properties-panel-fields/EditorDialog) — ticket 07 decided
-// those stay "track, don't gate", not a CI-enforced ceiling.
+// DmnCanvas/properties-panel-fields/EditorDialog): those are tracked
+// without a CI-enforced ceiling.
 
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -20,10 +20,10 @@ import path from 'node:path';
 
 const BUDGET_GZIP_BYTES = 155 * 1024;
 
-// Matches the three chunk-name prefixes ticket 06's `manualChunks` and
+// Matches the three chunk-name prefixes that `manualChunks` and
 // Vite's own default main-entry naming produce. `.js` only — `index-*.css`
-// (the app's stylesheet) is a separate, un-budgeted asset; ticket 07's
-// number was computed from JS chunks only, so silently folding CSS in here
+// (the app's stylesheet) is a separate, un-budgeted asset; the budget
+// was computed from JS chunks only, so silently folding CSS in here
 // would change what's being enforced without a new decision.
 const INITIAL_LOAD_PATTERN = /^assets\/(index|vendor-react|vendor-ui)-[^/]+\.js$/;
 
@@ -44,7 +44,7 @@ const matched = report.files.filter((f) => INITIAL_LOAD_PATTERN.test(f.file));
 if (matched.length === 0) {
   console.error(
     `No files matched ${INITIAL_LOAD_PATTERN} in the build output — the chunk-naming ` +
-      'convention ticket 06 established may have changed. Not silently passing: fix this ' +
+      'convention may have changed. Not silently passing: fix this ' +
       'pattern (or investigate why the expected chunks are missing) before trusting this gate.',
   );
   process.exit(1);

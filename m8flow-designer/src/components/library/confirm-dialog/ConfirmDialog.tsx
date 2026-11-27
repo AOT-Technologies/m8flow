@@ -37,8 +37,7 @@ export interface ConfirmDialogProps {
    */
   tone?: ConfirmDialogTone
   /**
-   * Marks the confirmation as in flight (component-adoption map, ticket
-   * 25) — disables both Cancel and Confirm, and hands control of *when the
+   * Marks the confirmation as in flight— disables both Cancel and Confirm, and hands control of *when the
    * dialog closes* to the caller: Confirm's default click-to-close (via
    * Radix's own `AlertDialogAction` behavior, which normally fires
    * `onOpenChange(false)` on every click) is suppressed for the whole

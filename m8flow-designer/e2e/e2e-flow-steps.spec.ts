@@ -71,7 +71,7 @@ async function start(browser: Browser, key: string, persona: DesignerPersona = s
   return withPage(browser, persona, (p) => startInstance(p, flow, flow.model(key).route));
 }
 
-/** Instance status and data are read as the tenant admin (sees every instance, M8F-627). */
+/** Instance status and data are read as the tenant admin (sees every instance). */
 /** The submitter fills the purchase request (the step before the two approvals) in Task Review. */
 async function submitRequest(browser: Browser, id: number, item = 'Laptop'): Promise<void> {
   await withPage(browser, submitterCredentials(), (sub) => completeTaskInUi(sub, id, { Item: item, Amount: '1200' }, request.name));
@@ -262,7 +262,7 @@ test.describe('Process flow: multi-step and conditional workflows', { tag: ['@wo
     const reviewerBefore = await withPage(browser, reviewerCredentials(), homeStats);
     const submitterBefore = await withPage(browser, submitterCredentials(), homeStats);
 
-    // Terminate is for the starter or a tenant admin (M8F-627); the submitter started it.
+    // Terminate is for the starter or a tenant admin; the submitter started it.
     await useSession(page, tenantAdminCredentials());
     await page.goto(`/process-instances/${id}`);
     await page.getByRole('button', { name: 'Terminate', exact: true }).click();

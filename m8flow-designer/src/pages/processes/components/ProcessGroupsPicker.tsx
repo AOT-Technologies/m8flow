@@ -116,7 +116,7 @@ export function ProcessGroupsPicker({
   /**
    * Suggested id: the slugified display name, suffixed when already taken.
    * Deliberately top-level — inheriting the selected group's path nested one
-   * level deeper on every create (M8F-532). Type a path to nest.
+   * level deeper on every create. Type a path to nest.
    */
   function suggestId(displayName: string): string {
     const slug = slugifyProcessModelId(displayName);

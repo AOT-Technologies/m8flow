@@ -25,7 +25,7 @@ export type ProcessInstancesListProps = {
   onSearchChange: (value: string) => void;
   status: string;
   onStatusChange: (value: string) => void;
-  /** `completed=today` filter (Home "Completed today" card, M8F-711); shown as a removable chip. */
+  /** `completed=today` filter (Home "Completed today" card); shown as a removable chip. */
   completedToday?: boolean;
   onClearCompletedToday?: () => void;
   owners: string[];
@@ -70,8 +70,7 @@ const STATUS_OPTIONS: { value: string; labelKey: ParseKeys }[] = [
 
 // Values must match the backend allowlist (workflow.py `_INSTANCE_SORTS`).
 // Labels are bare (no "Sort: " prefix baked in) — `SortDropdown` supplies
-// that prefix itself via its `label` prop (component-adoption map, ticket
-// 19); the union type on onSortChange keeps the values honest.
+// that prefix itself via its `label` prop ; the union type on onSortChange keeps the values honest.
 const SORT_OPTIONS: { value: ProcessInstanceSort; labelKey: ParseKeys }[] = [
   { value: 'newest', labelKey: 'processInstances.list.sort.newest' },
   { value: 'oldest', labelKey: 'processInstances.list.sort.oldest' },
@@ -284,7 +283,7 @@ export function ProcessInstancesList({
             className="min-w-0"
           />
 
-          {/* The backend returns no owners to own-instance readers (M8F-627). */}
+          {/* The backend returns no owners to own-instance readers. */}
           {owners.length > 0 && (
             <SortDropdown
               label={t('processInstances.fields.startedBy')}

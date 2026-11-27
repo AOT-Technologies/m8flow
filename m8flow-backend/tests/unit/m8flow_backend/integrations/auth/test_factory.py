@@ -50,7 +50,7 @@ def test_unknown_provider_name_raises(monkeypatch):
 def test_register_auth_provider_is_selectable_without_touching_call_sites(monkeypatch):
     class FakeProvider(AuthProvider):
         """Bare stub proving registration works, matching today's runtime
-        NotImplementedError behavior -- ABC + @abstractmethod (ticket 13)
+        NotImplementedError behavior -- ABC + @abstractmethod
         means it must implement every required method to be instantiable,
         even though this test never calls any of them."""
 

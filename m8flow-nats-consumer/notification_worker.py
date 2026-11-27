@@ -59,7 +59,7 @@ FETCH_TIMEOUT = float(os.getenv("M8FLOW_NATS_FETCH_TIMEOUT", "2.0"))
 MAX_RECONNECTS = int(os.getenv("M8FLOW_NATS_MAX_RECONNECTS", "-1"))
 
 # notify() reports these instead of raising: nothing reached the recipient, so the event is
-# a failure in the audit trail even though no exception escaped (M8F-575). Every other
+# a failure in the audit trail even though no exception escaped. Every other
 # result is not: "sent:unrecorded" did go out, and skipped:task_closed / not_claimable /
 # unknown_request are emails rightly not sent.
 _UNDELIVERED_RESULTS = ("failed:", "skipped:smtp_unconfigured", "skipped:unsafe_url")
@@ -331,7 +331,7 @@ async def process_message(msg: Any) -> None:
 
         tenant_id = data.get("tenant_id")
         request_ids = data.get("request_ids")
-        # A pre-M8F-574 message carries reference_ids instead. It is discarded here, and the
+        # An unsigned legacy message carries reference_ids instead. It is discarded here, and the
         # sweep emails its rows after the grace period.
         ids_ok = isinstance(request_ids, list) and request_ids and all(type(i) is int for i in request_ids)
         if not tenant_id or not ids_ok:
@@ -414,7 +414,7 @@ async def main() -> None:
 
     if not nats_enabled():
         # The sweep reads only the database, so it delivers external-form emails without
-        # NATS; idling here left every request pending forever (M8F-574).
+        # NATS; idling here left every request pending forever.
         logger.warning("M8FLOW_NATS_ENABLED is not true: running the email sweep without NATS.")
         await sweep_loop()
         return

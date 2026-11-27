@@ -480,7 +480,7 @@ describe('ProcessesPage', () => {
     expect(screen.getByRole('button', { name: /New group/i })).toBeInTheDocument();
   });
 
-  it('hides publish lifecycle actions from a viewer (M8F-508)', async () => {
+  it('hides publish lifecycle actions from a viewer', async () => {
     // A viewer has canManageProcesses=true (it holds `create` on
     // /process-instances) but cannot write process models. Gating the
     // lifecycle on canManageProcesses showed viewers a Publish/Pause they

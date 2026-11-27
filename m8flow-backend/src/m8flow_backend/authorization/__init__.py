@@ -22,7 +22,7 @@ from m8flow_backend.observability.log_sanitize import sanitize_log_value
 # all. Without stripping it here, _uri_permitted's DB-backed grant check can
 # never match any real request -- see architecture review finding C5.
 _API_PATH_PREFIX = "/v1.0"
-# GET here is tenant-wide instance read (M8F-534/M8F-627): instance_initiator_scope
+# GET here is tenant-wide instance read: instance_initiator_scope
 # tests it, and the editor role-name fallback must never stand in for it.
 _TENANT_WIDE_INSTANCE_READ_PATH = "/process-instances"
 
@@ -465,7 +465,7 @@ def user_has_permission(
 
 
 def instance_initiator_scope(user: UserModel, *, session: Session | None = None) -> int | None:
-    """The initiator a caller's process-instance reads are narrowed to (M8F-534).
+    """The initiator a caller's process-instance reads are narrowed to.
 
     None when the caller holds tenant-wide instance read (``GET /process-instances``);
     otherwise ``user.id``, so they see only instances they started. Instance routes
@@ -792,7 +792,7 @@ def _group_identifier_fallback(user: UserModel, path: str, action: str | None = 
     identifiers = [getattr(group, "identifier", "") or "" for group in _active_tenant_groups(user)]
     if any(item == SUPER_ADMIN_ROLE or item.endswith(":tenant-admin") for item in identifiers):
         return True
-    # Editors read only instances they started (M8F-627): the fallback must not
+    # Editors read only instances they started: the fallback must not
     # imply tenant-wide instance read, or instance_initiator_scope widens them again.
     # Accept HTTP verbs in any case; a call without an action counts as a read (fail closed).
     normalized_action = "read" if action is None else _method_to_action(action)

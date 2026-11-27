@@ -34,7 +34,7 @@ class ExternalFormRequestStatus(str, enum.Enum):
     smtp_unconfigured = "smtp_unconfigured"
     # The task this link was issued for closed without it -- its process instance was
     # terminated, or the task was cancelled -- so the link can never complete it. Terminal,
-    # like superseded. See ExternalFormService.cancel_if_task_closed (M8F-575).
+    # like superseded. See ExternalFormService.cancel_if_task_closed.
     cancelled = "cancelled"
 
 

@@ -78,8 +78,7 @@ def set_user_attribute(
     Fetches the user representation, merges just the one attribute, and PUTs it
     back -- the shape Keycloak's Admin API expects. Used by the tenant switch to
     write ``m8flow_active_tenant`` so a subsequent refresh_token grant re-mints a
-    token carrying the target org's claims (RealmInfoMapper reads this attribute;
-    active-tenant deep-module map, ticket 09/10).
+    token carrying the target org's claims.
     """
     if not realm or not str(realm).strip():
         raise ValueError("realm is required")

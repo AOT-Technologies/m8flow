@@ -32,7 +32,7 @@ export type HomeStatsGridProps = {
   canOpenTasks?: boolean;
 };
 
-/** Filtered list each card links to (M8F-711). Tenant scope comes from the
+/** Filtered list each card links to. Tenant scope comes from the
  * m8flow_selected_tenant cookie on the destination page, so it isn't in the URL. */
 export const STAT_CARD_LINKS = {
   active: '/process-instances?status=active',
@@ -62,7 +62,7 @@ function formatAvgMinutes(value: number | null | undefined, unit: string): React
 
 /**
  * Home page 2×3 KPI grid wired to GET /v1.0/m8flow/home-stats.
- * Null fields (permission-gated per ticket 03) render as an em dash.
+ * Null fields (permission-gated per) render as an em dash.
  */
 export function HomeStatsGrid({
   tenantId = null,
