@@ -152,9 +152,11 @@ export function ProcessInstancesList({
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
-  // All-tenants adds the Tenant column, so it tightens the other columns and drops Involvement to
-  // fit common screen widths (keyed to the view, not the rows, so columns don't shift between
-  // pages). The single-tenant view keeps its original widths.
+  // All-tenants adds the Tenant column, so it tightens the other columns and only shows
+  // Involvement when a row on this page has a Started/Assigned tag (an empty column would just
+  // push the table past common screen widths). The single-tenant view keeps its original layout.
+  const showInvolvement = !showTenant || instances.some((i) => i.started_by_me || i.assigned_to_me);
+
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
     ...(showTenant
       ? [
@@ -207,7 +209,7 @@ export function ProcessInstancesList({
       className: 'truncate text-[13px] text-muted-foreground',
       render: (instance) => <TruncatedText text={instance.started_by} />,
     },
-    ...(!showTenant
+    ...(showInvolvement
       ? [
           {
             key: 'involvement',

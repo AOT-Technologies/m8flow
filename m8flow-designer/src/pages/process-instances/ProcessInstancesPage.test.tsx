@@ -100,12 +100,25 @@ describe('ProcessInstancesPage', () => {
     // Truncatable cells expose their full value on hover.
     expect(screen.getByText('Tenant One')).toHaveAttribute('title', 'Tenant One');
     expect(screen.getAllByText('Invoice Approval')[0]).toHaveAttribute('title', 'Invoice Approval');
-    // All-tenants drops Involvement (even when a row has some) so the Tenant column fits.
-    expect(screen.queryByRole('columnheader', { name: 'Involvement' })).not.toBeInTheDocument();
+    // A row on this page has an involvement tag, so All-tenants keeps the column and its indicator.
+    expect(screen.getByRole('columnheader', { name: 'Involvement' })).toBeInTheDocument();
+    expect(screen.getByText('Started by me')).toBeInTheDocument();
     // The flex-item page must be allowed to shrink so only the table scrolls, not the page.
     expect(screen.getByRole('main')).toHaveClass('min-w-0');
     // All Tenants means "no tenant filter" -- the param must be omitted.
     expect(lastListUrl(fetchMock)).not.toContain('tenantId=');
+  });
+
+  it('drops the empty Involvement column in the All-tenants view', async () => {
+    stubFetch({
+      results: [mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+
+    await screen.findByText('Tenant One');
+    expect(screen.queryByRole('columnheader', { name: 'Involvement' })).not.toBeInTheDocument();
   });
 
   it('fetches and renders instances for a concrete tenant', async () => {
