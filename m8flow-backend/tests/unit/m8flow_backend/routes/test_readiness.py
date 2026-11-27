@@ -18,7 +18,7 @@ def test_readyz_and_status_return_200_when_db_is_up(client):
         assert body["ok"] is True
         assert body["healthy"] is True
         assert body["status"] == "ok"
-        assert body["API version"] == api_version
+        assert body["api_version"] == api_version
 
 
 def test_ping_and_healthy_stay_liveness_when_db_is_down(client, monkeypatch):
@@ -51,4 +51,4 @@ def test_readyz_and_status_return_503_when_db_unreachable(client, monkeypatch):
         body = response.get_json()
         assert body["ok"] is False
         assert body["healthy"] is False
-        assert body["API version"] == api_version
+        assert body["api_version"] == api_version

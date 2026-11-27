@@ -14,6 +14,8 @@ import psycopg
 from psycopg.types.json import Json
 import yaml
 
+from m8flow_backend.api_versions import api_version_prefix_for_configured_value
+
 ADDR = os.getenv("M8FLOW_VAULT_INTERNAL_ADDR", "http://vault:8200").rstrip("/")
 STATE = Path(os.getenv("M8FLOW_VAULT_DEMO_STATE_DIR", "/vault/demo"))
 SECRETS = Path(os.getenv("M8FLOW_VAULT_DEMO_SECRETS_FILE", "/app/docker/vault/demo/secrets.yml"))
@@ -55,10 +57,15 @@ def tenant_id_from_database(conn: psycopg.Connection | None = None) -> str:
 
 
 def wait_for_backend_health() -> None:
-    health_url = os.getenv(
-        "M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL",
-        f"http://m8flow-backend:6840/v{os.getenv('M8FLOW_API_VERSION', '1.0')}/healthy",
-    )
+    try:
+        version_prefix = api_version_prefix_for_configured_value(
+            os.getenv("M8FLOW_API_VERSION")
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    health_url = os.getenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL")
+    if not health_url:
+        health_url = f"http://m8flow-backend:6840{version_prefix}/healthy"
     try:
         timeout_seconds = float(
             os.getenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "600")

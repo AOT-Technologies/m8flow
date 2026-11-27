@@ -47,7 +47,7 @@ def register_v1_routes(app: Flask) -> None:
     def readiness():
         payload, code = get_ready_response()
         api_version = api_version_prefix_for_path(request.path).removeprefix("/v")
-        return jsonify({**payload, "API version": api_version}), code
+        return jsonify({**payload, "api_version": api_version}), code
 
     app.post(_v1_route("permissions-check"))(permissions_check)
 

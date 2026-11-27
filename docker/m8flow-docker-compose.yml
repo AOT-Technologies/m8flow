@@ -560,7 +560,7 @@ services:
         condition: service_started
     healthcheck:
       test:
-        ["CMD", "python", "-c", "import os, urllib.request; version=os.environ.get('M8FLOW_API_VERSION', '1.0'); response=urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('M8FLOW_BACKEND_PORT', '6840') + '/v' + version + '/healthy', timeout=5); status=response.status; response.close(); raise SystemExit(0 if 200 <= status < 300 else 1)"]
+        ["CMD", "python", "-m", "m8flow_backend.healthcheck"]
       interval: 10s
       timeout: 6s
       retries: 12

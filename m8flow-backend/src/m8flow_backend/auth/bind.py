@@ -91,17 +91,21 @@ _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
     + _UNVERSIONED_TENANT_CONTEXT_EXEMPT_PATHS
 )
 
-# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
-TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = (
-    _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
-    + (
-        tuple(
-            f"{_WSGI_PATH_PREFIX}{p}"
-            for p in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
-        )
-        if _WSGI_PATH_PREFIX
-        else ()
+def tenant_context_exempt_path_prefixes(wsgi_path_prefix: str | None) -> tuple[str, ...]:
+    """Build exempt paths for stripped and prefix-preserving ingress modes."""
+    prefix = (wsgi_path_prefix or "").strip().rstrip("/")
+    if prefix and not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+    if not prefix:
+        return _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
+    return _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES + tuple(
+        f"{prefix}{path}" for path in _BASE_TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
     )
+
+
+# See the path-prefix rule explained above `_WSGI_PATH_PREFIX`.
+TENANT_CONTEXT_EXEMPT_PATH_PREFIXES: tuple[str, ...] = tenant_context_exempt_path_prefixes(
+    _WSGI_PATH_PREFIX
 )
 
 # Path suffixes for pre-login tenant selection (no tenant context required).

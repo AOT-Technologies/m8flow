@@ -3,14 +3,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from flask import Flask, jsonify
 
 from m8flow_backend.api_versions import (
-    API_BASE_PATHS,
     API_VERSION_SPEC_FILES,
     API_VERSION_PREFIXES,
     DEFAULT_API_VERSION_PREFIX,
     api_version_prefix_for_path,
+    api_version_prefix_for_configured_value,
     expand_versioned_paths,
     register_flask_version_aliases,
     strip_api_version_prefix,
@@ -20,8 +21,24 @@ from m8flow_backend.api_versions import (
 def test_api_version_registry_exposes_v1_default_and_v2_paths():
     assert DEFAULT_API_VERSION_PREFIX == "/v1.0"
     assert API_VERSION_PREFIXES == ("/v1.0", "/v2.0")
-    assert API_BASE_PATHS == ("/v1.0/m8flow", "/v2.0/m8flow")
     assert API_VERSION_SPEC_FILES == {"/v1.0": "api-v1.yml", "/v2.0": "api-v2.yml"}
+
+
+@pytest.mark.parametrize(
+    ("configured_value", "expected_prefix"),
+    [(None, "/v1.0"), ("", "/v1.0"), ("  ", "/v1.0"), ("1.0", "/v1.0"), ("2.0", "/v2.0")],
+)
+def test_configured_api_version_resolves_only_supported_versions(
+    configured_value, expected_prefix
+):
+    assert api_version_prefix_for_configured_value(configured_value) == expected_prefix
+
+
+@pytest.mark.parametrize("configured_value", ["v2.0", "3.0", "2", "2.0/healthy"])
+def test_invalid_configured_api_version_fails_with_supported_values(configured_value):
+    with pytest.raises(ValueError, match="Unsupported M8FLOW_API_VERSION") as exc_info:
+        api_version_prefix_for_configured_value(configured_value)
+    assert "1.0, 2.0" in str(exc_info.value)
 
 
 def test_designer_and_backend_api_version_registries_match():
@@ -85,6 +102,11 @@ def test_flask_route_alias_uses_the_same_view_for_each_supported_version():
 
     register_flask_version_aliases(app)
 
+    rules = {rule.rule: rule for rule in app.url_map.iter_rules()}
+    assert all(f"{prefix}/status" in rules for prefix in API_VERSION_PREFIXES)
+    assert rules["/v1.0/status"].endpoint == rules["/v2.0/status"].endpoint
+    assert app.view_functions[rules["/v1.0/status"].endpoint] is status
+
     client = app.test_client()
     for version_prefix in API_VERSION_PREFIXES:
         response = client.get(f"{version_prefix}/status")
@@ -135,7 +157,10 @@ def test_unsupported_api_version_paths_return_not_found(client):
 
 
 def test_supported_api_versions_receive_the_same_tenant_context_exemptions():
-    from m8flow_backend.auth.bind import TENANT_CONTEXT_EXEMPT_PATH_PREFIXES, path_matches_any_prefix
+    from m8flow_backend.auth.bind import (
+        TENANT_CONTEXT_EXEMPT_PATH_PREFIXES,
+        path_matches_any_prefix,
+    )
 
     for version_prefix in API_VERSION_PREFIXES:
         for suffix in ("/status", "/login", "/m8flow/session", "/m8flow/openapi.json"):
@@ -148,6 +173,66 @@ def test_supported_api_versions_receive_the_same_tenant_context_exemptions():
         assert path_matches_any_prefix(
             f"{version_prefix}/tasks", TENANT_CONTEXT_EXEMPT_PATH_PREFIXES
         ) is False
+
+
+@pytest.mark.parametrize("version_prefix", API_VERSION_PREFIXES)
+def test_wsgi_ingress_prefix_modes_keep_versioned_route_exemptions_scoped(
+    version_prefix, monkeypatch
+):
+    from flask import Flask
+
+    import m8flow_backend.auth.bind as tenant_bind
+    from m8flow_backend.auth.bind import (
+        path_matches_any_prefix,
+        tenant_context_exempt_path_prefixes,
+    )
+
+    prefixes = tenant_context_exempt_path_prefixes("/api")
+
+    # An ingress that preserves /api reaches Flask with that prefix in PATH_INFO.
+    assert path_matches_any_prefix(f"/api{version_prefix}/status", prefixes)
+    # An ingress that strips /api exposes the same route at the app root.
+    assert path_matches_any_prefix(f"{version_prefix}/status", prefixes)
+    # Neither mode can turn a protected task route into an exemption.
+    assert not path_matches_any_prefix(f"/api{version_prefix}/tasks", prefixes)
+    assert not path_matches_any_prefix(f"{version_prefix}/tasks", prefixes)
+
+    app = Flask(__name__)
+    monkeypatch.setattr(tenant_bind, "TENANT_CONTEXT_EXEMPT_PATH_PREFIXES", prefixes)
+    # A prefix-preserving ingress presents the prefix in PATH_INFO. A stripped
+    # ingress mounts the app under SCRIPT_NAME and presents only the API path.
+    with app.test_request_context(f"/api{version_prefix}/status"):
+        assert tenant_bind._path_is_exempt()
+    with app.test_request_context(
+        f"{version_prefix}/status", environ_overrides={"SCRIPT_NAME": "/api"}
+    ):
+        assert tenant_bind._path_is_exempt()
+    with app.test_request_context(f"/api{version_prefix}/tasks"):
+        assert not tenant_bind._path_is_exempt()
+
+
+def test_backend_compose_healthcheck_uses_validated_configured_api_version():
+    compose_file = Path(__file__).resolve().parents[4] / "docker" / "m8flow-docker-compose.yml"
+    compose_source = compose_file.read_text(encoding="utf-8")
+    healthcheck = compose_source.split("  m8flow-backend:", 1)[1].split(
+        "  m8flow-celery-worker:", 1
+    )[0]
+    assert '"-m", "m8flow_backend.healthcheck"' in healthcheck
+
+
+def test_designer_nginx_proxies_versioned_paths_and_preserves_the_original_uri():
+    config_file = Path(__file__).resolve().parents[4] / "docker" / "m8flow-designer-nginx.conf.template"
+    config = config_file.read_text(encoding="utf-8")
+    location = re.search(r"location\s+~\s+(.+?)\s*\{", config)
+    assert location is not None, "Could not find versioned API proxy location"
+    proxy_pattern = re.compile(location.group(1))
+
+    for path in ("/v1.0/status", "/v2.0/m8flow/tasks", "/v99.0/status"):
+        assert proxy_pattern.search(path), path
+    assert not proxy_pattern.search("/api/status")
+    # Unknown version-like paths are deliberately forwarded; the backend owns
+    # the supported-version 404 contract. Keep the full URI when proxying.
+    assert "proxy_pass $backend$request_uri;" in config
 
 
 def test_versioned_fallback_routes_are_registered_for_each_supported_version(app):

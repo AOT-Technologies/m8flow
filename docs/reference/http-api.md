@@ -75,7 +75,7 @@ These endpoints need no token:
 |---|---|
 | `GET /v1.0/healthy`, `GET /v1.0/ping` | Liveness |
 | `GET /v1.0/readyz` | Readiness, for load balancers and deployment checks |
-| `GET /v1.0/status` | `{"healthy": true, "ok": true, "status": "ok", "API version": "1.0"}` when the backend is up; `/v2.0/status` returns the same health fields with `"API version": "2.0"` |
+| `GET /v1.0/status` | `{"healthy": true, "ok": true, "status": "ok", "api_version": "1.0"}` when the backend is up; `/v2.0/status` returns the same health fields with `"api_version": "2.0"` |
 
 ## Permission checks
 

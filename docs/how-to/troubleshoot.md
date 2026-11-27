@@ -12,7 +12,7 @@ Before you look up a symptom, collect the following:
   `docker compose --env-file .env -f docker/m8flow-docker-compose.yml ps`.
   A service that is `exited` or `restarting` is usually the cause.
 - **Backend health.** Run `curl http://localhost:6840/v1.0/status`. A healthy
-  backend answers `{ "healthy": true, "ok": true, "status": "ok", "API version": "1.0" }`.
+  backend answers `{ "healthy": true, "ok": true, "status": "ok", "api_version": "1.0" }`.
 - **Backend logs.** Run
   `docker compose --env-file .env -f docker/m8flow-docker-compose.yml logs --tail 200 m8flow-backend`.
   The backend logs the reason for most startup failures.

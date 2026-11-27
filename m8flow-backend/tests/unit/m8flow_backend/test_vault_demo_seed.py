@@ -406,6 +406,52 @@ def test_backend_health_wait_retries_until_healthy(monkeypatch, capsys):
     assert "backend is healthy" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("version", ["v2.0", "3.0", "2", "2.0/healthy"])
+def test_backend_health_wait_rejects_invalid_api_version_before_request(
+    monkeypatch, version
+):
+    module = _seed_module()
+    monkeypatch.delenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_API_VERSION", version)
+    monkeypatch.setattr(
+        module.request,
+        "urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid version should fail before network access")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Unsupported M8FLOW_API_VERSION"):
+        module.wait_for_backend_health()
+
+
+def test_backend_health_wait_empty_api_version_defaults_to_v1(monkeypatch):
+    module = _seed_module()
+    calls = []
+
+    class HealthyResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.delenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_URL", raising=False)
+    monkeypatch.setenv("M8FLOW_API_VERSION", "")
+    monkeypatch.setattr(
+        module.request,
+        "urlopen",
+        lambda url, *, timeout: (calls.append((url, timeout)) or HealthyResponse()),
+    )
+    monkeypatch.setenv("M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS", "1")
+
+    module.wait_for_backend_health()
+
+    assert calls[0][0] == "http://m8flow-backend:6840/v1.0/healthy"
+
+
 def test_backend_health_wait_times_out_with_actionable_diagnostics(monkeypatch):
     module = _seed_module()
     monotonic_values = iter([0.0, 2.0])
@@ -442,7 +488,7 @@ def test_compose_keeps_backend_independent_and_seeds_after_health():
     assert vault_seed["environment"]["M8FLOW_VAULT_DEMO_BACKEND_HEALTH_TIMEOUT_SECONDS"] == "600"
     assert backend["healthcheck"]
     healthcheck_command = " ".join(backend["healthcheck"]["test"])
-    assert "200 <= status < 300" in healthcheck_command
+    assert "m8flow_backend.healthcheck" in healthcheck_command
     assert backend["healthcheck"]["start_period"] == "300s"
     assert backend["healthcheck"]["retries"] == 12
     assert "vault-demo" not in backend["depends_on"]

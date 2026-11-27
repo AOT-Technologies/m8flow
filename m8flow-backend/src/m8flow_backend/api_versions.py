@@ -15,7 +15,23 @@ API_VERSION_SPEC_FILES: dict[str, str] = {
 }
 API_VERSION_PREFIXES: tuple[str, ...] = tuple(API_VERSION_SPEC_FILES)
 DEFAULT_API_VERSION_PREFIX = API_VERSION_PREFIXES[0]
-API_BASE_PATHS: tuple[str, ...] = tuple(f"{prefix}/m8flow" for prefix in API_VERSION_PREFIXES)
+
+
+def api_version_prefix_for_configured_value(value: str | None) -> str:
+    """Resolve a configured version value to a supported URL prefix.
+
+    Empty/unset values retain the original API version for local and existing
+    deployments. Non-empty values must be version numbers without a ``v``
+    prefix, matching ``M8FLOW_API_VERSION``'s documented Compose contract.
+    """
+    version = (value or "").strip() or DEFAULT_API_VERSION_PREFIX.removeprefix("/v")
+    prefix = f"/v{version}"
+    if prefix not in API_VERSION_PREFIXES:
+        supported = ", ".join(item.removeprefix("/v") for item in API_VERSION_PREFIXES)
+        raise ValueError(
+            f"Unsupported M8FLOW_API_VERSION {value!r}; expected one of: {supported}."
+        )
+    return prefix
 
 
 def api_version_prefix_for_path(path: str) -> str:
