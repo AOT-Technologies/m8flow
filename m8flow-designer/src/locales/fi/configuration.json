@@ -1,5 +1,72 @@
 {
   "title": "Määritykset",
+  "natsEmail": {
+    "title": "Ulkoisten lomakkeiden sähköposteja ei voi vielä lähettää",
+    "body": "NATS-ilmoitustyöprosessi lähettää ulkoisten lomakkeiden linkit tämän vuokralaisen NATS_SMTP_*-määritysmuuttujilla. Lisää ne kohdassa ”Määritä NATS”.",
+    "waiting": "Lähetystä odottavat sähköpostit: {{count}}. Ne lähetetään automaattisesti, kun pakolliset muuttujat on asetettu.",
+    "missing": "Puuttuvat pakolliset muuttujat:",
+    "unreadable": "Näitä muuttujia ei voi lukea (tyhjä arvo, tai salausavain on vaihtunut):",
+    "configure": "Määritä NATS",
+    "page": {
+      "title": "NATS-sähköpostiasetukset",
+      "subtitle": "SMTP-asetukset, joilla NATS-ilmoitustyöprosessi lähettää ulkoisten lomakkeiden linkit sähköpostilla. Jokainen arvo tallennetaan arkaluonteisena määritysmuuttujana (Vaultiin, jos käytössä), eikä sitä voi nähdä tallennuksen jälkeen.",
+      "state": {
+        "saved": "Tallennettu",
+        "unreadable": "Ei luettavissa"
+      },
+      "keepHint": "Jätä tyhjäksi, jos haluat säilyttää tallennetun arvon.",
+      "keep": "Säilytä tallennettu arvo",
+      "onDefault": "Päällä (oletus)",
+      "offDefault": "Pois (oletus)",
+      "on": "Päällä",
+      "off": "Pois",
+      "save": "Tallenna asetukset",
+      "savedMessage": "NATS-sähköpostiasetukset tallennettu.",
+      "nothingToSave": "Anna vähintään yksi tallennettava arvo.",
+      "readOnly": "Roolisi voi tarkastella näitä asetuksia, mutta ei muuttaa niitä.",
+      "errors": {
+        "load": "NATS-sähköpostiasetuksia ei voitu ladata.",
+        "save": "Kohdetta {{key}} ei voitu tallentaa: {{message}}",
+        "partial": "Jo tallennettu: {{keys}}."
+      },
+      "validation": {
+        "required": "Anna arvo.",
+        "host": "Anna isäntänimi, kuten smtp.example.com, ilman skeemaa tai porttia.",
+        "port": "Anna portti väliltä 1–65535.",
+        "email": "Anna sähköpostiosoite, kuten noreply@example.com."
+      },
+      "fields": {
+        "host": {
+          "label": "SMTP-isäntä",
+          "help": "Esimerkiksi smtp.example.com."
+        },
+        "port": {
+          "label": "Portti",
+          "help": "Oletus on 587. Yleensä 587 ja STARTTLS tai 465 ja SSL."
+        },
+        "starttls": {
+          "label": "Käytä STARTTLS:ää",
+          "help": "Useimmat portin 587 palvelimet vaativat tämän."
+        },
+        "ssl": {
+          "label": "Käytä SSL:ää",
+          "help": "Palvelimille, jotka odottavat TLS:ää heti alusta, yleensä portissa 465."
+        },
+        "fromEmail": {
+          "label": "Lähettäjän osoite",
+          "help": "Ulkoisten lomakkeiden sähköpostien lähettäjä."
+        },
+        "username": {
+          "label": "Käyttäjänimi",
+          "help": "Jätä tyhjäksi, jos palvelin ei vaadi kirjautumista."
+        },
+        "password": {
+          "label": "Salasana",
+          "help": "Tallennetaan täsmälleen kirjoitetussa muodossa."
+        }
+      }
+    }
+  },
   "secretKey": "Salaisuuden avain",
   "saving": "Tallennetaan…",
   "notAllowed": "Ei sallittu",

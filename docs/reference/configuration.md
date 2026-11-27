@@ -107,6 +107,32 @@ every value in the following table:
 | `M8FLOW_NATS_MESSAGE_INSPECTION_ENABLED` | `false` | Lets the **NATS** page read raw message payloads. Payloads carry tenant business data. |
 | `M8FLOW_NATS_AUDIT_RETENTION_DAYS` | `90` | How long event-audit rows are kept. `0` keeps them forever. |
 
+### External form email settings
+
+The NATS notification worker emails external form links with SMTP settings
+that each tenant stores as configuration variables, not as environment
+variables. To set them the first time, open **Setup** >
+**Configuration variables** and click **Configure NATS**. The page saves each
+setting as a sensitive configuration variable, so its value goes to the secret
+provider (Vault when enabled). After that, edit them like any other variable.
+They are separate from the `SMTP_*` settings of the email connector.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `NATS_SMTP_HOST` | Yes | SMTP server host |
+| `NATS_SMTP_FROM_EMAIL` | Yes | Sender address |
+| `NATS_SMTP_PORT` | No | SMTP server port |
+| `NATS_SMTP_USERNAME`, `NATS_SMTP_PASSWORD` | No | SMTP sign-in |
+| `NATS_SMTP_STARTTLS`, `NATS_SMTP_SSL` | No | `true` or `false` |
+
+For tenants set up earlier, the worker still reads a tenant secret with the
+same name when no configuration variable exists.
+
+When a required setting is missing or can't be read, the worker holds the
+tenant's emails instead of retrying them. The **Configuration variables** page
+then shows a notice that names each missing variable. The emails go out on the
+next sweep after you save the settings.
+
 ## MCP server
 
 | Variable | Default | Meaning |

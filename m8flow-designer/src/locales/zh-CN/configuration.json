@@ -1,5 +1,72 @@
 {
   "title": "配置",
+  "natsEmail": {
+    "title": "暂时无法发送外部表单邮件",
+    "body": "NATS 通知 worker 使用此租户的 NATS_SMTP_* 配置变量发送外部表单链接。请通过“配置 NATS”添加。",
+    "waiting": "等待发送的邮件：{{count}} 封。设置必需的变量后将自动发送。",
+    "missing": "缺少必需的变量：",
+    "unreadable": "无法读取以下变量（值为空，或加密密钥已更改）：",
+    "configure": "配置 NATS",
+    "page": {
+      "title": "NATS 邮件设置",
+      "subtitle": "NATS 通知 worker 用于通过邮件发送外部表单链接的 SMTP 设置。每个值都保存为敏感配置变量（启用时存储在 Vault 中），保存后无法查看。",
+      "state": {
+        "saved": "已保存",
+        "unreadable": "无法读取"
+      },
+      "keepHint": "留空以保留已保存的值。",
+      "keep": "保留已保存的值",
+      "onDefault": "开启（默认）",
+      "offDefault": "关闭（默认）",
+      "on": "开启",
+      "off": "关闭",
+      "save": "保存设置",
+      "savedMessage": "NATS 邮件设置已保存。",
+      "nothingToSave": "请至少输入一个要保存的值。",
+      "readOnly": "您的角色可以查看这些设置，但不能更改。",
+      "errors": {
+        "load": "无法加载 NATS 邮件设置。",
+        "save": "无法保存 {{key}}：{{message}}",
+        "partial": "已保存：{{keys}}。"
+      },
+      "validation": {
+        "required": "请输入一个值。",
+        "host": "请输入主机名，例如 smtp.example.com，不含协议或端口。",
+        "port": "请输入 1 到 65535 之间的端口。",
+        "email": "请输入邮箱地址，例如 noreply@example.com。"
+      },
+      "fields": {
+        "host": {
+          "label": "SMTP 主机",
+          "help": "例如 smtp.example.com。"
+        },
+        "port": {
+          "label": "端口",
+          "help": "默认为 587。通常 587 搭配 STARTTLS，或 465 搭配 SSL。"
+        },
+        "starttls": {
+          "label": "使用 STARTTLS",
+          "help": "大多数 587 端口的服务器都需要此项。"
+        },
+        "ssl": {
+          "label": "使用 SSL",
+          "help": "适用于从一开始就要求 TLS 的服务器，通常使用 465 端口。"
+        },
+        "fromEmail": {
+          "label": "发件人地址",
+          "help": "外部表单邮件的发件人。"
+        },
+        "username": {
+          "label": "用户名",
+          "help": "如果服务器不需要登录，请留空。"
+        },
+        "password": {
+          "label": "密码",
+          "help": "按输入内容原样保存。"
+        }
+      }
+    }
+  },
   "secretKey": "机密键",
   "saving": "正在保存…",
   "notAllowed": "不允许",

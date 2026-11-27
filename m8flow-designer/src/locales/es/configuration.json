@@ -1,5 +1,72 @@
 {
   "title": "Configuración",
+  "natsEmail": {
+    "title": "Aún no se pueden enviar correos de formularios externos",
+    "body": "El worker de notificaciones de NATS envía los enlaces de formularios externos con las variables de configuración NATS_SMTP_* de este tenant. Agréguelas con «Configurar NATS».",
+    "waiting": "Correos pendientes de envío: {{count}}. Se enviarán automáticamente cuando se configuren las variables obligatorias.",
+    "missing": "Faltan variables obligatorias:",
+    "unreadable": "Estas variables no se pueden leer (vacías, o cambió la clave de cifrado):",
+    "configure": "Configurar NATS",
+    "page": {
+      "title": "Configuración de correo de NATS",
+      "subtitle": "Configuración SMTP que usa el worker de notificaciones de NATS para enviar por correo los enlaces de formularios externos. Cada valor se guarda como variable de configuración sensible (en Vault cuando está activado) y no se puede ver después de guardarlo.",
+      "state": {
+        "saved": "Guardado",
+        "unreadable": "No se puede leer"
+      },
+      "keepHint": "Déjelo en blanco para conservar el valor guardado.",
+      "keep": "Conservar el valor guardado",
+      "onDefault": "Activado (predeterminado)",
+      "offDefault": "Desactivado (predeterminado)",
+      "on": "Activado",
+      "off": "Desactivado",
+      "save": "Guardar configuración",
+      "savedMessage": "Configuración de correo de NATS guardada.",
+      "nothingToSave": "Introduzca al menos un valor para guardar.",
+      "readOnly": "Su rol puede ver esta configuración, pero no cambiarla.",
+      "errors": {
+        "load": "No se pudo cargar la configuración de correo de NATS.",
+        "save": "No se pudo guardar {{key}}: {{message}}",
+        "partial": "Ya guardado: {{keys}}."
+      },
+      "validation": {
+        "required": "Introduzca un valor.",
+        "host": "Introduzca un nombre de host como smtp.example.com, sin esquema ni puerto.",
+        "port": "Introduzca un puerto entre 1 y 65535.",
+        "email": "Introduzca una dirección de correo como noreply@example.com."
+      },
+      "fields": {
+        "host": {
+          "label": "Host SMTP",
+          "help": "Por ejemplo, smtp.example.com."
+        },
+        "port": {
+          "label": "Puerto",
+          "help": "El valor predeterminado es 587. Normalmente 587 con STARTTLS o 465 con SSL."
+        },
+        "starttls": {
+          "label": "Usar STARTTLS",
+          "help": "La mayoría de los servidores en el puerto 587 lo necesitan."
+        },
+        "ssl": {
+          "label": "Usar SSL",
+          "help": "Para servidores que esperan TLS desde el inicio, normalmente en el puerto 465."
+        },
+        "fromEmail": {
+          "label": "Dirección del remitente",
+          "help": "El remitente de los correos de formularios externos."
+        },
+        "username": {
+          "label": "Nombre de usuario",
+          "help": "Déjelo en blanco si el servidor no requiere inicio de sesión."
+        },
+        "password": {
+          "label": "Contraseña",
+          "help": "Se guarda tal como se escribe."
+        }
+      }
+    }
+  },
   "secretKey": "Clave del secreto",
   "saving": "Guardando…",
   "notAllowed": "No permitido",

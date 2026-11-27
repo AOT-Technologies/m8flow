@@ -17,6 +17,8 @@ from m8flow_backend.models.named_value import NamedValueModel
 from m8flow_backend.secrets import (
     delete_configuration_value,
     delete_secret,
+    get_configuration_value,
+    get_secret_value,
     set_configuration_value,
 )
 
@@ -75,6 +77,49 @@ def list_named_values(session: Session, *, tenant_id: str) -> list[dict[str, Any
         .order_by(func.lower(NamedValueModel.name), NamedValueModel.id)
     ).all()
     return [_serialize(row) for row in rows]
+
+
+def _row_by_name(session: Session, *, tenant_id: str, name: str) -> NamedValueModel | None:
+    return session.scalars(
+        select(NamedValueModel).where(
+            NamedValueModel.m8f_tenant_id == tenant_id,
+            func.lower(NamedValueModel.name) == name.lower(),
+        )
+    ).first()
+
+
+def names_present(session: Session, *, tenant_id: str, names: tuple[str, ...]) -> set[str]:
+    """Which of `names` the tenant has as configuration variables (names match case-insensitively;
+    returns the spellings passed in). Presence only, no provider reads."""
+    wanted = {name.lower(): name for name in names}
+    found = session.scalars(
+        select(NamedValueModel.name).where(
+            NamedValueModel.m8f_tenant_id == tenant_id,
+            func.lower(NamedValueModel.name).in_(wanted),
+        )
+    ).all()
+    return {wanted[name.lower()] for name in found}
+
+
+def value_by_name(session: Session, *, tenant_id: str, name: str) -> str | None:
+    """The current value of the tenant's configuration variable `name`, or None when there is no
+    such variable, it has no value, or its provider value is missing.
+
+    The explicit, tenant-scoped resolution interface for backend consumers (for example the NATS
+    notification worker). Sensitive values are read from the secret provider (Vault when enabled);
+    a caller must never log or return them."""
+    row = _row_by_name(session, tenant_id=tenant_id, name=name)
+    if row is None or not row.is_configured:
+        return None
+    if not row.is_sensitive:
+        return None if row.value is None else str(row.value)
+    if not row.provider_key:
+        return None
+    configuration_id = _configuration_id_for_provider_key(row.provider_key, named_value_id=row.id)
+    if configuration_id is not None:
+        return get_configuration_value(session, tenant_id=tenant_id, variable_id=configuration_id)
+    # Rows backfilled from legacy secrets still point at the secret's key.
+    return get_secret_value(session, tenant_id=tenant_id, key=row.provider_key)
 
 
 def get_named_value(session: Session, *, tenant_id: str, variable_id: str) -> dict[str, Any]:

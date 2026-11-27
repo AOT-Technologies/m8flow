@@ -1,7 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, MemoryRouter, Outlet, Route, RouterProvider, Routes } from 'react-router-dom';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseActiveTenant = vi.fn();
 const mockUseCapabilities = vi.fn();
@@ -10,6 +10,7 @@ const mockFetchNamedValue = vi.fn();
 const mockCreateNamedValue = vi.fn();
 const mockUpdateNamedValue = vi.fn();
 const mockDeleteNamedValue = vi.fn();
+const mockFetchNatsEmailStatus = vi.fn();
 
 vi.mock('@/components/session/hooks', () => ({
   useActiveTenant: () => mockUseActiveTenant(),
@@ -28,6 +29,11 @@ vi.mock('@/lib/namedValuesApi', () => ({
   deleteNamedValue: (...args: unknown[]) => mockDeleteNamedValue(...args),
   namedValuesErrorMessage: (_error: unknown, fallback: string) => fallback,
 }));
+
+vi.mock('@/lib/secretsApi', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/secretsApi')>('@/lib/secretsApi');
+  return { ...actual, fetchNatsEmailStatus: (...args: unknown[]) => mockFetchNatsEmailStatus(...args) };
+});
 
 import NamedValueEditPage from './NamedValueEditPage';
 import NamedValuesPage from './NamedValuesPage';
@@ -88,8 +94,25 @@ function renderWithTenant(path: string, admin: boolean, editable = false) {
   };
 }
 
+const NATS_CONFIGURED = {
+  configured: true,
+  requiredKeys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+  optionalKeys: [],
+  missingKeys: [],
+  unreadableKeys: [],
+  configuredKeys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+  waitingCount: 0,
+};
+
+const NATS_MISSING = {
+  ...NATS_CONFIGURED,
+  configured: false,
+  missingKeys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+  configuredKeys: [],
+};
+
 function renderAt(
-  path: string,
+  path: string | { pathname: string; state: unknown },
   options: {
     admin?: boolean;
     activeTenant?: string | null;
@@ -124,6 +147,9 @@ function renderAt(
 }
 
 describe('named value pages', () => {
+  beforeEach(() => {
+    mockFetchNatsEmailStatus.mockResolvedValue(NATS_CONFIGURED);
+  });
   afterEach(() => {
     cleanup();
     vi.resetAllMocks();
@@ -380,5 +406,93 @@ describe('named value pages', () => {
     expect(await screen.findByTestId('named-value-name')).toHaveValue('api_endpoint');
     expect(screen.getByTestId('named-value-value')).toHaveValue('');
     expect(mockFetchNamedValue).toHaveBeenCalledWith('var-1', null);
+  });
+
+  it('reminds about NATS email and offers Configure NATS until it is set up', async () => {
+    mockFetchNamedValues.mockResolvedValue([]);
+    mockFetchNatsEmailStatus.mockResolvedValue(NATS_MISSING);
+    renderAt('/configuration/named-values', {
+      canReadNamedValues: true,
+      canReadSecrets: true,
+      canCreateNamedValues: true,
+      canUpdateNamedValues: true,
+    });
+
+    expect(await screen.findByTestId('configure-nats')).toHaveAttribute('href', '/configuration/nats');
+    expect(screen.getByTestId('nats-email-setup')).toHaveTextContent('NATS_SMTP_HOST');
+    expect(mockFetchNatsEmailStatus).toHaveBeenCalledWith(null);
+  });
+
+  it('drops the reminder once NATS email is set up; the variables are listed like any other', async () => {
+    mockFetchNamedValues.mockResolvedValue([
+      { ...ROW, id: 'var-host', name: 'NATS_SMTP_HOST', isSensitive: true, value: null },
+    ]);
+    renderAt('/configuration/named-values', { canReadNamedValues: true, canReadSecrets: true });
+
+    expect(await screen.findByText('NATS_SMTP_HOST')).toBeInTheDocument();
+    await waitFor(() => expect(mockFetchNatsEmailStatus).toHaveBeenCalled());
+    expect(screen.queryByTestId('configure-nats')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('nats-email-setup')).not.toBeInTheDocument();
+  });
+
+  it('skips the NATS status without secrets read', async () => {
+    mockFetchNamedValues.mockResolvedValue([]);
+    renderAt('/configuration/named-values', { canReadNamedValues: true });
+
+    await waitFor(() => expect(mockFetchNamedValues).toHaveBeenCalled());
+    expect(mockFetchNatsEmailStatus).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('configure-nats')).not.toBeInTheDocument();
+  });
+
+  it('confirms a save from the Configure NATS page', async () => {
+    mockFetchNamedValues.mockResolvedValue([]);
+    renderAt(
+      { pathname: '/configuration/named-values', state: { natsEmailSaved: true } },
+      { canReadNamedValues: true, canReadSecrets: true },
+    );
+
+    expect(await screen.findByTestId('nats-email-saved')).toHaveTextContent('NATS email settings saved.');
+  });
+
+  it('shows the reminder but no Configure NATS to a role that cannot save variables', async () => {
+    mockFetchNamedValues.mockResolvedValue([]);
+    mockFetchNatsEmailStatus.mockResolvedValue(NATS_MISSING);
+    renderAt('/configuration/named-values', { canReadNamedValues: true, canReadSecrets: true });
+
+    expect(await screen.findByTestId('nats-email-setup')).toBeInTheDocument();
+    expect(screen.queryByTestId('configure-nats')).not.toBeInTheDocument();
+  });
+
+  it('still offers Configure NATS when the status cannot be read', async () => {
+    mockFetchNamedValues.mockResolvedValue([]);
+    mockFetchNatsEmailStatus.mockRejectedValue(new Error('down'));
+    renderAt('/configuration/named-values', {
+      canReadNamedValues: true,
+      canReadSecrets: true,
+      canCreateNamedValues: true,
+      canUpdateNamedValues: true,
+    });
+
+    expect(await screen.findByTestId('configure-nats')).toBeInTheDocument();
+    expect(screen.queryByTestId('nats-email-setup')).not.toBeInTheDocument();
+  });
+
+  it('brings the reminder back after a required NATS variable is deleted', async () => {
+    mockFetchNamedValues.mockResolvedValue([
+      { ...ROW, id: 'var-host', name: 'NATS_SMTP_HOST', isSensitive: true, value: null },
+    ]);
+    mockFetchNatsEmailStatus.mockResolvedValueOnce(NATS_CONFIGURED).mockResolvedValue(NATS_MISSING);
+    mockDeleteNamedValue.mockResolvedValue(undefined);
+    renderAt('/configuration/named-values', {
+      canReadNamedValues: true,
+      canReadSecrets: true,
+      canDeleteNamedValues: true,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByTestId('nats-email-setup')).toBeInTheDocument();
+    expect(mockFetchNatsEmailStatus).toHaveBeenCalledTimes(2);
   });
 });

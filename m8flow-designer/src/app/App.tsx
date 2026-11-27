@@ -55,6 +55,7 @@ const TenantManagementPage = lazyPage(() => import('@/pages/tenant-management/Te
 const SecretListPage = lazyPage(() => import('@/pages/configuration/SecretListPage'));
 const SecretNewPage = lazyPage(() => import('@/pages/configuration/SecretNewPage'));
 const SecretShowPage = lazyPage(() => import('@/pages/configuration/SecretShowPage'));
+const NatsEmailConfigPage = lazyPage(() => import('@/pages/configuration/NatsEmailConfigPage'));
 const NamedValuesPage = lazyPage(() => import('@/pages/configuration/NamedValuesPage'));
 const NamedValueEditPage = lazyPage(() => import('@/pages/configuration/NamedValueEditPage'));
 const ConnectorsPage = lazyPage(() => import('@/pages/connectors/ConnectorsPage'));
@@ -219,6 +220,14 @@ function AppShellRoutes() {
           element={
             <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secret" />}>
               <SecretShowPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="configuration/nats"
+          element={
+            <Suspense fallback={<LoadingFallback labelKey="shell.routeLoading.secrets" />}>
+              <NatsEmailConfigPage />
             </Suspense>
           }
         />

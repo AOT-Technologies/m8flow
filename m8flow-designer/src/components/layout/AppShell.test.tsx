@@ -83,6 +83,7 @@ async function renderShell(initialPath = '/', waitForReady = true) {
           { path: 'configuration/named-values', element: <NamedValuesGate title="Configuration variables"><div>named-values-outlet</div></NamedValuesGate> },
           { path: 'configuration/named-values/new', element: <NamedValuesGate title="New variable" access="create"><div>named-values-outlet</div></NamedValuesGate> },
           { path: 'configuration/named-values/:id', element: <NamedValuesGate title="Variable" access="item"><div>named-values-outlet</div></NamedValuesGate> },
+          { path: 'configuration/nats', element: <div>nats-config-outlet</div> },
           {
             path: 'processes/:processModelId',
             element: <div>detail-outlet</div>,
@@ -152,6 +153,26 @@ describe('AppShell', () => {
     }
     expect(screen.getByRole('link', { name: 'Processes' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Process Instances' })).toBeInTheDocument();
+  });
+
+  it.each([
+    ['secrets read only', { '/secrets': { GET: true } }, false],
+    ['configuration variable read only', { '/m8flow/named-values': { GET: true } }, false],
+    ['both', { '/secrets': { GET: true }, '/m8flow/named-values': { GET: true } }, true],
+  ])('opens /configuration/nats only with secrets and configuration variable read (%s)', async (_label, grants, allowed) => {
+    mockCheckPermissions.mockResolvedValue({
+      '/process-models': { GET: true },
+      '/process-instances': { GET: true },
+      '/process-instances/for-me': { GET: true },
+      ...grants,
+    });
+    await renderShell('/configuration/nats');
+    if (allowed) {
+      expect(await screen.findByText('nats-config-outlet')).toBeInTheDocument();
+    } else {
+      expect(await screen.findByText('home-outlet')).toBeInTheDocument();
+      expect(screen.queryByText('nats-config-outlet')).not.toBeInTheDocument();
+    }
   });
 
   it('hides System for tenant administrators', async () => {

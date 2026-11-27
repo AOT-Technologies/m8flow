@@ -189,3 +189,82 @@ describe('secretsApi', () => {
     expect(secretsErrorMessage({}, 'Could not create secret.')).toBe('Could not create secret.');
   });
 });
+
+describe('fetchNatsEmailStatus', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    getAccessToken.mockReset();
+    getAccessToken.mockReturnValue('token');
+  });
+
+  it('reads both m8flow routes for the tenant and keeps missing apart from unreadable', async () => {
+    const { fetchNatsEmailStatus } = await import('./secretsApi');
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        makeResponse({
+          ok: true,
+          status: 200,
+          body: url.includes('smtp-status')
+            ? {
+                configured: false,
+                required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+                optional_keys: ['NATS_SMTP_PORT'],
+                missing_required_keys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+                unreadable_keys: ['NATS_SMTP_FROM_EMAIL'],
+                configured_keys: ['NATS_SMTP_PORT'],
+              }
+            : { results: [], pagination: { total: 4 } },
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const status = await fetchNatsEmailStatus('t1');
+
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(urls).toContainEqual(expect.stringContaining('/v1.0/m8flow/external-form-notifications/smtp-status?tenantId=t1'));
+    expect(urls).toContainEqual(
+      expect.stringContaining('/v1.0/m8flow/external-form-notifications?tenantId=t1&status=smtp_unconfigured&per_page=1'),
+    );
+    expect(status).toEqual({
+      configured: false,
+      requiredKeys: ['NATS_SMTP_HOST', 'NATS_SMTP_FROM_EMAIL'],
+      optionalKeys: ['NATS_SMTP_PORT'],
+      missingKeys: ['NATS_SMTP_HOST'],
+      unreadableKeys: ['NATS_SMTP_FROM_EMAIL'],
+      configuredKeys: ['NATS_SMTP_PORT'],
+      waitingCount: 4,
+    });
+  });
+
+  it('skips the waiting count once configured', async () => {
+    const { fetchNatsEmailStatus } = await import('./secretsApi');
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(makeResponse({ ok: true, status: 200, body: { configured: true, configured_keys: [] } })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const status = await fetchNatsEmailStatus(null);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(status.waitingCount).toBe(0);
+  });
+
+  it('still returns the status when the waiting count fails', async () => {
+    const { fetchNatsEmailStatus } = await import('./secretsApi');
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve(
+        url.includes('smtp-status')
+          ? makeResponse({ ok: true, status: 200, body: { configured: false, missing_required_keys: ['NATS_SMTP_HOST'] } })
+          : makeResponse({ ok: false, status: 500, body: { message: 'boom' } }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const status = await fetchNatsEmailStatus(null);
+
+    expect(status.missingKeys).toEqual(['NATS_SMTP_HOST']);
+    expect(status.waitingCount).toBe(0);
+  });
+});

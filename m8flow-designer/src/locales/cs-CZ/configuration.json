@@ -1,5 +1,72 @@
 {
   "title": "Konfigurace",
+  "natsEmail": {
+    "title": "E-maily externích formulářů zatím nelze odesílat",
+    "body": "Pracovní proces oznámení NATS odesílá odkazy na externí formuláře pomocí konfiguračních proměnných NATS_SMTP_* tohoto tenanta. Přidejte je přes „Konfigurovat NATS“.",
+    "waiting": "E-maily čekající na odeslání: {{count}}. Odešlou se automaticky, jakmile nastavíte povinné proměnné.",
+    "missing": "Chybějící povinné proměnné:",
+    "unreadable": "Tyto proměnné nelze přečíst (prázdná hodnota, nebo se změnil šifrovací klíč):",
+    "configure": "Konfigurovat NATS",
+    "page": {
+      "title": "Nastavení e-mailu NATS",
+      "subtitle": "Nastavení SMTP, pomocí kterého pracovní proces oznámení NATS posílá e-mailem odkazy na externí formuláře. Každá hodnota se uloží jako citlivá konfigurační proměnná (ve Vaultu, je-li zapnutý) a po uložení ji nelze zobrazit.",
+      "state": {
+        "saved": "Uloženo",
+        "unreadable": "Nelze přečíst"
+      },
+      "keepHint": "Ponechte prázdné, chcete-li zachovat uloženou hodnotu.",
+      "keep": "Zachovat uloženou hodnotu",
+      "onDefault": "Zapnuto (výchozí)",
+      "offDefault": "Vypnuto (výchozí)",
+      "on": "Zapnuto",
+      "off": "Vypnuto",
+      "save": "Uložit nastavení",
+      "savedMessage": "Nastavení e-mailu NATS bylo uloženo.",
+      "nothingToSave": "Zadejte alespoň jednu hodnotu k uložení.",
+      "readOnly": "Vaše role může toto nastavení zobrazit, ale ne změnit.",
+      "errors": {
+        "load": "Nastavení e-mailu NATS se nepodařilo načíst.",
+        "save": "{{key}} se nepodařilo uložit: {{message}}",
+        "partial": "Již uloženo: {{keys}}."
+      },
+      "validation": {
+        "required": "Zadejte hodnotu.",
+        "host": "Zadejte název hostitele, například smtp.example.com, bez schématu a portu.",
+        "port": "Zadejte port mezi 1 a 65535.",
+        "email": "Zadejte e-mailovou adresu, například noreply@example.com."
+      },
+      "fields": {
+        "host": {
+          "label": "Hostitel SMTP",
+          "help": "Například smtp.example.com."
+        },
+        "port": {
+          "label": "Port",
+          "help": "Výchozí je 587. Obvykle 587 se STARTTLS nebo 465 s SSL."
+        },
+        "starttls": {
+          "label": "Použít STARTTLS",
+          "help": "Většina serverů na portu 587 to vyžaduje."
+        },
+        "ssl": {
+          "label": "Použít SSL",
+          "help": "Pro servery, které od začátku očekávají TLS, obvykle na portu 465."
+        },
+        "fromEmail": {
+          "label": "Adresa odesílatele",
+          "help": "Odesílatel e-mailů externích formulářů."
+        },
+        "username": {
+          "label": "Uživatelské jméno",
+          "help": "Ponechte prázdné, pokud server nevyžaduje přihlášení."
+        },
+        "password": {
+          "label": "Heslo",
+          "help": "Uloží se přesně tak, jak je zadáno."
+        }
+      }
+    }
+  },
   "secretKey": "Klíč tajného kódu",
   "saving": "Ukládání…",
   "notAllowed": "Nepovoleno",

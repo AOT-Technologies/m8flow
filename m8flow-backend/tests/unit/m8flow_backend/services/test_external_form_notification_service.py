@@ -136,7 +136,7 @@ def test_notify_parks_a_request_when_the_tenant_has_no_smtp(app, db_session):
     assert result == "skipped:smtp_unconfigured"
     db_session.expire_all()
     assert row.status == ExternalFormRequestStatus.smtp_unconfigured.value
-    assert "Missing required secrets" in (row.last_error or "")
+    assert "Missing required settings" in (row.last_error or "")
     assert row.updated_at is not None
     assert row.updated_at != datetime.fromtimestamp(0, timezone.utc)
 
@@ -255,7 +255,7 @@ def test_smtp_configuration_status_names_missing_required_keys(app, db_session):
 
     assert status["configured"] is False
     assert set(status["missing_required_keys"]) == {"NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL"}
-    assert "Missing required secrets" in status["reason"]
+    assert "Missing required settings" in status["reason"]
 
 
 def test_tenants_with_parked_requests_lists_each_tenant_once(app, db_session):
@@ -513,3 +513,121 @@ def test_notify_skips_an_unknown_request_id(app, db_session):
     with app.app_context():
         g.db_session = db_session
         assert ExternalFormNotificationService.notify(999_999) == "skipped:unknown_request"
+
+
+def _add_configuration_variables(db_session, values: dict[str, str]) -> None:
+    """Store NATS_SMTP_* as sensitive configuration variables, as the Configure NATS page does."""
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets import named_values
+
+    ensure_tenant(db_session, tenant_id=TENANT, slug=TENANT, name=TENANT)
+    user = ensure_user(
+        db_session,
+        username="carol",
+        service="https://example.test/realms/m8flow",
+        service_id="carol",
+    )
+    for name, value in values.items():
+        named_values.create_named_value(
+            db_session,
+            tenant_id=TENANT,
+            body={"name": name, "value": value, "is_sensitive": True},
+            user_id=user.id,
+        )
+    db_session.commit()
+
+
+def test_sensitive_configuration_variables_configure_smtp_without_secrets(app, db_session):
+    _add_configuration_variables(
+        db_session,
+        {"NATS_SMTP_HOST": "vars.example.test", "NATS_SMTP_FROM_EMAIL": "vars@example.test", "NATS_SMTP_PORT": "465"},
+    )
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+        status = ExternalFormNotificationService.smtp_configuration_status(TENANT)
+
+    assert settings is not None
+    assert (settings["host"], settings["from_email"], settings["port"]) == ("vars.example.test", "vars@example.test", 465)
+    assert status["configured"] is True
+    assert {"NATS_SMTP_HOST", "NATS_SMTP_FROM_EMAIL", "NATS_SMTP_PORT"} <= set(status["configured_keys"])
+    assert "vars.example.test" not in repr(status)
+
+
+def test_a_configuration_variable_wins_over_the_legacy_secret(app, db_session, _tenant_smtp_secrets):
+    _add_configuration_variables(db_session, {"NATS_SMTP_HOST": "vars.example.test"})
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+
+    # Host comes from the configuration variable; the rest still falls back to the secrets.
+    assert settings is not None
+    assert settings["host"] == "vars.example.test"
+    assert settings["from_email"] == "noreply@example.test"
+
+
+def test_an_unreadable_variable_is_reported_not_replaced_by_the_legacy_secret(app, db_session, _tenant_smtp_secrets):
+    from m8flow_backend.models.named_value import NamedValueModel
+    from m8flow_backend.secrets import delete_configuration_value
+
+    _add_configuration_variables(db_session, {"NATS_SMTP_HOST": "vars.example.test"})
+    row = db_session.query(NamedValueModel).filter_by(m8f_tenant_id=TENANT, name="NATS_SMTP_HOST").one()
+    delete_configuration_value(db_session, tenant_id=TENANT, variable_id=row.provider_key)
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+        status = ExternalFormNotificationService.smtp_configuration_status(TENANT)
+
+    # The legacy NATS_SMTP_HOST secret still exists, but the variable is what the admin set.
+    assert settings is None
+    assert status["configured"] is False
+    assert status["unreadable_keys"] == ["NATS_SMTP_HOST"]
+    assert "NATS_SMTP_HOST" not in status["configured_keys"]
+    assert "could not be read" in status["reason"]
+
+
+def test_the_status_reads_each_stored_key_once(app, db_session, monkeypatch):
+    from m8flow_backend.secrets import named_values
+
+    _add_configuration_variables(
+        db_session,
+        {"NATS_SMTP_HOST": "vars.example.test", "NATS_SMTP_FROM_EMAIL": "vars@example.test", "NATS_SMTP_PORT": "465"},
+    )
+    reads: list[str] = []
+    real = named_values.value_by_name
+
+    def counting(session, *, tenant_id, name):
+        reads.append(name)
+        return real(session, tenant_id=tenant_id, name=name)
+
+    monkeypatch.setattr(named_values, "value_by_name", counting)
+    with app.app_context():
+        status = ExternalFormNotificationService.smtp_configuration_status(TENANT)
+
+    assert status["configured"] is True
+    assert sorted(reads) == ["NATS_SMTP_FROM_EMAIL", "NATS_SMTP_HOST", "NATS_SMTP_PORT"]
+
+
+def test_standard_variables_configure_starttls_and_ssl(app, db_session):
+    from m8flow_backend.identity import ensure_tenant, ensure_user
+    from m8flow_backend.secrets import named_values
+
+    ensure_tenant(db_session, tenant_id=TENANT, slug=TENANT, name=TENANT)
+    user = ensure_user(db_session, username="erin", service="https://example.test/realms/m8flow", service_id="erin")
+    for name, value in (
+        ("NATS_SMTP_HOST", "vars.example.test"),
+        ("NATS_SMTP_FROM_EMAIL", "vars@example.test"),
+        ("NATS_SMTP_STARTTLS", True),
+        ("NATS_SMTP_SSL", False),
+    ):
+        named_values.create_named_value(
+            db_session, tenant_id=TENANT, body={"name": name, "value": value, "is_sensitive": False}, user_id=user.id
+        )
+    db_session.commit()
+
+    with app.app_context():
+        settings = ExternalFormNotificationService.resolve_smtp_settings(TENANT)
+
+    assert settings is not None
+    assert (settings["starttls"], settings["ssl"], settings["port"]) == (True, False, 587)

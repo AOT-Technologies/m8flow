@@ -152,3 +152,66 @@ export async function updateSecret(
 export async function deleteSecret(key: string, tenantId?: string | null): Promise<void> {
   await apiFetch(secretItemPath(key, tenantId), { method: 'DELETE' });
 }
+
+/** Whether the tenant's NATS_SMTP_* secrets let the NATS notification worker email
+ * external-form links. Key names only — the backend never returns a value. */
+export type NatsEmailStatus = {
+  configured: boolean;
+  requiredKeys: string[];
+  optionalKeys: string[];
+  missingKeys: string[];
+  unreadableKeys: string[];
+  /** Keys (required or optional) whose saved value is usable. */
+  configuredKeys: string[];
+  /** Emails parked as smtp_unconfigured; they send on their own once configured. */
+  waitingCount: number;
+};
+
+const stringList = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+/** The NATS_SMTP_* secret names the notification worker reads (external_form_notification_service). */
+export const NATS_EMAIL_SECRET_KEYS = [
+  'NATS_SMTP_HOST',
+  'NATS_SMTP_PORT',
+  'NATS_SMTP_STARTTLS',
+  'NATS_SMTP_SSL',
+  'NATS_SMTP_FROM_EMAIL',
+  'NATS_SMTP_USERNAME',
+  'NATS_SMTP_PASSWORD',
+] as const;
+
+export type NatsEmailSecretKey = (typeof NATS_EMAIL_SECRET_KEYS)[number];
+
+/** How many emails are parked as smtp_unconfigured. A count only, so a failure reads as 0. */
+async function fetchWaitingCount(query: string): Promise<number> {
+  try {
+    const waiting = await apiGet<{ pagination?: { total?: unknown } } | null>(
+      `/v1.0/m8flow/external-form-notifications${query ? `${query}&` : '?'}status=smtp_unconfigured&per_page=1`,
+    );
+    const total = waiting?.pagination?.total;
+    return typeof total === 'number' ? total : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function fetchNatsEmailStatus(tenantId?: string | null): Promise<NatsEmailStatus> {
+  const query = tenantQuery(tenantId);
+  const status = await apiGet<Record<string, unknown> | null>(
+    `/v1.0/m8flow/external-form-notifications/smtp-status${query}`,
+  );
+  const configured = status?.configured === true;
+  const unreadableKeys = stringList(status?.unreadable_keys);
+  return {
+    configured,
+    requiredKeys: stringList(status?.required_keys),
+    optionalKeys: stringList(status?.optional_keys),
+    // missing_required_keys also lists unreadable ones; keep the two apart, they need different fixes.
+    missingKeys: stringList(status?.missing_required_keys).filter((key) => !unreadableKeys.includes(key)),
+    unreadableKeys,
+    configuredKeys: stringList(status?.configured_keys),
+    // Emails are only parked while SMTP is unusable, so skip the count once configured.
+    waitingCount: configured ? 0 : await fetchWaitingCount(query),
+  };
+}
