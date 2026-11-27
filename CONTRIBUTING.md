@@ -68,6 +68,30 @@ ones:
 - Add an entry under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any
   change a user or operator would notice.
 
+### Updating the V1 OpenAPI compatibility baseline
+
+The backend test
+[`test_api_spec_parity.py`](m8flow-backend/tests/unit/m8flow_backend/routes/test_api_spec_parity.py)
+locks the V1 OpenAPI contract to the pre-versioning API. Do not update its
+expected SHA-256 merely to make a failing test pass.
+
+When a change makes that test fail:
+
+1. Run the focused test from `m8flow-backend`:
+   `uv run pytest tests/unit/m8flow_backend/routes/test_api_spec_parity.py::test_v1_contract_matches_the_pre_versioning_api_baseline`.
+2. Review the V1 spec diff and compare it with the pre-versioning `api.yml` in
+   Git history. Confirm whether the change affects the V1 contract and is
+   intentional and approved. A V2-only change must not update the V1 baseline.
+3. If the diff is documentation-only or other non-contract metadata, adjust
+   the digest normalization and its tests as appropriate; do not bless that
+   change by replacing the baseline hash.
+4. For an approved V1 contract change, replace
+   `_LEGACY_V1_CONTRACT_SHA256` with the actual digest shown by the failed
+   assertion. Explain the V1 compatibility impact and approval in the pull
+   request.
+5. Run the complete `test_api_spec_parity.py` file to verify both versioned
+   specs still register and their operations resolve.
+
 ## Licensing
 
 m8flow is licensed under Apache-2.0 and is [REUSE](https://reuse.software/)

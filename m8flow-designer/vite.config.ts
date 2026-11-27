@@ -69,7 +69,6 @@ const apiVersionBuildConfig = resolveApiVersionBuildConfig({
   VITE_API_VERSION: process.env.VITE_API_VERSION ?? rootEnv.VITE_API_VERSION,
   M8FLOW_API_VERSION: process.env.M8FLOW_API_VERSION ?? rootEnv.M8FLOW_API_VERSION,
 });
-const apiVersion = apiVersionBuildConfig.version;
 const apiVersionProxy = Object.fromEntries(
   apiVersionBuildConfig.proxyPaths.map((proxyPath) => [
     proxyPath,

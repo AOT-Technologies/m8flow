@@ -211,6 +211,65 @@ def test_wsgi_ingress_prefix_modes_keep_versioned_route_exemptions_scoped(
         assert not tenant_bind._path_is_exempt()
 
 
+@pytest.mark.parametrize("version_prefix", API_VERSION_PREFIXES)
+def test_wsgi_ingress_prefix_modes_route_health_and_protected_endpoint(
+    version_prefix, connexion_app, client, monkeypatch
+):
+    """Exercise routed requests with a stripped or preserved external /api prefix.
+
+    A prefix-preserving ingress is represented by mounting the ASGI app at /api:
+    Starlette removes that mount prefix from the child route path and sets
+    ``root_path`` just as an ASGI deployment mounted below /api would. A stripped
+    ingress sends the versioned path directly to the app.
+    """
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+    from starlette.testclient import TestClient
+
+    import m8flow_backend.auth.bind as tenant_bind
+
+    def request_pair(request_client, path_prefix):
+        health = request_client.get(f"{path_prefix}{version_prefix}/readyz")
+        protected = request_client.get(f"{path_prefix}{version_prefix}/tasks")
+        return health, protected
+
+    # Stripped-prefix ingress: /api has already been removed before dispatch.
+    monkeypatch.setattr(
+        tenant_bind,
+        "TENANT_CONTEXT_EXEMPT_PATH_PREFIXES",
+        tenant_bind.tenant_context_exempt_path_prefixes(""),
+    )
+    stripped_health, stripped_protected = request_pair(client, "")
+
+    # Prefix-preserving ingress: the app is mounted under /api and receives the
+    # versioned path in its normal route namespace, with /api as ASGI root_path.
+    monkeypatch.setattr(
+        tenant_bind,
+        "TENANT_CONTEXT_EXEMPT_PATH_PREFIXES",
+        tenant_bind.tenant_context_exempt_path_prefixes("/api"),
+    )
+    mounted_app = Starlette(routes=[Mount("/api", app=connexion_app)])
+    with TestClient(mounted_app) as mounted_client:
+        preserved_health, preserved_protected = request_pair(mounted_client, "/api")
+
+    assert stripped_health.status_code == preserved_health.status_code == 200
+    stripped_payload = (
+        stripped_health.get_json()
+        if hasattr(stripped_health, "get_json")
+        else stripped_health.json()
+    )
+    preserved_payload = (
+        preserved_health.get_json()
+        if hasattr(preserved_health, "get_json")
+        else preserved_health.json()
+    )
+    assert stripped_payload == preserved_payload
+    # This endpoint is protected. The unauthenticated outcome must be identical
+    # in each ingress mode; it must not become public because /api is present.
+    assert stripped_protected.status_code == preserved_protected.status_code
+    assert stripped_protected.status_code in {401, 403}
+
+
 def test_backend_compose_healthcheck_uses_validated_configured_api_version():
     compose_file = Path(__file__).resolve().parents[4] / "docker" / "m8flow-docker-compose.yml"
     compose_source = compose_file.read_text(encoding="utf-8")
