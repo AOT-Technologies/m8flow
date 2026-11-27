@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "Processus",
-    "showing": "Affichage",
     "clear": "Effacer",
+    "group": "Groupe",
     "searchPlaceholder": "Rechercher des modèles de processus",
     "owner": "Propriétaire",
     "filterAll": "Tous",
@@ -55,17 +55,18 @@
     }
   },
   "groups": {
-    "title": "Groupes de processus",
+    "title": "Gérer les groupes",
     "editTitle": "Modifier le groupe de processus",
     "deleteTitle": "Supprimer le groupe de processus",
     "subtitle": {
-      "list": "Choisissez un groupe pour filtrer la liste des modèles, ou gérez les groupes ici.",
+      "list": "Créez, renommez ou supprimez des groupes de processus dans ce locataire.",
       "create": "L’ID est généré à partir du nom d’affichage. Modifiez-le pour imbriquer avec parent/child.",
       "edit": "Nom d’affichage et description uniquement — l’ID ne change pas.",
       "delete": "Les modèles de ce groupe sont retirés du catalogue si aucun n’a d’instance."
     },
     "searchPlaceholder": "Rechercher parmi {{total}} groupes",
     "searchLabel": "Rechercher des groupes",
+    "noMatches": "Aucun groupe correspondant",
     "noRunsYet": "Aucune exécution pour le moment",
     "editGroup": "Modifier {{name}}",
     "deleteGroup": "Supprimer {{name}}",

@@ -42,6 +42,7 @@ import {
   modelRow,
   nameOfLength,
   modelRows,
+  openManageGroups,
   openRowMenu,
   STATUS_OPTIONS,
   type GroupItem,
@@ -155,36 +156,29 @@ test.describe('Processes list', () => {
     page,
   }) => {
     await useSession(page, editorCredentials());
-    const groups = await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups');
     await page.goto('/processes');
+    const allGroups = page.getByRole('button', { name: 'Group: All groups', exact: true });
+    await expect(allGroups).toBeVisible();
 
-    // Open the "All groups" dropdown: it lists every group in the tenant.
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Process groups' });
-    await expect(dialog).toBeVisible();
-    await expect(dialog.getByText(`${countLabel(groups.length, 'group')} in this tenant`)).toBeVisible();
-
-    // Pick the mock group: only its model is listed.
-    await dialog.getByRole('button').filter({ hasText: mock.groupName }).first().click();
-    await expect(dialog).toHaveCount(0);
+    // Pick the mock group from the Group dropdown: only its model is listed.
+    await chooseDropdown(page, 'Group', mock.groupName);
     await expect(page).toHaveURL(urlGroupIs(mock.groupId));
-    await expect(page.getByRole('button', { name: 'All groups', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Group: ${mock.groupName}`, exact: true })).toBeVisible();
     await expect(modelRows(page)).toHaveCount(1);
     await expect(modelRow(page, mock.modelName)).toBeVisible();
 
     // Clear resets the filter.
     await page.getByRole('button', { name: 'Clear', exact: true }).click();
     await expect(page).not.toHaveURL(/[?&]group=/);
-    await expect(page.getByRole('button', { name: 'All groups', exact: true })).toBeVisible();
+    await expect(allGroups).toBeVisible();
 
     // A group with no models shows its empty state; Clear filter resets it.
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    await dialog.getByRole('button').filter({ hasText: mock.emptyGroupName }).first().click();
+    await chooseDropdown(page, 'Group', mock.emptyGroupName);
     await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Clear filter', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'All groups', exact: true })).toBeVisible();
+    await expect(allGroups).toBeVisible();
 
-    console.log('[CHK-03] All groups dropdown filtered the list to the selected group, showed the empty state for a group with no models, and Clear reset the filter.');
+    console.log('[CHK-03] The Group dropdown filtered the list to the selected group, showed the empty state for a group with no models, and Clear reset the filter.');
   });
 
   test('CHK-04: Opening a process shows its details', async ({ page }) => {
@@ -247,8 +241,8 @@ test.describe('Processes list', () => {
 
 // ===========================================================================
 // PRC-01..04, PRC-25..26 -- new tenant with no process groups or models.
-// The list calls are mocked to return nothing, as for a brand-new tenant;
-// writes still reach the real backend and are cleaned up.
+// Lists start empty, as for a brand-new tenant; created groups appear on
+// refresh. Writes still reach the real backend and are cleaned up.
 // ===========================================================================
 test.describe('Processes for a new tenant with no data (mocked API)', () => {
   test.beforeEach(async ({ page }) => {
@@ -303,16 +297,13 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 
   test('PRC-02: The group list of a new tenant is empty and offers "New group"', async ({ page }) => {
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
-    await expect(picker).toBeVisible();
+    const picker = await openManageGroups(page);
     await expect(picker.getByText('0 groups in this tenant')).toBeVisible();
     await expect(picker.getByRole('searchbox', { name: 'Search groups' })).toHaveAttribute(
       'placeholder',
       'Search 0 groups',
     );
-    await expect(picker.getByRole('button', { name: /^All groups\s*0$/ })).toBeVisible();
+    await expect(picker.getByRole('button', { name: /^Edit / })).toHaveCount(0);
     await expect(picker.getByText(GROUP_PICKER_HINT)).toBeVisible();
     await expect(picker.getByRole('button', { name: 'Close', exact: true })).toBeEnabled();
     await expect(picker.getByRole('button', { name: 'New group', exact: true })).toBeEnabled();
@@ -322,14 +313,14 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
     await expectGroupForm(create, 'create');
     await expect(create.getByRole('button', { name: 'Create group' })).toBeDisabled();
     await create.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Process groups' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Manage groups' })).toBeVisible();
     await page.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
     logResult('PRC-02', {
       scenario: 'New tenant opens the group list',
-      actions: ['Click "All groups"', 'Click "New group"', 'Cancel', 'Close'],
-      expected: '0 groups, "All groups 0", "New group" opens an empty create form with Create disabled',
+      actions: ['Click "New process group"', 'Cancel to "Manage groups"', 'Click "New group"', 'Cancel', 'Close'],
+      expected: '0 groups and no group rows; "New group" opens an empty create form with Create disabled',
       actual: 'Group list empty; create form shows its labels, placeholders and hint; "Create group" disabled; Cancel and Close worked',
       messages: ['0 groups in this tenant', GROUP_PICKER_HINT, GROUP_CREATE_HINT],
     });
@@ -359,7 +350,7 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 
       await expect(picker).toHaveCount(0);
       await expect(page).toHaveURL(urlGroupIs(group.id));
-      await expect(page.getByRole('button', { name: group.name, exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: `Group: ${group.name}`, exact: true })).toBeVisible();
       await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
       const emptyHint = 'Create a model here, or clear the filter to see all 0 models.';
       await expect(page.getByText(emptyHint)).toBeVisible();
@@ -399,13 +390,12 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
     await expect(dialog.getByTestId('create-process-model-new-group-button')).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
+    const picker = await openManageGroups(page);
     await expect(picker.getByRole('alert')).toContainText('failed: 500');
 
     logResult('PRC-04', {
       scenario: 'Process list and group list requests fail (mocked 500)',
-      actions: ['Open Processes', 'Click "New process model"', 'Open "All groups"'],
+      actions: ['Open Processes', 'Click "New process model"', 'Open "Manage groups"'],
       expected: 'Error message on the page, in the New process model dialog and in the group list; no rows; Create disabled',
       actual: 'All three error messages shown; no rows; Create process model disabled; no "New process group" offered',
       messages: [listMessage, groupsMessage],
@@ -471,7 +461,7 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
       checks.push(`id "${bad}": refused`);
     }
     await form.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await expect(page.getByRole('dialog', { name: 'Process groups' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Manage groups' })).toBeVisible();
 
     logResult('PRC-25', {
       scenario: 'New process group form with empty and invalid values (new tenant)',
@@ -504,7 +494,7 @@ test.describe('Processes for a new tenant with no data (mocked API)', () => {
 
         await expect(form).toHaveCount(0);
         await expect(page).toHaveURL(urlGroupIs(c.id));
-        await expect(page.getByRole('button', { name: c.saved, exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: `Group: ${c.saved}`, exact: true })).toBeVisible();
         await expect(page.getByText('No models in this group', { exact: true })).toBeVisible();
         const saved = (await apiList<GroupItem & { description: string }>(page, '/v1.0/m8flow/process-groups')).find(
           (g) => g.id === c.id,
@@ -947,9 +937,8 @@ test.describe('Processes for a tenant with data', () => {
 
     // Open the list first so the existing groups are loaded before typing.
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
-    await expect(picker.getByRole('button').filter({ hasText: active.groupName }).first()).toBeVisible();
+    const picker = await openManageGroups(page);
+    await expect(picker.getByRole('button', { name: `Edit ${active.groupName}`, exact: true })).toBeVisible();
     await picker.getByRole('button', { name: 'New group', exact: true }).click();
     const form = page.getByRole('dialog', { name: 'New process group' });
     await form.getByLabel('Process group display name').fill(active.groupName);
@@ -1103,8 +1092,7 @@ test.describe('Processes for a tenant with data', () => {
     await createMockGroup(page, { id: group.id, display_name: group.name });
 
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
+    const picker = await openManageGroups(page);
     await picker.getByRole('button', { name: `Edit ${group.name}`, exact: true }).click();
     const form = page.getByRole('dialog', { name: 'Edit process group' });
     await expectGroupForm(form, 'edit');
@@ -1128,8 +1116,12 @@ test.describe('Processes for a tenant with data', () => {
     await form.getByLabel('Process group display name').fill(`  ${renamed}  `);
     await form.getByLabel('Process group description').fill('  Renamed by E2E  ');
     await form.getByRole('button', { name: 'Save group' }).click();
-    await expect(page.getByRole('dialog', { name: 'Process groups' })).toBeVisible();
-    const row = picker.getByRole('button').filter({ hasText: renamed }).first();
+    await expect(page.getByRole('dialog', { name: 'Manage groups' })).toBeVisible();
+    // Group rows are plain rows (not buttons); the row holding the renamed group's Edit button.
+    const row = picker
+      .locator('div')
+      .filter({ has: page.getByRole('button', { name: `Edit ${renamed}`, exact: true }) })
+      .last();
     await expect(row).toContainText('Renamed by E2E');
     const saved = (await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups')).find((g) => g.id === group.id);
     expect(saved?.display_name).toBe(renamed);
@@ -1152,8 +1144,7 @@ test.describe('Processes for a tenant with data', () => {
     const before = await apiList<GroupItem>(page, '/v1.0/m8flow/process-groups');
 
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
+    const picker = await openManageGroups(page);
     await expect(picker.getByText(`${countLabel(before.length, 'group')} in this tenant`)).toBeVisible();
 
     await picker.getByRole('button', { name: `Delete ${group.name}`, exact: true }).click();
@@ -1167,7 +1158,7 @@ test.describe('Processes for a tenant with data', () => {
 
     await picker.getByRole('button', { name: `Delete ${group.name}`, exact: true }).click();
     await confirm.getByRole('button', { name: 'Delete group' }).click();
-    await expect(page.getByRole('dialog', { name: 'Process groups' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Manage groups' })).toBeVisible();
     await expect(picker.getByRole('button', { name: `Delete ${group.name}`, exact: true })).toHaveCount(0);
     await expect(picker.getByText(`${countLabel(before.length - 1, 'group')} in this tenant`)).toBeVisible();
 
@@ -1362,8 +1353,7 @@ test.describe('Processes for a tenant with data', () => {
 
   test('PRC-44: The group list search finds groups by name or id, not case sensitive', async ({ page }) => {
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
+    const picker = await openManageGroups(page);
     const search = picker.getByRole('searchbox', { name: 'Search groups' });
     const groupRows = picker.getByRole('button', { name: /^Edit / });
     const checks: string[] = [];
@@ -1376,13 +1366,13 @@ test.describe('Processes for a tenant with data', () => {
     }
     await search.fill('no-such-group-xyz');
     await expect(groupRows).toHaveCount(0);
-    await expect(picker.getByRole('button', { name: /^All groups/ })).toBeVisible();
-    checks.push('no match: only "All groups" left');
+    await expect(picker.getByText('No matching groups', { exact: true })).toBeVisible();
+    checks.push('no match: "No matching groups"');
 
     logResult('PRC-44', {
       scenario: 'Search inside the group list',
       actions: ['Search by name', 'Search in upper case', 'Search by id', 'Search with no match'],
-      expected: 'Matching group shown for name, upper-case name and id; no match leaves only "All groups"',
+      expected: 'Matching group shown for name, upper-case name and id; no match shows "No matching groups"',
       actual: checks.join('; '),
     });
   });
@@ -1424,8 +1414,7 @@ test.describe('Processes for a tenant with data', () => {
     const checks: string[] = [];
 
     await page.goto('/processes');
-    await page.getByRole('button', { name: 'All groups', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Process groups' });
+    const picker = await openManageGroups(page);
     await picker.getByRole('button', { name: 'New group', exact: true }).click();
     let form = page.getByRole('dialog', { name: 'New process group' });
     await form.getByLabel('Process group display name').fill(`E2E Fail ${stamp}`);
@@ -1501,9 +1490,9 @@ test.describe('Processes for a tenant with data', () => {
     };
 
     await newGroup(parent.name, parent.id);
-    await expect(page.getByRole('button', { name: parent.name, exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: `Group: ${parent.name}`, exact: true })).toBeVisible();
     await newGroup(child.name, child.id);
-    await expect(page.getByRole('button', { name: child.name, exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: `Group: ${child.name}`, exact: true })).toBeVisible();
     expect(decodeURIComponent(page.url())).toContain(`group=${child.id}`);
 
     await page.getByRole('button', { name: 'New process model', exact: true }).last().click();

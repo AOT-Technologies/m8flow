@@ -12,8 +12,8 @@
   },
   "list": {
     "title": "流程",
-    "showing": "显示",
     "clear": "清除",
+    "group": "组",
     "searchPlaceholder": "搜索流程模型",
     "owner": "所有者",
     "filterAll": "全部",
@@ -54,17 +54,18 @@
     }
   },
   "groups": {
-    "title": "流程组",
+    "title": "管理组",
     "editTitle": "编辑流程组",
     "deleteTitle": "删除流程组",
     "subtitle": {
-      "list": "选择一个组来筛选模型列表，或在此处管理组。",
+      "list": "在此租户中创建、重命名或删除流程组。",
       "create": "ID 根据显示名称生成。可以编辑为 parent/child 形式以进行嵌套。",
       "edit": "仅限显示名称和描述——ID 不会改变。",
       "delete": "如果此组中的模型都没有实例，它们将从目录中移除。"
     },
     "searchPlaceholder": "搜索 {{total}} 个组",
     "searchLabel": "搜索组",
+    "noMatches": "没有匹配的组",
     "noRunsYet": "尚无运行记录",
     "editGroup": "编辑 {{name}}",
     "deleteGroup": "删除 {{name}}",
