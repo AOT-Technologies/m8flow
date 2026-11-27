@@ -258,6 +258,9 @@ _NO_GROUP_FALLBACK_PREFIXES = (
     "/m8flow/tenant-management",
     "/m8flow/celery/",
     MESSAGE_CORRELATION_PATH,
+    # Template admin (private templates, deleting others' templates, restore) is
+    # tenant-admin only; the editor fallback would make every editor an admin.
+    "/m8flow/admin/templates",
 )
 
 

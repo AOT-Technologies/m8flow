@@ -42,6 +42,32 @@ class TemplateAuthorizationService:
             return False
 
     @classmethod
+    def can_admin_template(cls, template: TemplateModel, user: UserModel | None, permission: str) -> bool:
+        """Template admin writes (delete, restore) apply only to the active tenant's templates.
+
+        A PUBLIC template from another tenant is readable, never manageable.
+        """
+        return cls._is_current_tenant_template(template) and cls.has_admin_permission(user, permission)
+
+    @classmethod
+    def is_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
+        """The caller created the template and is acting in its tenant.
+
+        A PUBLIC template is readable from other tenants; its creator manages it
+        only from the template's own tenant.
+        """
+        return (
+            user is not None
+            and template.created_by == user.username
+            and cls._is_current_tenant_template(template)
+        )
+
+    @classmethod
+    def is_private_owner(cls, template: TemplateModel, user: UserModel | None) -> bool:
+        """Private templates are managed by their creator as well as the tenant-admin."""
+        return template.is_private() and cls.is_owner(template, user)
+
+    @classmethod
     def can_view(cls, template: TemplateModel, user: UserModel | None = None) -> bool:
         tenant_id = cls._tenant_id()
 
@@ -56,6 +82,10 @@ class TemplateAuthorizationService:
 
         if cls._is_super_admin_request(user=user):
             return True
+
+        # A deleted template stays visible only inside its own tenant, for restore.
+        if template.is_deleted and not cls._is_current_tenant_template(template):
+            return False
 
         if template.is_public():
             return True

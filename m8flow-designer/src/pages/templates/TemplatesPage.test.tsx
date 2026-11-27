@@ -220,6 +220,7 @@ describe('TemplatesPage', () => {
     renderWithOutlet({
       scopedTenantId: null,
       selectedTenantId: null,
+      activeTenantId: 't1',
       isSuperAdmin: false,
       canManageTenant: true,
     });
@@ -253,6 +254,7 @@ describe('TemplatesPage', () => {
     renderWithOutlet({
       scopedTenantId: null,
       selectedTenantId: null,
+      activeTenantId: 't1',
       isSuperAdmin: false,
       canManageTenant: true,
     });
@@ -557,6 +559,31 @@ describe('TemplatesPage', () => {
     expect(screen.getByRole('button', { name: 'Delete template' })).toHaveAttribute('aria-disabled', 'true');
   });
 
+  it('disables delete for a tenant-admin viewing another tenant\'s public template', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          results: [mockTemplate({ visibility: 'PUBLIC', tenantId: 't1' })],
+          pagination: { count: 1, total: 1, pages: 1 },
+        }),
+      }),
+    );
+
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      activeTenantId: 't2',
+      isSuperAdmin: false,
+      canManageTenant: true,
+    });
+
+    await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
+    const deleteButton = screen.getByRole('button', { name: 'Delete template' });
+    expect(deleteButton).toHaveAttribute('aria-disabled', 'true');
+  });
+
   it('hard-deletes an editor\'s own draft with permanent-delete copy', async () => {
     const fetchMock = vi.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
@@ -573,7 +600,13 @@ describe('TemplatesPage', () => {
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(auth, 'getCurrentUser').mockReturnValue({ username: 'editor', email: null });
 
-    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: false, canManageTenant: false });
+    renderWithOutlet({
+      scopedTenantId: null,
+      selectedTenantId: null,
+      activeTenantId: 't1',
+      isSuperAdmin: false,
+      canManageTenant: false,
+    });
 
     await waitFor(() => expect(screen.getByText('Invoice Approval')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Delete template' }));
@@ -612,6 +645,7 @@ describe('TemplatesPage', () => {
     renderWithOutlet({
       scopedTenantId: null,
       selectedTenantId: null,
+      activeTenantId: 't1',
       isSuperAdmin: false,
       canManageTenant: true,
     });

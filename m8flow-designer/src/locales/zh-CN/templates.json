@@ -7,7 +7,7 @@
     "label": "可见性",
     "all": "全部",
     "private": "私有",
-    "privateDescription": "仅限您本人",
+    "privateDescription": "仅限您本人和租户管理员",
     "tenant": "租户",
     "tenantDescription": "此租户中的所有人",
     "public": "公开",
@@ -51,7 +51,8 @@
   "permissions": {
     "restore": "权限不足，无法恢复已删除的模板。",
     "deletePublished": "权限不足，无法删除已发布的模板。",
-    "deleteDraft": "只有模板创建者或管理员才能删除此草稿模板。"
+    "deleteDraft": "只有模板创建者或管理员才能删除此草稿模板。",
+    "otherTenant": "来自其他租户的模板为只读。"
   },
   "deleteDialog": {
     "title": "删除模板？",

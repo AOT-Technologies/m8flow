@@ -7,7 +7,7 @@
     "label": "Näkyvyys",
     "all": "Kaikki",
     "private": "Yksityinen",
-    "privateDescription": "Vain sinä",
+    "privateDescription": "Vain sinä ja vuokraajan ylläpitäjät",
     "tenant": "Vuokraaja",
     "tenantDescription": "Kaikki tässä vuokraajassa",
     "public": "Julkinen",
@@ -51,7 +51,8 @@
   "permissions": {
     "restore": "Käyttöoikeudet eivät riitä poistettujen mallipohjien palauttamiseen.",
     "deletePublished": "Käyttöoikeudet eivät riitä julkaistujen mallipohjien poistamiseen.",
-    "deleteDraft": "Vain mallipohjan luoja tai ylläpitäjä voi poistaa tämän luonnosmallipohjan."
+    "deleteDraft": "Vain mallipohjan luoja tai ylläpitäjä voi poistaa tämän luonnosmallipohjan.",
+    "otherTenant": "Toisen vuokraajan mallipohjat ovat vain luku -tilassa."
   },
   "deleteDialog": {
     "title": "Poistetaanko mallipohja?",

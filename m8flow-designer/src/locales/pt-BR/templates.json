@@ -7,7 +7,7 @@
     "label": "Visibilidade",
     "all": "Todos",
     "private": "Privado",
-    "privateDescription": "Somente você",
+    "privateDescription": "Somente você e os administradores do locatário",
     "tenant": "Locatário",
     "tenantDescription": "Todos neste locatário",
     "public": "Público",
@@ -53,7 +53,8 @@
   "permissions": {
     "restore": "Permissões insuficientes para restaurar templates excluídos.",
     "deletePublished": "Permissões insuficientes para excluir templates publicados.",
-    "deleteDraft": "Somente o criador do template ou um administrador pode excluir este template em rascunho."
+    "deleteDraft": "Somente o criador do template ou um administrador pode excluir este template em rascunho.",
+    "otherTenant": "Modelos de outro locatário são somente leitura."
   },
   "deleteDialog": {
     "title": "Excluir o template?",

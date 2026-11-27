@@ -260,6 +260,13 @@ class TemplateService:
                     TemplateModel.visibility == TemplateVisibility.public.value,
                 )
             )
+        if not is_super_admin and (include_deleted or deleted_only):
+            # Deleted templates are listed only inside their own tenant.
+            query = query.filter(
+                or_(TemplateModel.is_deleted.is_(False), TemplateModel.m8f_tenant_id == tenant)
+                if tenant
+                else TemplateModel.is_deleted.is_(False)
+            )
 
         # Super-admin tenant filter: mirror regular tenant scoping (tenant-owned OR PUBLIC).
         if is_super_admin and filter_tenant_id:
@@ -657,7 +664,9 @@ class TemplateService:
         if template.is_deleted:
             raise ApiError("not_found", "Template not found", status_code=404)
 
-        is_template_admin = TemplateAuthorizationService.has_admin_permission(user, "delete")
+        is_template_admin = TemplateAuthorizationService.can_admin_template(
+            template, user, "delete"
+        ) or TemplateAuthorizationService.is_private_owner(template, user)
         username = user.username if user and hasattr(user, "username") else None
 
         if template.is_published:
@@ -673,9 +682,7 @@ class TemplateService:
             db.session.flush()
             return
 
-        can_hard_delete_draft = bool(
-            (username is not None and template.created_by == username) or is_template_admin
-        )
+        can_hard_delete_draft = TemplateAuthorizationService.is_owner(template, user) or is_template_admin
         if not can_hard_delete_draft:
             raise ApiError("forbidden", "You cannot delete this template", status_code=403)
 
@@ -712,7 +719,9 @@ class TemplateService:
         template_id: int,
         user: UserModel | None,
     ) -> TemplateModel:
-        """Restore a previously soft-deleted template (tenant-admin only)."""
+        """Restore a previously soft-deleted template (tenant-admin, or the creator of a private template)."""
+        if is_super_admin_request():
+            raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
         template = cls.get_template_by_id(template_id, user=user, include_deleted=True)
         if template is None:
             raise ApiError("not_found", "Template not found", status_code=404)
@@ -720,7 +729,10 @@ class TemplateService:
         if not template.is_deleted:
             raise ApiError("invalid_state", "Template is not deleted", status_code=400)
 
-        if not TemplateAuthorizationService.has_admin_permission(user, "update"):
+        if not (
+            TemplateAuthorizationService.can_admin_template(template, user, "update")
+            or TemplateAuthorizationService.is_private_owner(template, user)
+        ):
             raise ApiError("forbidden", "Insufficient permissions to restore templates", status_code=403)
 
         # Expected soft-delete format: <name>_deleted_YYYYMMDDHHMMSS
@@ -783,6 +795,8 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        if not TemplateAuthorizationService.can_edit(template, user):
+            raise ApiError("forbidden", "You cannot edit this template", status_code=403)
         # Find the file in the template
         found = None
         for e in template.files or []:
@@ -834,6 +848,8 @@ class TemplateService:
         """
         if is_super_admin_request():
             raise ApiError("forbidden", SUPER_ADMIN_READ_ONLY_MESSAGE, status_code=403)
+        if not TemplateAuthorizationService.can_edit(template, user):
+            raise ApiError("forbidden", "You cannot edit this template", status_code=403)
         # Validate the file exists in the template
         files_list = list(template.files or [])
         if not files_list:

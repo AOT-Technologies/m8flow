@@ -25,6 +25,7 @@ import type { DiagramCanvasHandle } from '@/pages/process-model-modeler/componen
 import type { BpmnCanvasServiceTaskOperator } from '@/pages/process-model-modeler/components/BpmnCanvas';
 import { ModelerFileToolbar, type ModelerSavePhase } from '@/pages/process-model-modeler/components/ModelerFileToolbar';
 import { UnsavedChangesDialog } from '@/pages/process-model-modeler/components/ModelerFileDialogs';
+import { isActiveTenantTemplate } from './components/templateGalleryPermissions';
 
 type SavePhase = ModelerSavePhase;
 
@@ -52,9 +53,8 @@ export default function TemplateFileModelerPage() {
     templateId: string;
     fileName: string;
   }>();
-  const { scopedTenantId } = useActiveTenant();
+  const { activeTenantId, scopedTenantId } = useActiveTenant();
   const { canUpdateTemplateFiles } = useCapabilities();
-  const canEdit = canUpdateTemplateFiles;
   const navigate = useNavigate();
   const canvasRef = useRef<DiagramCanvasHandle>(null);
 
@@ -63,6 +63,7 @@ export default function TemplateFileModelerPage() {
   const file = fileNameParam ?? '';
 
   const [template, setTemplate] = useState<Template | null>(null);
+  const canEdit = canUpdateTemplateFiles && template !== null && isActiveTenantTemplate(template, activeTenantId);
   const [xml, setXml] = useState<string | null>(null);
   const [loading, setLoading] = useState(validId && Boolean(file));
   const [notFound, setNotFound] = useState(!validId || !file);

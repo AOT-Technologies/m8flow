@@ -92,6 +92,7 @@ function renderAt(
   context: SessionFixtureContext = {
     scopedTenantId: null,
     selectedTenantId: null,
+    activeTenantId: 't1',
     isSuperAdmin: false,
     canManageProcesses: true,
   },
