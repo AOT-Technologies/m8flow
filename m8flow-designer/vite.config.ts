@@ -6,7 +6,7 @@ import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import m8flowBpmnVitePlugin from 'm8flow-bpmn/vite';
-import { resolveBuildApiVersion, SUPPORTED_API_VERSIONS } from './src/lib/apiVersionConfig';
+import { resolveApiVersionBuildConfig } from './src/lib/apiVersionConfig';
 
 const m8flowBpmn = m8flowBpmnVitePlugin();
 
@@ -65,13 +65,14 @@ const backendBaseUrl =
   process.env.VITE_BACKEND_BASE_URL ??
   rootEnv.M8FLOW_FRONTEND_BACKEND_BASE_URL ??
   `http://localhost:${backendPort}`;
-const apiVersion = resolveBuildApiVersion({
+const apiVersionBuildConfig = resolveApiVersionBuildConfig({
   VITE_API_VERSION: process.env.VITE_API_VERSION ?? rootEnv.VITE_API_VERSION,
   M8FLOW_API_VERSION: process.env.M8FLOW_API_VERSION ?? rootEnv.M8FLOW_API_VERSION,
 });
+const apiVersion = apiVersionBuildConfig.version;
 const apiVersionProxy = Object.fromEntries(
-  SUPPORTED_API_VERSIONS.map((version) => [
-    `/v${version}`,
+  apiVersionBuildConfig.proxyPaths.map((proxyPath) => [
+    proxyPath,
     { target: backendBaseUrl, changeOrigin: true, secure: false },
   ]),
 );
@@ -144,7 +145,7 @@ export default defineConfig({
     },
   },
   define: {
-    'import.meta.env.VITE_API_VERSION': JSON.stringify(apiVersion),
+    'import.meta.env.VITE_API_VERSION': apiVersionBuildConfig.defineValue,
     'import.meta.env.VITE_BACKEND_BASE_URL': JSON.stringify(backendBaseUrl),
     // Empty = same-origin relative paths through the Vite proxy above.
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(

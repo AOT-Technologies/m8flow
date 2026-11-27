@@ -8,6 +8,14 @@ export type ApiVersionBuildEnvironment = {
   M8FLOW_API_VERSION?: string | null;
 };
 
+export type ApiVersionBuildConfig = {
+  version: ApiVersion;
+  /** JSON literal consumed by Vite's `define` option. */
+  defineValue: string;
+  /** Versioned Vite proxy paths derived from the same supported-version registry. */
+  proxyPaths: string[];
+};
+
 export function resolveApiVersion(value?: string | null): ApiVersion {
   const version = value?.trim() || DEFAULT_API_VERSION;
   if (!(SUPPORTED_API_VERSIONS as readonly string[]).includes(version)) {
@@ -21,6 +29,18 @@ export function resolveApiVersion(value?: string | null): ApiVersion {
 /** Resolve the API version using the same precedence as the Vite build. */
 export function resolveBuildApiVersion(environment: ApiVersionBuildEnvironment): ApiVersion {
   return resolveApiVersion(environment.VITE_API_VERSION ?? environment.M8FLOW_API_VERSION);
+}
+
+/** Build the values Vite uses for the bundled API version and development proxy. */
+export function resolveApiVersionBuildConfig(
+  environment: ApiVersionBuildEnvironment,
+): ApiVersionBuildConfig {
+  const version = resolveBuildApiVersion(environment);
+  return {
+    version,
+    defineValue: JSON.stringify(version),
+    proxyPaths: SUPPORTED_API_VERSIONS.map((supportedVersion) => `/v${supportedVersion}`),
+  };
 }
 
 export function pathForApiVersion(path: string, version: string): string {

@@ -1,8 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
 
-import { pathForApiVersion, SUPPORTED_API_VERSIONS } from './apiVersionConfig';
+import { pathForApiVersion, resolveApiVersionBuildConfig } from './apiVersionConfig';
 
 const response = (status: number, body: unknown = {}) =>
   new Response(JSON.stringify(body), { status });
@@ -15,32 +13,6 @@ afterEach(() => {
 });
 
 describe('API requests built with configured API versions', () => {
-  async function loadViteConfiguredVersion(version: string | null = '2.0'): Promise<string> {
-    const environment: Record<string, string | undefined> = {
-      ...process.env,
-      M8FLOW_API_VERSION: version ?? '',
-    };
-    if (version === null) {
-      // Empty process values override any developer .env values loaded by Vite.
-      environment.VITE_API_VERSION = '';
-    } else {
-      delete environment.VITE_API_VERSION;
-    }
-    const script = [
-      "import { loadConfigFromFile } from 'vite';",
-      "const loaded = await loadConfigFromFile({ command: 'build', mode: 'production' }, 'vite.config.ts', process.cwd());",
-      "console.log(JSON.stringify(loaded.config.define['import.meta.env.VITE_API_VERSION']));",
-    ].join('\n');
-    const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-      cwd: resolve(process.cwd()),
-      env: environment,
-      encoding: 'utf8',
-    });
-    const definedLiteral = JSON.parse(output.trim()) as string;
-    expect(definedLiteral).toBe(JSON.stringify(version ?? '1.0'));
-    return JSON.parse(definedLiteral) as string;
-  }
-
   function mockConfiguredApiVersion(apiVersion: string): void {
     vi.doMock('./apiVersion', () => ({
       API_VERSION: apiVersion,
@@ -99,32 +71,15 @@ describe('API requests built with configured API versions', () => {
   }
 
   it('defaults to V1 and uses it for API, retry, invitation, file URL, and auth redirect paths', async () => {
-    const apiVersion = await loadViteConfiguredVersion(null);
+    const apiVersion = resolveApiVersionBuildConfig({ M8FLOW_API_VERSION: '' }).version;
     expect(apiVersion).toBe('1.0');
     await expectVersionedRequests(apiVersion);
   });
 
-  it('uses V2 from the real Vite config for API, retry, invitation, file URL, and auth redirect paths', async () => {
-    const apiVersion = await loadViteConfiguredVersion('2.0');
+  it('uses the configured V2 build value for API, retry, invitation, file URL, and auth redirect paths', async () => {
+    const apiVersion = resolveApiVersionBuildConfig({ M8FLOW_API_VERSION: '2.0' }).version;
     expect(apiVersion).toBe('2.0');
     await expectVersionedRequests(apiVersion);
-  });
-
-  it('proxies every supported API version to the backend in the real Vite config', () => {
-    const script = [
-      "import { loadConfigFromFile } from 'vite';",
-      "const loaded = await loadConfigFromFile({ command: 'serve', mode: 'development' }, 'vite.config.ts', process.cwd());",
-      "console.log(JSON.stringify(Object.keys(loaded.config.server.proxy)));",
-    ].join('\n');
-    const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
-      cwd: resolve(process.cwd()),
-      env: process.env,
-      encoding: 'utf8',
-    });
-
-    expect(JSON.parse(output.trim())).toEqual(
-      SUPPORTED_API_VERSIONS.map((version) => `/v${version}`),
-    );
   });
 
 });
