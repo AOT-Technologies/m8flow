@@ -115,7 +115,7 @@ export function MyTasksList({ tenantId = null, tasks: tasksOverride }: MyTasksLi
           <Link
             key={task.id}
             to={`/task-review/${task.id}`}
-            className="block border-t border-border px-[22px] py-3.5 hover:bg-muted/50"
+            className="block border-t border-border px-[22px] py-3.5 transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           >
             <div className="mb-1 text-[13.5px] font-semibold text-foreground">
               {taskTitle(task)}

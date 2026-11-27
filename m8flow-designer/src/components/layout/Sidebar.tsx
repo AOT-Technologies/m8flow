@@ -195,6 +195,10 @@ const API_KEYS_CHILD: SidebarChild = {
 };
 const THEME_STORAGE_KEY = 'm8flow_theme';
 
+/** Hover + keyboard focus states for clickable nav items (same as clickable table rows). */
+const NAV_INTERACTIVE =
+  'transition-colors hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring';
+
 type Theme = 'light' | 'dark';
 
 function readTheme(): Theme {
@@ -534,7 +538,7 @@ function ProfileMenu({
           <button
             type="button"
             role="menuitem"
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted"
+            className={cn('flex w-full items-center gap-2 px-3 py-2 text-left text-sm', NAV_INTERACTIVE)}
             onClick={() => {
               setOpen(false);
               onLogout();
@@ -574,7 +578,7 @@ function NavRow({
         to={item.to}
         end={item.to === '/'}
         aria-current={active ? 'page' : undefined}
-        className={rowClass}
+        className={cn(rowClass, NAV_INTERACTIVE, active && 'hover:bg-nav-active/10')}
       >
         <Icon className={iconClass} strokeWidth={active ? 2 : 1.8} aria-hidden />
         <span className={labelClass}>{label}</span>
@@ -621,7 +625,7 @@ function CollapsibleGroup({
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center justify-between gap-2.5 rounded-lg px-3 py-2.5 text-left"
+        className={cn('flex w-full items-center justify-between gap-2.5 rounded-lg px-3 py-2.5 text-left', NAV_INTERACTIVE)}
         aria-expanded={open}
       >
         <span className="flex items-center gap-2.5">
@@ -660,6 +664,7 @@ function LiveChild({ label, to }: { label: string; to: string }) {
       className={({ isActive }) =>
         cn(
           'rounded-md px-2 py-1.5 text-[13.5px] no-underline',
+          NAV_INTERACTIVE,
           isActive ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
         )
       }
@@ -675,7 +680,7 @@ function ExternalChild({ label, href }: { label: string; href: string }) {
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="rounded-md px-2 py-1.5 text-[13.5px] text-muted-foreground no-underline hover:text-foreground"
+      className={cn('rounded-md px-2 py-1.5 text-[13.5px] text-muted-foreground no-underline hover:text-foreground', NAV_INTERACTIVE)}
     >
       {label}
     </a>
@@ -767,7 +772,7 @@ function LocaleMenu() {
               role="menuitemradio"
               lang={option.value}
               aria-checked={option.value === currentLocale}
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+              className={cn('flex w-full items-center justify-between px-3 py-2 text-left text-sm', NAV_INTERACTIVE)}
               onClick={() => {
                 void i18n.changeLanguage(option.value);
                 setOpen(false);

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 import i18n from '@/i18n';
 import { fetchHomeRecentInstances, type HomeRecentInstance } from '@/lib/api';
@@ -29,6 +29,7 @@ export function RecentInstancesTable({
   rows: rowsOverride,
 }: RecentInstancesTableProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [rows, setRows] = useState<HomeRecentInstance[]>(rowsOverride ?? []);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(rowsOverride === undefined);
@@ -113,6 +114,9 @@ export function RecentInstancesTable({
           to={`/process-instances/${row.id}`}
           title={t('home.recentInstances.openInstance')}
           aria-label={t('home.recentInstances.openInstanceWithId', { id: row.id })}
+          // The row itself navigates too; keep the click from firing it twice.
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
           className="flex size-7 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <ExternalLink className="size-[15px]" aria-hidden />
@@ -151,7 +155,12 @@ export function RecentInstancesTable({
           {t('home.recentInstances.empty')}
         </div>
       ) : (
-        <DataTable columns={columns} rows={rows} getRowKey={(row) => row.id} />
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowKey={(row) => row.id}
+          onRowClick={(row) => navigate(`/process-instances/${row.id}`)}
+        />
       )}
     </Card>
   );

@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
 import { RecentInstancesTable } from './RecentInstancesTable';
@@ -55,5 +55,36 @@ describe('RecentInstancesTable', () => {
       </MemoryRouter>,
     );
     expect(screen.getByText('No recent process instances.')).toBeInTheDocument();
+  });
+
+  it('makes each row a focusable button that opens the instance on click or Enter', () => {
+    const row = {
+      id: 721,
+      tenant_id: 't1',
+      tenant_name: 'aot-demo',
+      process_model_display_name: 'Single Approval test',
+      started_at: new Date().toISOString(),
+      status: 'complete',
+    };
+    const renderAt = () =>
+      render(
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<RecentInstancesTable rows={[row]} />} />
+            <Route path="/process-instances/:id" element={<div>instance page</div>} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+    const { unmount } = renderAt();
+    const rowButton = screen.getByRole('button', { name: /Single Approval test/ });
+    expect(rowButton).toHaveAttribute('tabindex', '0');
+    fireEvent.click(rowButton);
+    expect(screen.getByText('instance page')).toBeInTheDocument();
+    unmount();
+
+    renderAt();
+    fireEvent.keyDown(screen.getByRole('button', { name: /Single Approval test/ }), { key: 'Enter' });
+    expect(screen.getByText('instance page')).toBeInTheDocument();
   });
 });
