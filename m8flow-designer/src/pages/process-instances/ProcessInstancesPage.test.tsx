@@ -84,7 +84,7 @@ describe('ProcessInstancesPage', () => {
   it('lists across tenants for an All-Tenants super-admin, with a tenant column', async () => {
     const fetchMock = stubFetch({
       results: [
-        mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One' }),
+        mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One', started_by_me: true }),
         mockInstance({ id: 2, tenant_id: 't2', tenant_name: 'Tenant Two' }),
       ],
       pagination: { count: 2, total: 2, pages: 1 },
@@ -97,8 +97,28 @@ describe('ProcessInstancesPage', () => {
     });
     expect(screen.getByText('Tenant Two')).toBeInTheDocument();
     expect(screen.queryByText('Choose a tenant')).not.toBeInTheDocument();
+    // Truncatable cells expose their full value on hover.
+    expect(screen.getByText('Tenant One')).toHaveAttribute('title', 'Tenant One');
+    expect(screen.getAllByText('Invoice Approval')[0]).toHaveAttribute('title', 'Invoice Approval');
+    // A row on this page has an involvement tag, so All-tenants keeps the column and its indicator.
+    expect(screen.getByRole('columnheader', { name: 'Involvement' })).toBeInTheDocument();
+    expect(screen.getByText('Started by me')).toBeInTheDocument();
+    // The flex-item page must be allowed to shrink so only the table scrolls, not the page.
+    expect(screen.getByRole('main')).toHaveClass('min-w-0');
     // All Tenants means "no tenant filter" -- the param must be omitted.
     expect(lastListUrl(fetchMock)).not.toContain('tenantId=');
+  });
+
+  it('drops the empty Involvement column in the All-tenants view', async () => {
+    stubFetch({
+      results: [mockInstance({ id: 1, tenant_id: 't1', tenant_name: 'Tenant One' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ scopedTenantId: null, selectedTenantId: null, isSuperAdmin: true });
+
+    await screen.findByText('Tenant One');
+    expect(screen.queryByRole('columnheader', { name: 'Involvement' })).not.toBeInTheDocument();
   });
 
   it('fetches and renders instances for a concrete tenant', async () => {
@@ -117,6 +137,21 @@ describe('ProcessInstancesPage', () => {
     // DOM until opened, unlike a native <select>'s always-present <option>s.
     expect(screen.getAllByText('Complete').length).toBeGreaterThan(0);
     expect(screen.getAllByText('1 instance').length).toBeGreaterThan(0);
+    // Single-tenant keeps the Involvement column, even with no involvement on the page.
+    expect(screen.getByRole('columnheader', { name: 'Involvement' })).toBeInTheDocument();
+  });
+
+  it('truncates long status pills inside their column, with the full label on hover', async () => {
+    stubFetch({
+      results: [mockInstance({ status: 'user_input_required' })],
+      pagination: { count: 1, total: 1, pages: 1 },
+    });
+
+    renderWithOutlet({ scopedTenantId: 't1', selectedTenantId: 't1', isSuperAdmin: true });
+
+    const label = await screen.findByText('User Input Required');
+    expect(label).toHaveClass('truncate');
+    expect(label.closest('[data-slot="pill"]')).toHaveAttribute('title', 'User Input Required');
   });
 
   it('hides the Started by filter when the backend returns no owner options', async () => {

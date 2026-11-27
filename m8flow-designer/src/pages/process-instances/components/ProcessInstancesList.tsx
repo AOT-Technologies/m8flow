@@ -152,16 +152,22 @@ export function ProcessInstancesList({
     ...owners.map((owner) => ({ value: owner, label: owner })),
   ];
 
+  // All-tenants adds the Tenant column, so it tightens the other columns and only shows
+  // Involvement when a row on this page has a Started/Assigned tag (an empty column would just
+  // push the table past common screen widths). The single-tenant view keeps its original layout.
+  const showInvolvement = !showTenant || instances.some((i) => i.started_by_me || i.assigned_to_me);
+
   const columns: DataTableColumn<ProcessInstanceListItem>[] = [
     ...(showTenant
       ? [
           {
             key: 'tenant',
             header: t('processInstances.list.columns.tenant'),
-            width: '140px',
+            width: 'minmax(100px,1fr)',
             className: 'truncate text-[13px] text-muted-foreground',
-            render: (instance: ProcessInstanceListItem) =>
-              instance.tenant_name || instance.tenant_id || '—',
+            render: (instance: ProcessInstanceListItem) => (
+              <TruncatedText text={instance.tenant_name || instance.tenant_id} />
+            ),
           } as DataTableColumn<ProcessInstanceListItem>,
         ]
       : []),
@@ -178,53 +184,58 @@ export function ProcessInstancesList({
     {
       key: 'model',
       header: t('processInstances.list.columns.processModel'),
-      width: 'minmax(200px,2fr)',
+      width: showTenant ? 'minmax(160px,2fr)' : 'minmax(200px,2fr)',
       className: 'min-w-0 truncate text-[14px] font-medium text-foreground',
-      render: (instance) => instance.process_model_display_name,
+      render: (instance) => <TruncatedText text={instance.process_model_display_name} />,
     },
     {
       key: 'status',
       header: t('common.status'),
-      width: '130px',
-      render: (instance) => <Pill {...processInstanceStatusToPillProps(instance.status)} />,
+      // Fits the English "User Input Required" pill; longer translations truncate (full label on hover).
+      width: '160px',
+      render: (instance) => <StatusPill status={instance.status} />,
     },
     {
       key: 'started',
       header: t('processInstances.fields.started'),
-      width: '120px',
+      width: showTenant ? '110px' : '120px',
       className: 'text-[13px] text-muted-foreground',
       render: (instance) => formatRelativeTime(instance.started_at),
     },
     {
       key: 'startedBy',
       header: t('processInstances.fields.startedBy'),
-      width: '130px',
+      width: showTenant ? 'minmax(110px,1fr)' : '130px',
       className: 'truncate text-[13px] text-muted-foreground',
-      render: (instance) => instance.started_by || '—',
+      render: (instance) => <TruncatedText text={instance.started_by} />,
     },
-    {
-      key: 'involvement',
-      header: t('processInstances.list.columns.involvement'),
-      width: '150px',
-      render: (instance) => (
-        <div className="flex flex-wrap gap-1">
-          {instance.started_by_me ? (
-            <Pill tone="info" dot={false}>
-              {t('processInstances.list.scope.started')}
-            </Pill>
-          ) : null}
-          {instance.assigned_to_me ? (
-            <Pill tone="muted" dot={false}>
-              {t('processInstances.list.scope.assigned')}
-            </Pill>
-          ) : null}
-        </div>
-      ),
-    },
+    ...(showInvolvement
+      ? [
+          {
+            key: 'involvement',
+            header: t('processInstances.list.columns.involvement'),
+            width: '150px',
+            render: (instance: ProcessInstanceListItem) => (
+              <div className="flex flex-wrap gap-1">
+                {instance.started_by_me ? (
+                  <Pill tone="info" dot={false}>
+                    {t('processInstances.list.scope.started')}
+                  </Pill>
+                ) : null}
+                {instance.assigned_to_me ? (
+                  <Pill tone="muted" dot={false}>
+                    {t('processInstances.list.scope.assigned')}
+                  </Pill>
+                ) : null}
+              </div>
+            ),
+          } as DataTableColumn<ProcessInstanceListItem>,
+        ]
+      : []),
     {
       key: 'duration',
       header: t('processInstances.list.columns.duration'),
-      width: '100px',
+      width: showTenant ? '90px' : '100px',
       className: 'text-right font-mono text-[13px] text-muted-foreground',
       render: (instance) =>
         instance.started_at != null && instance.ended_at != null
@@ -363,6 +374,21 @@ export function ProcessInstancesList({
       </div>
     </>
   );
+}
+
+/** Status pill that truncates inside its column instead of spilling into the next one. */
+function StatusPill({ status }: { status: string }) {
+  const { children: label, ...pillProps } = processInstanceStatusToPillProps(status);
+  return (
+    <Pill {...pillProps} className="max-w-full" title={label}>
+      <span className="min-w-0 truncate">{label}</span>
+    </Pill>
+  );
+}
+
+/** Cell text that shows its full value on hover when the column truncates it. */
+function TruncatedText({ text }: { text?: string | null }) {
+  return text ? <span title={text}>{text}</span> : <>—</>;
 }
 
 /** Read-only per-row overflow menu (Processes.dc.html row kebab). Lifecycle
