@@ -27,7 +27,7 @@
     "preview": "vite preview",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --maxWorkers=2",
+    "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "node scripts/e2e-run.mjs",
     "test:e2e:dashboard": "node scripts/e2e-dashboard.mjs --serve",
@@ -40,7 +40,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dmn-js": "17.5.0",
-    "i18next": "^25.10.10",
+    "i18next": "^26.7.2",
     "lucide-react": "^1.61.0",
     "m8flow-bpmn": "file:../m8flow-bpmn",
     "monaco-editor": "^0.52.2",
@@ -77,5 +77,8 @@
     "vite": "^7.3.7",
     "vite-plugin-compression2": "^2.5.3",
     "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "^11.0.1"
   }
 }
