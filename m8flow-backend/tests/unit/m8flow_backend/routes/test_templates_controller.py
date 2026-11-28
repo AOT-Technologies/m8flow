@@ -3,7 +3,9 @@ from __future__ import annotations
 import socket
 import threading
 import time
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 import httpx
 import pytest
@@ -320,6 +322,148 @@ def test_super_admin_cannot_write_templates(client, db_session):
     created = _create_template(client, token, name="Admin Write")
     assert created.status_code == 403
     assert "read-only" in created.get_json()["message"].lower() or created.get_json()["error_code"] == "forbidden"
+
+
+def test_collaboration_template_publishes_independent_models_and_form_only_releases(
+    client, db_session, app, tmp_path, monkeypatch
+):
+    from m8flow_core.models.process_instance import ProcessInstanceModel
+
+    from m8flow_backend import human_task
+    from m8flow_backend.catalog import versions
+    from m8flow_backend.models.process_model_version import ProcessModelState
+
+    monkeypatch.setenv("M8FLOW_BACKEND_BPMN_SPEC_ABSOLUTE_DIR", str(tmp_path / "bpmn"))
+    app.config["M8FLOW_TEMPLATES_STORAGE_DIR"] = str(tmp_path / "templates")
+    (tmp_path / "bpmn" / "t1" / "finance").mkdir(parents=True)
+    bpmn_name = "orders.bpmn"
+    source = POC_BPMN.with_name("order-fulfilment-collaboration.bpmn").read_bytes()
+    source = source.replace(b'processRef="orders:Order"', b'processRef="Order"').replace(
+        b'xmlns:orders=',
+        b'xmlns:spiffworkflow="http://spiffworkflow.org/bpmn/schema/1.0/core" xmlns:orders=',
+        1,
+    ).replace(
+        b'<bpmn:userTask id="ApproveOrder" name="Approve order"/>',
+        b'<bpmn:userTask id="ApproveOrder" name="Approve order"><bpmn:extensionElements>'
+        b'<spiffworkflow:properties>'
+        b'<spiffworkflow:property name="formJsonSchemaFilename" value="approve_order-schema.json"/>'
+        b'<spiffworkflow:property name="formUiSchemaFilename" value="approve_order-uischema.json"/>'
+        b'</spiffworkflow:properties></bpmn:extensionElements></bpmn:userTask>',
+    )
+    files = {
+        bpmn_name: source,
+        "approve_order-schema.json": b'{"title": "Approve order", "type": "object", "properties": {}}',
+        "approve_order-uischema.json": b'{"type": "VerticalLayout", "elements": []}',
+    }
+    archive_buffer = BytesIO()
+    with ZipFile(archive_buffer, "w") as package:
+        for name, content in files.items():
+            package.writestr(name, content)
+    archive = archive_buffer.getvalue()
+    _admin, token = _login_user(
+        client, db_session, username="template-admin", groups=["t1:tenant-admin"], tenant_id="t1"
+    )
+    imported = client.post(
+        "/v1.0/m8flow/templates/import",
+        data=archive,
+        content_type="application/zip",
+        headers=_headers(token, **{"X-Template-Key": "collaboration", "X-Template-Name": "Collaboration"}),
+    )
+    assert imported.status_code == 201, imported.json
+    template_id = imported.json["id"]
+    assert imported.json["isPublished"] is False
+    published_template = client.put(
+        f"/v1.0/m8flow/templates/{template_id}", json={"is_published": True}, headers=_headers(token)
+    )
+    assert published_template.status_code == 200, published_template.json
+    assert client.get(
+        f"/v1.0/m8flow/templates/{template_id}/files/{bpmn_name}", headers=_headers(token),
+    ).data == files[bpmn_name]
+
+    _editor, token = _login_user(
+        client, db_session, username="collaboration-editor", groups=["t1:editor"], tenant_id="t1"
+    )
+    headers = _headers(token)
+    assert client.get("/v1.0/onboarding", headers=headers).status_code == 200
+    assert client.get("/v1.0/tasks", headers=headers).status_code == 200
+
+    def revision(response):
+        return {**headers, "If-Match": '"' + response.json["working_revision"] + '"'}
+
+    sources, participants = {}, {}
+
+    def start(path, key="shared-order"):
+        response = client.post(
+            f"{path}/start", headers=headers,
+            json={"bpmn_process_id": participants[path], "collaboration_correlation_key": key},
+        )
+        assert response.status_code == 201, response.json
+        db_session.expire_all()
+        instance = db_session.get(ProcessInstanceModel, response.json["id"])
+        assert instance.status == "user_input_required"
+        assert instance.bpmn_process_definition.source_bpmn_xml == sources[path].decode()
+        return instance
+
+    paths, published_models, instances = [], [], []
+    for model_id in ("orders", "orders-copy"):
+        created = client.post(
+            f"/v1.0/m8flow/templates/{template_id}/create-process-model", headers=headers,
+            json={"process_group_id": "finance", "display_name": model_id, "process_model_id": model_id},
+        )
+        assert created.status_code == 201, created.json
+        path = f"/v1.0/m8flow/process-models/finance:{model_id}"
+        detail = client.get(path, headers=headers)
+        assert detail.status_code == 200, detail.json
+        sources[path] = client.get(f"{path}/files/{bpmn_name}", headers=headers).data
+        published = client.post(f"{path}/publish", headers=revision(detail))
+        assert published.status_code == 200, published.json
+        assert published.json["published_version"] == 1
+        detail = client.get(path, headers=headers)
+        pools = detail.json["collaboration_participants"]
+        assert [pool["name"] for pool in pools] == ["Order", "Fulfilment"]
+        participants[path] = pools[0]["id"]
+        assert client.get(f"{path}/files/{bpmn_name}", headers=headers).data == sources[path]
+        paths.append(path)
+        published_models.append(published)
+        instances.append(start(path))
+    original, copied = instances
+    assert original.bpmn_process_definition_id != copied.bpmn_process_definition_id
+    assert copied.bpmn_process_definition.process_model_identifier == "finance/orders-copy"
+    original_definition_id = original.bpmn_process_definition_id
+
+    path = paths[0]
+    repeated = client.post(f"{path}/publish", headers=revision(published_models[0]))
+    assert repeated.status_code == 200, repeated.json
+    assert repeated.json["published_version"] == 1
+    changed_schema = files["approve_order-schema.json"].replace(b'"Approve order"', b'"Updated approval"')
+    saved = client.put(
+        f"{path}/files/approve_order-schema.json", headers=revision(repeated),
+        content_type="application/octet-stream", data=changed_schema,
+    )
+    assert saved.status_code == 200, saved.json
+    assert saved.json["draft_version"] == 2
+    assert start(path, "before-publish").bpmn_process_definition_id == original_definition_id
+    second = client.post(f"{path}/publish", headers=revision(saved))
+    assert second.status_code == 200, second.json
+    assert second.json["published_version"] == 2
+    latest = start(path)
+    assert latest.bpmn_process_definition_id != original_definition_id
+    assert latest.bpmn_version_control_identifier.endswith(":2")
+    assert original.bpmn_version_control_identifier.endswith(":1")
+    assert original.bpmn_process_definition.source_bpmn_xml == sources[path].decode()
+    assert copied.bpmn_version_control_identifier.endswith(":1")
+
+    def form_title(instance):
+        return human_task.form_schema_for_task(
+            db_session, tenant_id="t1", work_item=instance.work_items[0],
+        )["schema"]["title"]
+
+    assert form_title(original) == form_title(copied) == "Approve order"
+    assert form_title(latest) == "Updated approval"
+    model = db_session.get(ProcessModelState, ("t1", "finance/orders"))
+    for number in (1, 2):
+        release = versions.release(db_session, model, number)
+        assert versions.read_file(release.contents, bpmn_name) == sources[path]
 
 
 def test_super_admin_can_create_process_model_from_published_template(

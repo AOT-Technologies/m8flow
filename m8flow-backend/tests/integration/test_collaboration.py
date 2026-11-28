@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -11,7 +12,7 @@ from sqlalchemy import select
 from m8flow_core import api
 from m8flow_core.models.process_instance import ProcessInstanceModel
 
-from .support import new_tenant_id, provision_member, save_model, tenant_session
+from .support import new_tenant_id, provision_member, tenant_session
 
 pytestmark = [
     pytest.mark.usefixtures("host_db"),
@@ -27,12 +28,15 @@ KEY = "order-123"
 
 
 def _provision(tenant):
+    from m8flow_backend.catalog import versioned
+
     with tenant_session(tenant) as session:
         user = provision_member(session, tenant_id=tenant, role="editor")
-        save_model(
-            session, tenant_id=tenant, user_id=user.id, path=MODEL,
-            fixture="order-fulfilment-collaboration.bpmn",
+        source = Path(__file__).resolve().parents[1] / "fixtures/order-fulfilment-collaboration.bpmn"
+        model = versioned.create(
+            session, tenant, MODEL, name="Orders", files={"orders.bpmn": source.read_bytes()},
         )
+        versioned.publish(session, model, user_id=user.id, username=user.username)
         return user.id
 
 
